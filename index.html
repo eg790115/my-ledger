@@ -50,6 +50,16 @@
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .animate-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 針對 iOS 底部黑線的安全邊距保護 */
+        @supports (padding-bottom: env(safe-area-inset-bottom)) {
+            .safe-bottom-nav {
+                bottom: calc(2rem + env(safe-area-inset-bottom));
+            }
+            .safe-pb-main {
+                padding-bottom: calc(8rem + env(safe-area-inset-bottom));
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -60,14 +70,31 @@
 
         // --- 核心配置 ---
         const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec';
-        const APP_VERSION = "2026.02.24.32";
+        const APP_VERSION = "2026.02.24.34";
 
         // 更新歷程
         const CHANGELOG = [
-            { version: "2026.02.24.32", date: "2026/02/24", note: "注入 PWA Manifest，強制 Android 隱藏網址列呈現獨立全螢幕。" },
-            { version: "2026.02.24.31", date: "2026/02/24", note: "確保跨瀏覽器相容性，優化 CDN 載入穩定度。" },
-            { version: "2026.02.24.29", date: "2026/02/24", note: "改為通用 HTML 格式，解決 GitHub 直接顯示原始碼的問題。" }
+            { version: "2026.02.24.34", date: "2026/02/24", note: "【細節優化】加回離線緩存隊列防止無網路丟失、優化 iOS 安全邊距、強制呼叫純數字鍵盤。" },
+            { version: "2026.02.24.33", date: "2026/02/24", note: "【重大安全更新】導入真實 WebAuthn 生物辨識 API，移除裝飾用按鈕。" },
+            { version: "2026.02.24.32", date: "2026/02/24", note: "注入 PWA Manifest，強制 Android 隱藏網址列呈現獨立全螢幕。" }
         ];
+
+        // --- WebAuthn Base64 轉換工具 ---
+        const bufferToBase64url = (buffer) => {
+            const bytes = new Uint8Array(buffer);
+            let str = '';
+            for (let i = 0; i < bytes.byteLength; i++) str += String.fromCharCode(bytes[i]);
+            return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        };
+
+        const base64urlToBuffer = (base64url) => {
+            const padding = '='.repeat((4 - base64url.length % 4) % 4);
+            const base64 = (base64url + padding).replace(/\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+            return outputArray.buffer;
+        };
 
         // --- 內建圖示元件 ---
         const SvgIcon = ({ name, size = 24, className = "" }) => {
@@ -129,7 +156,8 @@
                     </div>
                     <div className="flex items-center justify-center mb-8">
                         <span className="text-2xl font-black text-gray-300 mr-1">$</span>
-                        <input type="number" autoFocus className={`w-48 text-6xl font-black text-center outline-none bg-transparent ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`} placeholder="0" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
+                        {/* 修正：加入 inputMode="decimal" 強制手機顯示純數字鍵盤 */}
+                        <input type="number" inputMode="decimal" autoFocus className={`w-48 text-6xl font-black text-center outline-none bg-transparent ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`} placeholder="0" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
                     </div>
                     <div className="space-y-4 text-left">
                         <div className="bg-gray-100 p-4 rounded-2xl">
@@ -158,7 +186,7 @@
             const [biometricAvailable, setBiometricAvailable] = useState(false);
             
             const [familyConfig, setFamilyConfig] = useState(() => {
-                const saved = localStorage.getItem('family_member_config_v8');
+                const saved = localStorage.getItem('family_member_config_v9');
                 return saved ? JSON.parse(saved) : [
                     { name: '爸爸', pin: '790115', color: 'bg-blue-600' },
                     { name: '媽媽', pin: '791005', color: 'bg-pink-600' }
@@ -166,8 +194,19 @@
             });
 
             const [securityState, setSecurityState] = useState(() => {
-                const saved = localStorage.getItem('family_security_state_v8');
+                const saved = localStorage.getItem('family_security_state_v9');
                 return saved ? JSON.parse(saved) : { failedAttempts: {}, needsPinValidation: {} };
+            });
+
+            // --- 離線暫存隊列 (避免無網路丟失資料) ---
+            const [offlineQueue, setOfflineQueue] = useState(() => {
+                const saved = localStorage.getItem('family_offline_queue_v1');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [bioCredentials, setBioCredentials] = useState(() => {
+                const saved = localStorage.getItem('family_bio_creds_v1');
+                return saved ? JSON.parse(saved) : {};
             });
 
             const [pinInput, setPinInput] = useState("");
@@ -177,9 +216,11 @@
             const [tempPin, setTempPin] = useState("");
 
             useEffect(() => {
-                localStorage.setItem('family_security_state_v8', JSON.stringify(securityState));
-                localStorage.setItem('family_member_config_v8', JSON.stringify(familyConfig));
-            }, [securityState, familyConfig]);
+                localStorage.setItem('family_security_state_v9', JSON.stringify(securityState));
+                localStorage.setItem('family_member_config_v9', JSON.stringify(familyConfig));
+                localStorage.setItem('family_bio_creds_v1', JSON.stringify(bioCredentials));
+                localStorage.setItem('family_offline_queue_v1', JSON.stringify(offlineQueue));
+            }, [securityState, familyConfig, bioCredentials, offlineQueue]);
 
             useEffect(() => {
                 if (window.PublicKeyCredential) {
@@ -211,6 +252,17 @@
                         type: t['類型'] || 'expense'
                     }));
                     setTransactions(formatted);
+
+                    // 自動補傳之前離線緩存的紀錄
+                    if (offlineQueue.length > 0) {
+                        for (let item of offlineQueue) {
+                            try {
+                                await fetch(gasUrl, { method: 'POST', body: JSON.stringify(item), mode: 'no-cors' });
+                                setOfflineQueue(prev => prev.filter(q => q.id !== item.id));
+                            } catch(e) { break; }
+                        }
+                    }
+
                 } catch (err) { console.error(err); }
                 setIsLoading(false);
             };
@@ -224,11 +276,16 @@
                 } catch (e) { return String(input); }
             };
 
+            // 統計資料必須包含尚未上傳的離線紀錄
+            const allTransactions = useMemo(() => {
+                return [...transactions, ...offlineQueue].sort((a, b) => new Date(a.date) - new Date(b.date));
+            }, [transactions, offlineQueue]);
+
             const stats = useMemo(() => {
-                const income = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-                const expense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                const income = allTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                const expense = allTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
                 return { income, expense, balance: income - expense };
-            }, [transactions]);
+            }, [allTransactions]);
 
             const handlePinSubmit = (val) => {
                 const next = pinInput + val;
@@ -252,9 +309,10 @@
                 }
             };
 
-            const handleBioAuth = () => {
+            const handleBioAuth = async () => {
                 const name = selectingUser.name;
                 const fails = securityState.failedAttempts[name] || 0;
+                
                 if (securityState.needsPinValidation[name]) {
                     showStatus('error', '密碼已變更，請手動輸入一次密碼');
                     return;
@@ -263,20 +321,99 @@
                     showStatus('error', '指紋已鎖定，請使用密碼');
                     return;
                 }
-                setCurrentUser(selectingUser);
-                setSelectingUser(null);
-                showStatus('success', '指紋解鎖成功');
+
+                const credIdBase64 = bioCredentials[name];
+                if (!credIdBase64) {
+                    showStatus('error', '尚未綁定！請先輸入密碼登入後，至「設定」中綁定設備。');
+                    return;
+                }
+
+                try {
+                    const challenge = new Uint8Array(32);
+                    window.crypto.getRandomValues(challenge);
+
+                    const credential = await navigator.credentials.get({
+                        publicKey: {
+                            challenge: challenge,
+                            rpId: window.location.hostname,
+                            allowCredentials: [{
+                                id: base64urlToBuffer(credIdBase64),
+                                type: 'public-key'
+                            }],
+                            userVerification: "required",
+                            timeout: 60000
+                        }
+                    });
+
+                    if (credential) {
+                        setSecurityState(s => ({ ...s, failedAttempts: { ...s.failedAttempts, [name]: 0 } }));
+                        setCurrentUser(selectingUser);
+                        setSelectingUser(null);
+                        showStatus('success', '指紋 / 臉部驗證成功');
+                    }
+                } catch (err) {
+                    const newFails = fails + 1;
+                    setSecurityState(s => ({ ...s, failedAttempts: { ...s.failedAttempts, [name]: newFails } }));
+                    if (newFails >= 5) {
+                        showStatus('error', '錯誤次數過多，指紋已鎖定');
+                    } else {
+                        showStatus('error', `驗證失敗 (剩餘 ${5 - newFails} 次)`);
+                    }
+                }
+            };
+
+            const registerBiometrics = async () => {
+                try {
+                    const challenge = new Uint8Array(32);
+                    window.crypto.getRandomValues(challenge);
+                    const userId = new Uint8Array(16);
+                    window.crypto.getRandomValues(userId);
+
+                    const credential = await navigator.credentials.create({
+                        publicKey: {
+                            challenge: challenge,
+                            rp: { name: "家庭記帳", id: window.location.hostname },
+                            user: {
+                                id: userId,
+                                name: currentUser.name,
+                                displayName: currentUser.name
+                            },
+                            pubKeyCredParams: [
+                                { alg: -7, type: "public-key" },
+                                { alg: -257, type: "public-key" }
+                            ],
+                            authenticatorSelection: { 
+                                authenticatorAttachment: "platform", 
+                                userVerification: "required" 
+                            },
+                            timeout: 60000
+                        }
+                    });
+
+                    if (credential) {
+                        const credIdBase64 = bufferToBase64url(credential.rawId);
+                        setBioCredentials(prev => ({ ...prev, [currentUser.name]: credIdBase64 }));
+                        showStatus('success', '設備指紋 / 臉部綁定成功！');
+                    }
+                } catch (err) {
+                    showStatus('error', '綁定失敗或使用者取消授權');
+                }
             };
 
             const handleAdd = async (newTx) => {
-                const tx = { ...newTx, member: currentUser.name, id: Date.now() }; 
+                const now = new Date();
+                const tx = { ...newTx, member: currentUser.name, id: Date.now(), date: now.toISOString() }; 
                 setIsLoading(true);
                 try {
                     await fetch(gasUrl, { method: 'POST', body: JSON.stringify(tx), mode: 'no-cors' });
                     setTransactions(prev => [...prev, tx]);
                     showStatus('success', '紀錄成功');
                     setTimeout(syncCloud, 1000);
-                } catch (err) { showStatus('error', '雲端連線失敗'); }
+                } catch (err) { 
+                    // 修正：無網路時將資料丟入緩存，確保不丟失
+                    setOfflineQueue(prev => [...prev, tx]);
+                    showStatus('info', '網路不穩定，已存入本機緩存');
+                }
                 setIsLoading(false);
                 setActiveTab('dashboard');
             };
@@ -358,7 +495,15 @@
                                 <div className="grid grid-cols-3 gap-4 mb-6">
                                     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(k => (<button key={k} onClick={() => k === 'C' ? setPinInput("") : k === '←' ? setPinInput(pinInput.slice(0, -1)) : handlePinSubmit(k)} className="bg-gray-800 text-white h-16 rounded-3xl font-black text-2xl active:bg-blue-600 border border-white/5 transition-colors">{k}</button>))}
                                 </div>
-                                {!hideBio && <button onClick={handleBioAuth} className="w-full py-5 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition-all"><SvgIcon name="bio" size={24} /> 指紋解鎖</button>}
+                                {!hideBio && (
+                                    <button 
+                                        onClick={handleBioAuth} 
+                                        className={`w-full py-5 rounded-[2rem] flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition-all ${bioCredentials[selectingUser.name] ? 'bg-blue-600 text-white shadow-xl' : 'bg-gray-800 text-gray-400 border border-white/10'}`}
+                                    >
+                                        <SvgIcon name="bio" size={24} /> 
+                                        {bioCredentials[selectingUser.name] ? '指紋 / 臉部解鎖' : '點此了解如何綁定指紋'}
+                                    </button>
+                                )}
                                 <button onClick={() => {setSelectingUser(null); setPinInput("");}} className="w-full mt-8 text-gray-500 text-xs font-black uppercase tracking-widest underline">返回成員選擇</button>
                             </div>
                         )}
@@ -366,8 +511,21 @@
                 );
             }
 
+            // 修正：容錯保護日期切割邏輯
+            const renderDateBlock = (dateStr) => {
+                const parts = dateStr?.split('/') || [];
+                const month = parts[1] || '-';
+                const day = parts[2]?.split(' ')[0] || '-';
+                return (
+                    <div className="flex flex-col items-center min-w-[40px] bg-gray-50 py-1.5 rounded-xl border border-gray-100">
+                        <span className="text-[8px] text-gray-400 font-bold uppercase">{month}月</span>
+                        <span className="text-lg font-black text-gray-900 leading-none">{day}</span>
+                    </div>
+                );
+            };
+
             return (
-                <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative overflow-hidden">
+                <div className="min-h-screen bg-gray-50 text-gray-900 safe-pb-main max-w-md mx-auto relative overflow-hidden">
                     {/* 修改 PIN 碼視窗 */}
                     {isChangingPin && (
                         <div className="fixed inset-0 z-[110] bg-gray-900/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 animate-in">
@@ -384,7 +542,7 @@
                     )}
 
                     {statusMsg.text && (
-                        <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in ${statusMsg.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                        <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in ${statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type === 'info' ? 'bg-blue-500 text-white' : 'bg-red-600 text-white')}`}>
                             <span className="text-sm font-bold">{statusMsg.text}</span>
                         </div>
                     )}
@@ -395,6 +553,7 @@
                             <div><h1 className="text-2xl font-black tracking-tighter italic leading-tight">家庭記帳</h1><span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">{currentUser.name} 登入中</span></div>
                         </div>
                         <div className="flex gap-2">
+                            {offlineQueue.length > 0 && <div className="flex items-center gap-1 px-2 py-1 bg-yellow-50 text-yellow-600 rounded-lg text-[10px] font-bold"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></div>未同步</div>}
                             <button onClick={syncCloud} className={`p-2.5 bg-gray-50 rounded-xl ${isLoading ? 'animate-spin text-blue-500' : 'text-gray-600'}`}><SvgIcon name="refresh" size={20}/></button>
                             <button onClick={() => setCurrentUser(null)} className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition"><SvgIcon name="logout" size={20}/></button>
                         </div>
@@ -413,8 +572,8 @@
                                 <div className="space-y-4">
                                     <h3 className="font-black text-lg text-gray-800">最近動態</h3>
                                     <div className="space-y-3">
-                                        {transactions.slice(-5).reverse().map(tx => (
-                                            <div key={tx.id} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-4 shadow-sm active:scale-95 transition">
+                                        {allTransactions.slice(-5).reverse().map((tx, idx) => (
+                                            <div key={tx.id || idx} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-4 shadow-sm active:scale-95 transition">
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${tx.type === 'income' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{tx.category?.charAt(0)}</div>
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 font-bold text-sm text-gray-800">{tx.category} <span className="px-1.5 py-0.5 bg-gray-100 text-[8px] font-black text-gray-400 rounded-md uppercase tracking-widest">{tx.member}</span></div>
@@ -432,13 +591,10 @@
                             <div className="space-y-4 animate-in pb-20">
                                 <h3 className="font-black text-lg uppercase tracking-widest flex items-center gap-2 ml-1 text-gray-800">歷史紀錄清單</h3>
                                 <div className="space-y-2.5">
-                                    {transactions.slice().reverse().map(tx => (
-                                        <div key={tx.id} className="bg-white p-5 rounded-[1.5rem] border border-gray-100 flex justify-between items-center shadow-sm">
+                                    {allTransactions.slice().reverse().map((tx, idx) => (
+                                        <div key={tx.id || idx} className="bg-white p-5 rounded-[1.5rem] border border-gray-100 flex justify-between items-center shadow-sm">
                                             <div className="flex gap-4 items-center">
-                                                <div className="flex flex-col items-center min-w-[40px] bg-gray-50 py-1.5 rounded-xl border border-gray-100">
-                                                    <span className="text-[8px] text-gray-400 font-bold uppercase">{tx.date?.split('/')[1] || '-'}月</span>
-                                                    <span className="text-lg font-black text-gray-900 leading-none">{tx.date?.split('/')[2]?.split(' ')[0] || '-'}</span>
-                                                </div>
+                                                {renderDateBlock(tx.date)}
                                                 <div>
                                                     <div className="flex items-center gap-2 font-bold text-sm text-gray-800">{tx.category} <span className="text-[9px] text-blue-500 font-black uppercase">{tx.member}</span></div>
                                                     <span className="text-[10px] text-gray-400 block truncate max-w-[120px] italic">{tx.desc || '無備註'}</span>
@@ -456,9 +612,27 @@
                                     <h3 className="font-black text-xs mb-6 uppercase flex items-center gap-2 text-gray-800"><SvgIcon name="shield" size={16} className="text-blue-500" /> 安全與帳戶資訊</h3>
                                     <div className="space-y-3">
                                         <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                            <span className="font-black text-sm text-gray-800">{currentUser.name}</span>
+                                            <span className="font-black text-sm text-gray-800">{currentUser.name} (密碼)</span>
                                             <button onClick={() => {setIsChangingPin(true); setPinChangeStep(1);}} className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">變更 PIN 碼</button>
                                         </div>
+                                        {/* 真實生物辨識綁定區 */}
+                                        {biometricAvailable && (
+                                            <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                                <span className="font-black text-sm text-gray-800">指紋 / 臉部辨識</span>
+                                                {bioCredentials[currentUser.name] ? (
+                                                    <button onClick={() => {
+                                                        if(window.confirm('確定要移除設備綁定嗎？下次需手動重新綁定。')) {
+                                                            const newCreds = {...bioCredentials};
+                                                            delete newCreds[currentUser.name];
+                                                            setBioCredentials(newCreds);
+                                                            showStatus('success', '已停用，恢復密碼登入');
+                                                        }
+                                                    }} className="text-[10px] font-black text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">移除綁定</button>
+                                                ) : (
+                                                    <button onClick={registerBiometrics} className="text-[10px] font-black text-green-600 bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">綁定設備</button>
+                                                )}
+                                            </div>
+                                        )}
                                         <div className="flex justify-between p-3 bg-gray-50 rounded-xl text-[10px] font-bold text-gray-500"><span>App 版本</span><span className="font-mono">v{APP_VERSION}</span></div>
                                         <div className="flex justify-between p-3 bg-gray-50 rounded-xl text-[10px] font-bold text-gray-500"><span>雲端版本</span><span className="font-mono text-blue-600">{gasVersion || "未同步"}</span></div>
                                     </div>
@@ -477,7 +651,7 @@
                             </div>
                         )}
                     </main>
-                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/80 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20">
+                    <nav className="fixed bottom-8 safe-bottom-nav left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/80 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20">
                         <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="chart" /></button>
                         <button onClick={() => setActiveTab('history')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'history' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="history" /></button>
                         <button onClick={() => setActiveTab('add')} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 ${activeTab === 'add' ? 'bg-blue-700 text-white rotate-45 shadow-blue-200' : 'bg-gray-900 text-white'}`}><SvgIcon name="plus" size={32} /></button>
