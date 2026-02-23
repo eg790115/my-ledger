@@ -70,13 +70,13 @@
 
         // --- 核心配置 ---
         const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec';
-        const APP_VERSION = "2026.02.24.34";
+        const APP_VERSION = "2026.02.24.36";
 
         // 更新歷程
         const CHANGELOG = [
-            { version: "2026.02.24.34", date: "2026/02/24", note: "【細節優化】加回離線緩存隊列防止無網路丟失、優化 iOS 安全邊距、強制呼叫純數字鍵盤。" },
-            { version: "2026.02.24.33", date: "2026/02/24", note: "【重大安全更新】導入真實 WebAuthn 生物辨識 API，移除裝飾用按鈕。" },
-            { version: "2026.02.24.32", date: "2026/02/24", note: "注入 PWA Manifest，強制 Android 隱藏網址列呈現獨立全螢幕。" }
+            { version: "2026.02.24.36", date: "2026/02/24", note: "修改生物辨識介面文字為「系統解鎖」，避免誤以為不支援圖形或臉部解鎖。" },
+            { version: "2026.02.24.35", date: "2026/02/24", note: "【體驗升級】修正登入頁無提示訊息的問題，並改為選擇成員後全自動喚起指紋解鎖。" },
+            { version: "2026.02.24.34", date: "2026/02/24", note: "加回離線緩存隊列、優化 iOS 安全邊距、強制呼叫純數字鍵盤。" }
         ];
 
         // --- WebAuthn Base64 轉換工具 ---
@@ -156,7 +156,6 @@
                     </div>
                     <div className="flex items-center justify-center mb-8">
                         <span className="text-2xl font-black text-gray-300 mr-1">$</span>
-                        {/* 修正：加入 inputMode="decimal" 強制手機顯示純數字鍵盤 */}
                         <input type="number" inputMode="decimal" autoFocus className={`w-48 text-6xl font-black text-center outline-none bg-transparent ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`} placeholder="0" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
                     </div>
                     <div className="space-y-4 text-left">
@@ -198,7 +197,6 @@
                 return saved ? JSON.parse(saved) : { failedAttempts: {}, needsPinValidation: {} };
             });
 
-            // --- 離線暫存隊列 (避免無網路丟失資料) ---
             const [offlineQueue, setOfflineQueue] = useState(() => {
                 const saved = localStorage.getItem('family_offline_queue_v1');
                 return saved ? JSON.parse(saved) : [];
@@ -253,7 +251,6 @@
                     }));
                     setTransactions(formatted);
 
-                    // 自動補傳之前離線緩存的紀錄
                     if (offlineQueue.length > 0) {
                         for (let item of offlineQueue) {
                             try {
@@ -276,7 +273,6 @@
                 } catch (e) { return String(input); }
             };
 
-            // 統計資料必須包含尚未上傳的離線紀錄
             const allTransactions = useMemo(() => {
                 return [...transactions, ...offlineQueue].sort((a, b) => new Date(a.date) - new Date(b.date));
             }, [transactions, offlineQueue]);
@@ -309,22 +305,25 @@
                 }
             };
 
-            const handleBioAuth = async () => {
-                const name = selectingUser.name;
+            const handleBioAuth = async (targetUser = null) => {
+                const user = targetUser || selectingUser;
+                if (!user) return;
+                
+                const name = user.name;
                 const fails = securityState.failedAttempts[name] || 0;
                 
                 if (securityState.needsPinValidation[name]) {
-                    showStatus('error', '密碼已變更，請手動輸入一次密碼');
+                    showStatus('error', '密碼已變更，請手動輸入一次密碼解除鎖定');
                     return;
                 }
                 if (fails >= 5) {
-                    showStatus('error', '指紋已鎖定，請使用密碼');
+                    showStatus('error', '錯誤太多次已鎖定，請使用密碼登入');
                     return;
                 }
 
                 const credIdBase64 = bioCredentials[name];
                 if (!credIdBase64) {
-                    showStatus('error', '尚未綁定！請先輸入密碼登入後，至「設定」中綁定設備。');
+                    showStatus('info', '尚未綁定設備解鎖！請先輸入密碼登入後，至「設定」中綁定。');
                     return;
                 }
 
@@ -347,17 +346,18 @@
 
                     if (credential) {
                         setSecurityState(s => ({ ...s, failedAttempts: { ...s.failedAttempts, [name]: 0 } }));
-                        setCurrentUser(selectingUser);
+                        setCurrentUser(user);
                         setSelectingUser(null);
-                        showStatus('success', '指紋 / 臉部驗證成功');
+                        setPinInput("");
+                        showStatus('success', '系統解鎖驗證成功');
                     }
                 } catch (err) {
                     const newFails = fails + 1;
                     setSecurityState(s => ({ ...s, failedAttempts: { ...s.failedAttempts, [name]: newFails } }));
                     if (newFails >= 5) {
-                        showStatus('error', '錯誤次數過多，指紋已鎖定');
+                        showStatus('error', '錯誤次數過多，解鎖系統已關閉');
                     } else {
-                        showStatus('error', `驗證失敗 (剩餘 ${5 - newFails} 次)`);
+                        showStatus('error', `驗證取消或失敗 (剩餘 ${5 - newFails} 次)`);
                     }
                 }
             };
@@ -393,7 +393,7 @@
                     if (credential) {
                         const credIdBase64 = bufferToBase64url(credential.rawId);
                         setBioCredentials(prev => ({ ...prev, [currentUser.name]: credIdBase64 }));
-                        showStatus('success', '設備指紋 / 臉部綁定成功！');
+                        showStatus('success', '設備解鎖綁定成功！');
                     }
                 } catch (err) {
                     showStatus('error', '綁定失敗或使用者取消授權');
@@ -410,7 +410,6 @@
                     showStatus('success', '紀錄成功');
                     setTimeout(syncCloud, 1000);
                 } catch (err) { 
-                    // 修正：無網路時將資料丟入緩存，確保不丟失
                     setOfflineQueue(prev => [...prev, tx]);
                     showStatus('info', '網路不穩定，已存入本機緩存');
                 }
@@ -466,6 +465,12 @@
 
                 return (
                     <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in">
+                        {statusMsg.text && (
+                            <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in ${statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type === 'info' ? 'bg-blue-500 text-white' : 'bg-red-600 text-white')}`}>
+                                <span className="text-sm font-bold whitespace-nowrap">{statusMsg.text}</span>
+                            </div>
+                        )}
+
                         {gasVersion && gasVersion !== APP_VERSION && (
                             <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-xs bg-blue-600 p-4 rounded-2xl shadow-2xl flex items-center justify-between">
                                 <div className="text-white flex items-center gap-2">
@@ -485,7 +490,22 @@
                         {!selectingUser ? (
                             <div className="grid grid-cols-1 gap-6 w-full max-w-xs">
                                 {familyConfig.map(user => (
-                                    <button key={user.name} onClick={() => setSelectingUser(user)} className={`${user.color} text-white py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all`}>{user.name}</button>
+                                    <button 
+                                        key={user.name} 
+                                        onClick={() => {
+                                            setSelectingUser(user);
+                                            setPinInput("");
+                                            const f = securityState.failedAttempts[user.name] || 0;
+                                            const needsPin = securityState.needsPinValidation[user.name];
+                                            const hasBio = bioCredentials[user.name];
+                                            if (hasBio && !needsPin && f < 5) {
+                                                handleBioAuth(user);
+                                            }
+                                        }} 
+                                        className={`${user.color} text-white py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all`}
+                                    >
+                                        {user.name}
+                                    </button>
                                 ))}
                             </div>
                         ) : (
@@ -497,11 +517,11 @@
                                 </div>
                                 {!hideBio && (
                                     <button 
-                                        onClick={handleBioAuth} 
+                                        onClick={() => handleBioAuth(selectingUser)} 
                                         className={`w-full py-5 rounded-[2rem] flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition-all ${bioCredentials[selectingUser.name] ? 'bg-blue-600 text-white shadow-xl' : 'bg-gray-800 text-gray-400 border border-white/10'}`}
                                     >
                                         <SvgIcon name="bio" size={24} /> 
-                                        {bioCredentials[selectingUser.name] ? '指紋 / 臉部解鎖' : '點此了解如何綁定指紋'}
+                                        {bioCredentials[selectingUser.name] ? '系統解鎖 (指紋/圖形/臉部)' : '點此綁定設備解鎖'}
                                     </button>
                                 )}
                                 <button onClick={() => {setSelectingUser(null); setPinInput("");}} className="w-full mt-8 text-gray-500 text-xs font-black uppercase tracking-widest underline">返回成員選擇</button>
@@ -511,7 +531,6 @@
                 );
             }
 
-            // 修正：容錯保護日期切割邏輯
             const renderDateBlock = (dateStr) => {
                 const parts = dateStr?.split('/') || [];
                 const month = parts[1] || '-';
@@ -543,7 +562,7 @@
 
                     {statusMsg.text && (
                         <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in ${statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type === 'info' ? 'bg-blue-500 text-white' : 'bg-red-600 text-white')}`}>
-                            <span className="text-sm font-bold">{statusMsg.text}</span>
+                            <span className="text-sm font-bold whitespace-nowrap">{statusMsg.text}</span>
                         </div>
                     )}
 
@@ -618,7 +637,7 @@
                                         {/* 真實生物辨識綁定區 */}
                                         {biometricAvailable && (
                                             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                                <span className="font-black text-sm text-gray-800">指紋 / 臉部辨識</span>
+                                                <span className="font-black text-sm text-gray-800">設備系統解鎖</span>
                                                 {bioCredentials[currentUser.name] ? (
                                                     <button onClick={() => {
                                                         if(window.confirm('確定要移除設備綁定嗎？下次需手動重新綁定。')) {
