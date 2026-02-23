@@ -38,12 +38,12 @@
 
         // --- 核心配置 ---
         const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec';
-        const APP_VERSION = "2026.02.24.29";
+        const APP_VERSION = "2026.02.24.30";
 
         // 更新歷程
         const CHANGELOG = [
-            { version: "2026.02.24.29", date: "2026/02/24", note: "修正編譯錯誤與相鄰 JSX 元素語法錯誤，改為通用 HTML 格式。" },
-            { version: "2026.02.24.26", date: "2026/02/24", note: "改為封裝格式，解決 GitHub 直接顯示原始碼的問題。" },
+            { version: "2026.02.24.30", date: "2026/02/24", note: "修正圖示組件的結構，確保在各種瀏覽器與編譯環境下皆能穩定顯示。" },
+            { version: "2026.02.24.29", date: "2026/02/24", note: "改為通用 HTML 格式，解決 GitHub 直接顯示原始碼的問題。" },
             { version: "2026.02.24.25", date: "2026/02/24", note: "新增指紋 5 次失敗鎖定與改密碼安全驗證邏輯。" }
         ];
 
@@ -55,29 +55,31 @@
                 history: <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8m0-4v4h4"/>,
                 chart: <path d="M21.21 15.89A10 10 0 1 1 8 2.83M22 12A10 10 0 0 0 12 2v10Z"/>,
                 settings: (
-                    <React.Fragment>
+                    <g>
                         <path d="M12.22 2h-.44a2 2 0 0 0-2 2a2 2 0 0 1-2 2a2 2 0 0 0-2 2a2 2 0 0 1-2 2a2 2 0 0 0-2 2a2 2 0 0 1-2 2v.44a2 2 0 0 0 2 2a2 2 0 0 1 2 2a2 2 0 0 0 2 2a2 2 0 0 1 2 2a2 2 0 0 0 2 2a2 2 0 0 1 2 2h.44a2 2 0 0 0 2-2a2 2 0 0 1 2-2a2 2 0 0 0 2-2a2 2 0 0 1 2-2a2 2 0 0 0 2-2a2 2 0 0 1 2-2v-.44a2 2 0 0 0-2-2a2 2 0 0 1-2-2a2 2 0 0 0-2-2a2 2 0 0 1-2-2a2 2 0 0 0-2-2a2 2 0 0 1-2-2Z"/>
                         <circle cx="12" cy="12" r="3"/>
-                    </React.Fragment>
+                    </g>
                 ),
                 logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
                 refresh: <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8m0-4v4h4m-1 8a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16m0 4v-4h-4"/>,
                 bio: (
-                    <React.Fragment>
+                    <g>
                         <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
                         <circle cx="12" cy="12" r="3"/>
-                    </React.Fragment>
+                    </g>
                 ),
                 check: <path d="M20 6L9 17l-5-5"/>,
                 alert: (
-                    <React.Fragment>
+                    <g>
                         <circle cx="12" cy="12" r="10"/>
                         <line x1="12" y1="8" x2="12" y2="12"/>
                         <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </React.Fragment>
+                    </g>
                 ),
                 shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>,
-                download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5l5 5l5-5m-5 5V3"/>
+                download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m4-5l5 5l5-5m-5 5V3"/>,
+                x: <path d="M18 6L6 18M6 6l12 12"/>,
+                key: <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3m-3-3l2.5-2.5"/>
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -131,6 +133,7 @@
             const [gasVersion, setGasVersion] = useState(null);
             const [isLoading, setIsLoading] = useState(false);
             const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
+            const [biometricAvailable, setBiometricAvailable] = useState(false);
             
             const [familyConfig, setFamilyConfig] = useState(() => {
                 const saved = localStorage.getItem('family_member_config_v8');
@@ -147,12 +150,21 @@
 
             const [pinInput, setPinInput] = useState("");
             const [selectingUser, setSelectingUser] = useState(null);
+            const [isChangingPin, setIsChangingPin] = useState(false);
+            const [pinChangeStep, setPinChangeStep] = useState(1);
+            const [tempPin, setTempPin] = useState("");
 
             useEffect(() => {
                 localStorage.setItem('family_security_state_v8', JSON.stringify(securityState));
                 localStorage.setItem('family_member_config_v8', JSON.stringify(familyConfig));
-                syncCloud();
             }, [securityState, familyConfig]);
+
+            useEffect(() => {
+                if (window.PublicKeyCredential) {
+                    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v));
+                }
+                syncCloud();
+            }, []);
 
             const showStatus = (type, text) => {
                 setStatusMsg({ type, text });
@@ -179,6 +191,15 @@
                     setTransactions(formatted);
                 } catch (err) { console.error(err); }
                 setIsLoading(false);
+            };
+
+            const formatFullDateTime = (input) => {
+                if (!input) return '';
+                try {
+                    const d = new Date(input);
+                    if (isNaN(d.getTime())) return String(input);
+                    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                } catch (e) { return String(input); }
             };
 
             const stats = useMemo(() => {
@@ -209,6 +230,22 @@
                 }
             };
 
+            const handleBioAuth = () => {
+                const name = selectingUser.name;
+                const fails = securityState.failedAttempts[name] || 0;
+                if (securityState.needsPinValidation[name]) {
+                    showStatus('error', '密碼已變更，請手動輸入一次密碼');
+                    return;
+                }
+                if (fails >= 5) {
+                    showStatus('error', '指紋已鎖定，請使用密碼');
+                    return;
+                }
+                setCurrentUser(selectingUser);
+                setSelectingUser(null);
+                showStatus('success', '指紋解鎖成功');
+            };
+
             const handleAdd = async (newTx) => {
                 const tx = { ...newTx, member: currentUser.name, id: Date.now() }; 
                 setIsLoading(true);
@@ -220,6 +257,48 @@
                 } catch (err) { showStatus('error', '雲端連線失敗'); }
                 setIsLoading(false);
                 setActiveTab('dashboard');
+            };
+
+            const updatePinOnCloud = async (name, newPin) => {
+                if (!navigator.onLine) return false;
+                try {
+                    await fetch(gasUrl, { method: 'POST', body: JSON.stringify({ action: 'UPDATE_PIN', name, newPin }), mode: 'no-cors' });
+                    return true;
+                } catch (e) { return false; }
+            };
+
+            const handleNewPinSubmit = async (val) => {
+                const next = tempPin + val;
+                if (next.length <= 6) {
+                    setTempPin(next);
+                    if (next.length === 6) {
+                        if (pinChangeStep === 1) {
+                            if (next === currentUser.pin) {
+                                setPinChangeStep(2);
+                                setTempPin("");
+                                showStatus('info', '請輸入 6 位新密碼');
+                            } else {
+                                showStatus('error', '原密碼錯誤');
+                                setTempPin("");
+                            }
+                        } else {
+                            setIsLoading(true);
+                            const success = await updatePinOnCloud(currentUser.name, next);
+                            if (success) {
+                                setFamilyConfig(familyConfig.map(u => u.name === currentUser.name ? { ...u, pin: next } : u));
+                                setSecurityState(s => ({ ...s, needsPinValidation: { ...s.needsPinValidation, [currentUser.name]: true } }));
+                                setIsChangingPin(false);
+                                setCurrentUser(null); 
+                                showStatus('success', '密碼已更新，請重新登入');
+                            } else {
+                                showStatus('error', '雲端同步失敗');
+                            }
+                            setIsLoading(false);
+                            setPinChangeStep(1);
+                            setTempPin("");
+                        }
+                    }
+                }
             };
 
             if (!currentUser) {
@@ -255,10 +334,10 @@
                                 <div className="text-center mb-8"><p className="text-white font-black text-3xl mb-2">{selectingUser.name}</p></div>
                                 <div className="flex justify-center gap-3 mb-10">{[...Array(6)].map((_, i) => (<div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-blue-500 ${pinInput.length > i ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' : 'bg-transparent'}`}></div>))}</div>
                                 <div className="grid grid-cols-3 gap-4 mb-6">
-                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(k => (<button key={k} onClick={() => k === 'C' ? setPinInput("") : k === '←' ? setPinInput(pinInput.slice(0, -1)) : handlePinSubmit(k)} className="bg-gray-800 text-white h-16 rounded-3xl font-black text-2xl active:bg-blue-600 border border-white/5">{k}</button>))}
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(k => (<button key={k} onClick={() => k === 'C' ? setPinInput("") : k === '←' ? setPinInput(pinInput.slice(0, -1)) : handlePinSubmit(k)} className="bg-gray-800 text-white h-16 rounded-3xl font-black text-2xl active:bg-blue-600 border border-white/5 transition-colors">{k}</button>))}
                                 </div>
-                                {!hideBio && <button onClick={() => {setCurrentUser(selectingUser); setSelectingUser(null); showStatus('success', '指紋通過');}} className="w-full py-5 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition-all"><SvgIcon name="bio" size={24} /> 指紋解鎖</button>}
-                                <button onClick={() => {setSelectingUser(null); setPinInput("");}} className="w-full mt-8 text-gray-500 text-xs font-black uppercase tracking-widest underline">返回</button>
+                                {!hideBio && <button onClick={handleBioAuth} className="w-full py-5 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition-all"><SvgIcon name="bio" size={24} /> 指紋解鎖</button>}
+                                <button onClick={() => {setSelectingUser(null); setPinInput("");}} className="w-full mt-8 text-gray-500 text-xs font-black uppercase tracking-widest underline">返回成員選擇</button>
                             </div>
                         )}
                     </div>
@@ -267,18 +346,34 @@
 
             return (
                 <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative overflow-hidden">
+                    {/* 修改 PIN 碼視窗 */}
+                    {isChangingPin && (
+                        <div className="fixed inset-0 z-[110] bg-gray-900/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 animate-in">
+                            <button onClick={() => {setIsChangingPin(false); setTempPin(""); setPinChangeStep(1);}} className="absolute top-10 right-10 text-gray-400 hover:text-white"><SvgIcon name="x" size={32} /></button>
+                            <div className="text-center mb-8">
+                                <div className="bg-blue-600/20 p-4 rounded-3xl mb-4 inline-block"><SvgIcon name="key" size={32} className="text-blue-500" /></div>
+                                <h2 className="text-white text-2xl font-black">{pinChangeStep === 1 ? '身分驗證' : '設定新密碼'}</h2>
+                            </div>
+                            <div className="flex justify-center gap-3 mb-10">{[...Array(6)].map((_, i) => (<div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-blue-500 ${tempPin.length > i ? 'bg-blue-500 shadow-[0_0_15px_#3b82f6]' : 'bg-transparent'}`}></div>))}</div>
+                            <div className="grid grid-cols-3 gap-4 w-full max-w-xs">
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(k => (<button key={k} onClick={() => k === 'C' ? setTempPin("") : k === '←' ? setTempPin(tempPin.slice(0, -1)) : handleNewPinSubmit(k)} className="bg-white/5 text-white h-16 rounded-3xl font-black text-xl active:bg-blue-600 border border-white/5">{k}</button>))}
+                            </div>
+                        </div>
+                    )}
+
                     {statusMsg.text && (
                         <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in ${statusMsg.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
                             <span className="text-sm font-bold">{statusMsg.text}</span>
                         </div>
                     )}
+
                     <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b">
                         <div className="flex items-center gap-3">
                             <div className={`${currentUser.color} w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black shadow-lg`}>{currentUser.name.charAt(0)}</div>
                             <div><h1 className="text-2xl font-black tracking-tighter italic leading-tight">家庭記帳</h1><span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">{currentUser.name} 登入中</span></div>
                         </div>
                         <div className="flex gap-2">
-                            <button onClick={syncCloud} className={`p-2.5 bg-gray-50 rounded-xl ${isLoading ? 'animate-spin text-blue-500' : ''}`}><SvgIcon name="refresh" size={20}/></button>
+                            <button onClick={syncCloud} className={`p-2.5 bg-gray-50 rounded-xl ${isLoading ? 'animate-spin text-blue-500' : 'text-gray-600'}`}><SvgIcon name="refresh" size={20}/></button>
                             <button onClick={() => setCurrentUser(null)} className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition"><SvgIcon name="logout" size={20}/></button>
                         </div>
                     </header>
@@ -287,20 +382,21 @@
                             <div className="space-y-6 animate-in">
                                 <div className="bg-gray-900 p-8 rounded-[3rem] shadow-2xl text-white">
                                     <span className="text-[10px] font-black text-gray-500 uppercase mb-3 block">本月盈餘總結</span>
-                                    <div className="text-5xl font-black mb-8">${stats.balance.toLocaleString()}</div>
+                                    <div className="text-5xl font-black mb-8 tracking-tighter tabular-nums">${stats.balance.toLocaleString()}</div>
                                     <div className="flex w-full gap-4 pt-6 border-t border-white/5 text-center">
                                         <div className="flex-1"><span className="text-[9px] font-black text-gray-500 uppercase block mb-1">收入</span><span className="text-xl font-black text-green-400">+${stats.income.toLocaleString()}</span></div>
                                         <div className="flex-1 border-l border-white/5"><span className="text-[9px] font-black text-gray-500 uppercase block mb-1">支出</span><span className="text-xl font-black text-red-400">-${stats.expense.toLocaleString()}</span></div>
                                     </div>
                                 </div>
                                 <div className="space-y-4">
-                                    <h3 className="font-black text-lg">最近動態</h3>
+                                    <h3 className="font-black text-lg text-gray-800">最近動態</h3>
                                     <div className="space-y-3">
                                         {transactions.slice(-5).reverse().map(tx => (
                                             <div key={tx.id} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-4 shadow-sm active:scale-95 transition">
                                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${tx.type === 'income' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{tx.category?.charAt(0)}</div>
                                                 <div className="flex-1">
-                                                    <div className="flex items-center gap-2 font-bold text-sm">{tx.category} <span className="px-1.5 py-0.5 bg-gray-100 text-[8px] font-black text-gray-400 rounded-md uppercase tracking-widest">{tx.member}</span></div>
+                                                    <div className="flex items-center gap-2 font-bold text-sm text-gray-800">{tx.category} <span className="px-1.5 py-0.5 bg-gray-100 text-[8px] font-black text-gray-400 rounded-md uppercase tracking-widest">{tx.member}</span></div>
+                                                    <div className="text-[10px] text-gray-400 mt-0.5">{formatFullDateTime(tx.date)}</div>
                                                 </div>
                                                 <div className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>${Number(tx.amount).toLocaleString()}</div>
                                             </div>
@@ -312,15 +408,19 @@
                         {activeTab === 'add' && <AddTransactionForm categories={['餐飲', '交通', '購物', '居家', '水電', '醫療', '薪資', '投資', '雜項']} member={currentUser.name} onSubmit={handleAdd} isLoading={isLoading} />}
                         {activeTab === 'history' && (
                             <div className="space-y-4 animate-in pb-20">
-                                <h3 className="font-black text-lg uppercase tracking-widest">歷史紀錄清單</h3>
+                                <h3 className="font-black text-lg uppercase tracking-widest flex items-center gap-2 ml-1 text-gray-800">歷史紀錄清單</h3>
                                 <div className="space-y-2.5">
                                     {transactions.slice().reverse().map(tx => (
                                         <div key={tx.id} className="bg-white p-5 rounded-[1.5rem] border border-gray-100 flex justify-between items-center shadow-sm">
                                             <div className="flex gap-4 items-center">
-                                                <div className="flex flex-col items-center min-w-[40px] bg-gray-50 py-1.5 rounded-xl border">
+                                                <div className="flex flex-col items-center min-w-[40px] bg-gray-50 py-1.5 rounded-xl border border-gray-100">
+                                                    <span className="text-[8px] text-gray-400 font-bold uppercase">{tx.date?.split('/')[1] || '-'}月</span>
                                                     <span className="text-lg font-black text-gray-900 leading-none">{tx.date?.split('/')[2]?.split(' ')[0] || '-'}</span>
                                                 </div>
-                                                <div><div className="flex items-center gap-2 font-bold text-sm">{tx.category} <span className="text-[9px] text-blue-500 font-black uppercase">{tx.member}</span></div><span className="text-[10px] text-gray-400">{tx.desc || '無備註'}</span></div>
+                                                <div>
+                                                    <div className="flex items-center gap-2 font-bold text-sm text-gray-800">{tx.category} <span className="text-[9px] text-blue-500 font-black uppercase">{tx.member}</span></div>
+                                                    <span className="text-[10px] text-gray-400 block truncate max-w-[120px] italic">{tx.desc || '無備註'}</span>
+                                                </div>
                                             </div>
                                             <div className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>${Number(tx.amount).toLocaleString()}</div>
                                         </div>
@@ -331,10 +431,14 @@
                         {activeTab === 'settings' && (
                             <div className="space-y-4 animate-in">
                                 <div className="bg-white p-6 rounded-3xl border shadow-sm border-gray-100">
-                                    <h3 className="font-black text-xs mb-4 uppercase flex items-center gap-2 text-gray-800"><SvgIcon name="shield" size={16} className="text-blue-500" /> 系統資訊</h3>
+                                    <h3 className="font-black text-xs mb-6 uppercase flex items-center gap-2 text-gray-800"><SvgIcon name="shield" size={16} className="text-blue-500" /> 安全與帳戶資訊</h3>
                                     <div className="space-y-3">
-                                        <div className="flex justify-between p-3 bg-gray-50 rounded-xl text-[10px] font-bold"><span>App 版本</span><span className="font-mono">v{APP_VERSION}</span></div>
-                                        <div className="flex justify-between p-3 bg-gray-50 rounded-xl text-[10px] font-bold"><span>雲端版本</span><span className="font-mono text-blue-600">{gasVersion || "未同步"}</span></div>
+                                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                            <span className="font-black text-sm text-gray-800">{currentUser.name}</span>
+                                            <button onClick={() => {setIsChangingPin(true); setPinChangeStep(1);}} className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">變更 PIN 碼</button>
+                                        </div>
+                                        <div className="flex justify-between p-3 bg-gray-50 rounded-xl text-[10px] font-bold text-gray-500"><span>App 版本</span><span className="font-mono">v{APP_VERSION}</span></div>
+                                        <div className="flex justify-between p-3 bg-gray-50 rounded-xl text-[10px] font-bold text-gray-500"><span>雲端版本</span><span className="font-mono text-blue-600">{gasVersion || "未同步"}</span></div>
                                     </div>
                                 </div>
                                 <div className="bg-white p-6 rounded-3xl border shadow-sm border-gray-100">
@@ -352,11 +456,11 @@
                         )}
                     </main>
                     <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/80 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20">
-                        <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex justify-center py-4 rounded-3xl ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="chart" /></button>
-                        <button onClick={() => setActiveTab('history')} className={`flex-1 flex justify-center py-4 rounded-3xl ${activeTab === 'history' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="history" /></button>
-                        <button onClick={() => setActiveTab('add')} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl ${activeTab === 'add' ? 'bg-blue-700 text-white rotate-45 shadow-blue-200' : 'bg-gray-900 text-white'}`}><SvgIcon name="plus" size={32} /></button>
+                        <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="chart" /></button>
+                        <button onClick={() => setActiveTab('history')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'history' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="history" /></button>
+                        <button onClick={() => setActiveTab('add')} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 ${activeTab === 'add' ? 'bg-blue-700 text-white rotate-45 shadow-blue-200' : 'bg-gray-900 text-white'}`}><SvgIcon name="plus" size={32} /></button>
                         <div className="flex-1"></div>
-                        <button onClick={() => setActiveTab('settings')} className={`flex-1 flex justify-center py-4 rounded-3xl ${activeTab === 'settings' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="settings" /></button>
+                        <button onClick={() => setActiveTab('settings')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'settings' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="settings" /></button>
                     </nav>
                 </div>
             );
