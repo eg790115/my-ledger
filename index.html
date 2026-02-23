@@ -11,6 +11,28 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#111827">
 
+    <!-- 動態生成 Manifest 讓 Android Chrome 隱藏網址列 -->
+    <script>
+        const manifestJSON = {
+            "name": "家庭記帳",
+            "short_name": "記帳",
+            "display": "standalone",
+            "start_url": ".",
+            "background_color": "#111827",
+            "theme_color": "#111827",
+            "icons": [{
+                "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z'/%3E%3C/svg%3E",
+                "sizes": "512x512",
+                "type": "image/svg+xml"
+            }]
+        };
+        const blob = new Blob([JSON.stringify(manifestJSON)], { type: 'application/manifest+json' });
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = URL.createObjectURL(blob);
+        document.head.appendChild(manifestLink);
+    </script>
+
     <!-- 載入執行環境 (CDN) -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -38,12 +60,12 @@
 
         // --- 核心配置 ---
         const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec';
-        const APP_VERSION = "2026.02.24.31";
+        const APP_VERSION = "2026.02.24.32";
 
         // 更新歷程
         const CHANGELOG = [
+            { version: "2026.02.24.32", date: "2026/02/24", note: "注入 PWA Manifest，強制 Android 隱藏網址列呈現獨立全螢幕。" },
             { version: "2026.02.24.31", date: "2026/02/24", note: "確保跨瀏覽器相容性，優化 CDN 載入穩定度。" },
-            { version: "2026.02.24.30", date: "2026/02/24", note: "修正圖示組件的結構，確保在各種瀏覽器與編譯環境下皆能穩定顯示。" },
             { version: "2026.02.24.29", date: "2026/02/24", note: "改為通用 HTML 格式，解決 GitHub 直接顯示原始碼的問題。" }
         ];
 
