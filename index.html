@@ -66,13 +66,13 @@
 
         const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec'; 
         
-        const APP_VERSION = "2026.02.24.190";
+        const APP_VERSION = "2026.02.24.210";
 
         const CHANGELOG = [
-            { version: "2026.02.24.190", date: "2026/02/24", note: "安全同步升級：修復並啟用「跨裝置密碼同步」，確保從雲端正確讀取最新 PIN 碼與生物辨識狀態。" },
-            { version: "2026.02.24.185", date: "2026/02/24", note: "介面優化：編輯圖示移至金額右側且僅保留圖案。修改資料後自動附加 (已編輯) 戳記。" },
-            { version: "2026.02.24.180", date: "2026/02/24", note: "重大更新：支援歷史紀錄「編輯」與「刪除」功能，並整合離線對列機制。" },
-            { version: "2026.02.24.175", date: "2026/02/24", note: "功能新增：記帳頁面加入「日期與時間」選擇器。" }
+            { version: "2026.02.24.210", date: "2026/02/24", note: "功能優化：歷史清單下拉選單移除表情符號並套用統一樣式；引入分頁系統解決資料過多問題。" },
+            { version: "2026.02.24.205", date: "2026/02/24", note: "功能優化：歷史帳目時間篩選移至標題下方靠左，選項改為近一周/一個月/三個月/六個月，並新增無資料時的提示。" },
+            { version: "2026.02.24.195", date: "2026/02/24", note: "功能新增：歷史帳目紀錄加入「常用時間篩選」功能。" },
+            { version: "2026.02.24.190", date: "2026/02/24", note: "安全同步升級：修復並啟用「跨裝置密碼同步」。" }
         ];
 
         // --- 內建圖示元件 ---
@@ -164,7 +164,6 @@
             );
         };
 
-        // --- 編輯專用彈窗組件 ---
         const EditTransactionModal = ({ tx, categories, loginUser, onSave, onDelete, onCancel, isLoading }) => {
             const [formData, setFormData] = useState({ ...tx });
             const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -184,7 +183,6 @@
                 <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black">
                     <div className="w-full max-w-sm relative">
                         <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition"><SvgIcon name="close" size={32}/></button>
-                        
                         <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
                             <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
                             <h2 className="text-xl font-black text-center mb-6 text-gray-800 pt-2">編輯帳目</h2>
@@ -260,10 +258,8 @@
             const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
             const [biometricAvailable, setBiometricAvailable] = useState(false);
             
-            // 最後同步時間狀態 (從本地讀取快取)
             const [lastSyncText, setLastSyncText] = useState(() => localStorage.getItem('last_sync_time_v15') || '----/--/-- --:--');
 
-            // 離線緩存隊列
             const [syncQueue, setSyncQueue] = useState(() => {
                 const saved = localStorage.getItem('pending_sync_v15');
                 return saved ? JSON.parse(saved) : [];
@@ -296,16 +292,24 @@
             const [pinInput, setPinInput] = useState("");
             const [selectingUser, setSelectingUser] = useState(null);
             
-            // 更換密碼相關狀態
             const [isChangingPin, setIsChangingPin] = useState(false);
             const [pinChangeStep, setPinChangeStep] = useState(1);
             const [tempPin, setTempPin] = useState("");
             const [newPinCache, setNewPinCache] = useState("");
             const [showChangelog, setShowChangelog] = useState(false);
-            const [historyFilter, setHistoryFilter] = useState('all'); 
             
-            // 編輯狀態
+            // 歷史紀錄篩選與分頁狀態
+            const [historyFilter, setHistoryFilter] = useState('all'); 
+            const [timeFilter, setTimeFilter] = useState('all'); 
+            const [currentPage, setCurrentPage] = useState(1);
+            const ITEMS_PER_PAGE = 10;
+            
             const [editingTx, setEditingTx] = useState(null);
+
+            // 當篩選條件改變時，自動重置回第一頁
+            useEffect(() => {
+                setCurrentPage(1);
+            }, [historyFilter, timeFilter]);
 
             useEffect(() => {
                 localStorage.setItem('pending_sync_v15', JSON.stringify(syncQueue));
@@ -335,13 +339,12 @@
 
                     if (data.gasVersion) setGasVersion(data.gasVersion);
 
-                    // 🔴 核心修復：從後端同步最新的成員密碼與生物辨識設定
                     if (data.members && data.members.length > 0) {
                         setFamilyConfig(data.members);
                     }
 
                     const formatted = (data.transactions || []).map((t, i) => ({
-                        id: t.id || i, // GAS 已經確保有 id
+                        id: t.id || i, 
                         amount: parseFloat(t['金額']) || 0,
                         category: t['類別'] || '一般',
                         date: t['日期時間'] || t['日期'] || '',
@@ -402,7 +405,6 @@
                 }
             };
 
-            // 處理編輯紀錄
             const handleUpdateTx = async (updatedTx) => {
                 setIsLoading(true);
                 let finalDateStr = updatedTx.date;
@@ -410,14 +412,12 @@
                     finalDateStr = finalDateStr.replace('T', ' ').replace(/-/g, '/');
                 }
                 
-                // 加上 (已編輯) 的戳記
                 if (!finalDateStr.includes('(已編輯)')) {
                     finalDateStr += ' (已編輯)';
                 }
                 
                 const txPayload = { ...updatedTx, date: finalDateStr, action: 'UPDATE_TX' };
                 
-                // 本地樂觀更新
                 setTransactions(prev => prev.map(t => t.id === updatedTx.id ? { ...txPayload, recorder: t.recorder } : t));
                 setEditingTx(null);
                 
@@ -438,12 +438,10 @@
                 }
             };
 
-            // 處理刪除紀錄
             const handleDeleteTx = async (id) => {
                 setIsLoading(true);
                 const txPayload = { id, action: 'DELETE_TX' };
                 
-                // 本地樂觀刪除
                 setTransactions(prev => prev.filter(t => t.id !== id));
                 setEditingTx(null);
                 
@@ -526,7 +524,6 @@
                 } catch (err) { showStatus('error', '指紋/臉部驗證失敗'); }
             };
 
-            // 優化後的 Date 顯示，會完整保留 (已編輯) 標記
             const displayDateClean = (val) => {
                 if (!val) return '';
                 let str = String(val).replace(/上午|下午|AM|PM/gi, '').trim();
@@ -558,11 +555,45 @@
                 finally { setIsLoading(false); }
             };
 
+            // 計算篩選與分頁
+            const filteredHistory = useMemo(() => {
+                return myTransactions.slice().reverse()
+                    .filter(tx => historyFilter === 'all' || tx.type === historyFilter)
+                    .filter(tx => {
+                        if (timeFilter === 'all') return true;
+                        if (!tx.date) return true;
+                        
+                        let cleanDateStr = String(tx.date).replace(/ \(已編輯\)/g, '').replace(/\(已編輯\)/g, '').replace(/-/g, '/');
+                        if (cleanDateStr.includes('T')) cleanDateStr = cleanDateStr.replace('T', ' ');
+                        
+                        const txDate = new Date(cleanDateStr);
+                        if (isNaN(txDate.getTime())) return true;
+                        
+                        const now = new Date();
+                        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                        const txTime = txDate.getTime();
+                        
+                        switch (timeFilter) {
+                            case 'last_1_week': return txTime >= (todayStart - 7 * 24 * 60 * 60 * 1000);
+                            case 'last_1_month': return txTime >= (todayStart - 30 * 24 * 60 * 60 * 1000);
+                            case 'last_3_months': return txTime >= (todayStart - 90 * 24 * 60 * 60 * 1000);
+                            case 'last_6_months': return txTime >= (todayStart - 180 * 24 * 60 * 60 * 1000);
+                            default: return true;
+                        }
+                    });
+            }, [myTransactions, historyFilter, timeFilter]);
+
+            const totalPages = Math.ceil(filteredHistory.length / ITEMS_PER_PAGE);
+            const paginatedHistory = useMemo(() => {
+                const start = (currentPage - 1) * ITEMS_PER_PAGE;
+                return filteredHistory.slice(start, start + ITEMS_PER_PAGE);
+            }, [filteredHistory, currentPage]);
+
             if (!currentUser) {
                 return (
                     <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
                         <div className="mb-12 text-white">
-                            <div className="bg-blue-600 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 text-white font-black"><SvgIcon name="wallet" size={36} /></div>
+                            <div className="bg-blue-600 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 text-white"><SvgIcon name="wallet" size={36} /></div>
                             <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
                             <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
                         </div>
@@ -671,7 +702,6 @@
                     <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 font-black">
                         <div className="flex items-center gap-3 text-left font-black"><div className={`${currentUser.color} w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/30 font-black`}>{currentUser.name.charAt(0)}</div><h1 className="text-2xl font-black tracking-tighter italic font-black">家庭記帳</h1></div>
                         <div className="flex items-center gap-3 font-black">
-                            {/* 最後同步時間 YYYY/MM/DD HH:mm */}
                             <div className="text-right leading-none font-black">
                                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5 font-black">Last Sync</p>
                                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
@@ -684,7 +714,6 @@
                                     </div>
                                 )}
                             </div>
-                            {/* 登出按鈕 */}
                             <button onClick={() => setCurrentUser(null)} className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition-all flex items-center justify-center font-black"><SvgIcon name="logout" size={20}/></button>
                         </div>
                     </header>
@@ -735,40 +764,84 @@
                         )}
                         {activeTab === 'add' && <AddTransactionForm categories={['餐飲', '交通', '購物', '居家', '水電', '醫療', '薪資', '投資', '雜項']} loginUser={currentUser.name} onSubmit={handleAdd} isLoading={isLoading} />}
                         {activeTab === 'history' && (
-                            <div className="space-y-4 animate-in pb-20 text-left font-black">
-                                <div className="flex justify-between items-center ml-1 pr-1 font-black">
-                                    <h3 className="font-black text-lg font-black">歷史帳目紀錄</h3>
+                            <div className="space-y-4 animate-in pb-24 text-left font-black">
+                                <div className="flex justify-between items-end ml-1 pr-1 font-black">
+                                    <div>
+                                        <h3 className="font-black text-lg text-gray-800">歷史帳目紀錄</h3>
+                                        <div className="relative mt-2 font-black">
+                                            <select 
+                                                value={timeFilter}
+                                                onChange={(e) => setTimeFilter(e.target.value)}
+                                                className="appearance-none bg-gray-200 text-gray-600 font-black text-[11px] py-1.5 pl-3 pr-7 rounded-lg outline-none cursor-pointer"
+                                            >
+                                                <option value="all">全部時間</option>
+                                                <option value="last_1_week">近一周</option>
+                                                <option value="last_1_month">近一個月</option>
+                                                <option value="last_3_months">近三個月</option>
+                                                <option value="last_6_months">近六個月</option>
+                                            </select>
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                <svg className="w-3 h-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="flex bg-gray-200 p-1 rounded-xl gap-1 font-black">
                                         <button onClick={() => setHistoryFilter('all')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${historyFilter === 'all' ? 'bg-white shadow-sm text-gray-900 font-black' : 'text-gray-500 font-black'}`}>全部</button>
                                         <button onClick={() => setHistoryFilter('income')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${historyFilter === 'income' ? 'bg-white shadow-sm text-green-600 font-black' : 'text-gray-500 font-black'}`}>收入</button>
                                         <button onClick={() => setHistoryFilter('expense')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${historyFilter === 'expense' ? 'bg-white shadow-sm text-red-600 font-black' : 'text-gray-500 font-black'}`}>支出</button>
                                     </div>
                                 </div>
+                                
                                 <div className="space-y-2.5 text-gray-800 font-black text-left font-black">
-                                    {myTransactions.slice().reverse().filter(tx => historyFilter === 'all' || tx.type === historyFilter).map(tx => {
-                                        const isReceivedFromOthers = tx.member === currentUser.name && tx.recorder !== currentUser.name;
-                                        return (
-                                            <div key={tx.id} className="bg-white p-4 rounded-[1.5rem] border border-gray-100 flex justify-between items-center shadow-sm font-black text-left font-black">
-                                                <div className="flex gap-4 items-center min-w-0 text-left font-black">
-                                                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-[17px] shrink-0 leading-none ${tx.type === 'income' ? 'bg-green-600 text-white shadow-lg font-black' : 'bg-red-600 text-white shadow-lg font-black'}`}>{tx.type === 'income' ? '收入' : '支出'}</div>
-                                                    <div className="min-w-0 font-black text-left text-gray-800 font-black">
-                                                        <div className="flex items-center gap-2 font-bold text-base truncate font-black text-gray-800 text-left font-black">{tx.category}</div>
-                                                        <div className="text-[10px] text-gray-400 block truncate font-medium mt-1 text-left font-black">
-                                                            {isReceivedFromOthers ? `由${tx.recorder}記 · ` : ''}{displayDateClean(tx.date)}
+                                    {filteredHistory.length === 0 ? (
+                                        <div className="py-12 text-center">
+                                            <p className="text-xs font-black text-gray-400">此區間目前無符合的紀錄</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {paginatedHistory.map(tx => {
+                                                const isReceivedFromOthers = tx.member === currentUser.name && tx.recorder !== currentUser.name;
+                                                return (
+                                                    <div key={tx.id} className="bg-white p-4 rounded-[1.5rem] border border-gray-100 flex justify-between items-center shadow-sm font-black text-left font-black">
+                                                        <div className="flex gap-4 items-center min-w-0 text-left font-black">
+                                                            <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-[17px] shrink-0 leading-none ${tx.type === 'income' ? 'bg-green-600 text-white shadow-lg font-black' : 'bg-red-600 text-white shadow-lg font-black'}`}>{tx.type === 'income' ? '收入' : '支出'}</div>
+                                                            <div className="min-w-0 font-black text-left text-gray-800 font-black">
+                                                                <div className="flex items-center gap-2 font-bold text-base truncate font-black text-gray-800 text-left font-black">{tx.category}</div>
+                                                                <div className="text-[10px] text-gray-400 block truncate font-medium mt-1 text-left font-black">
+                                                                    {isReceivedFromOthers ? `由${tx.recorder}記 · ` : ''}{displayDateClean(tx.date)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="flex items-center shrink-0 gap-2 font-black">
+                                                            <span className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'} font-black`}>${Number(tx.amount).toLocaleString()}</span>
+                                                            <button onClick={() => setEditingTx(tx)} className="text-gray-400 bg-gray-50 p-2 rounded-xl active:scale-95 transition-all flex items-center justify-center font-black border border-gray-100 hover:text-blue-500 hover:bg-blue-50">
+                                                                <SvgIcon name="edit" size={16} />
+                                                            </button>
                                                         </div>
                                                     </div>
+                                                );
+                                            })}
+
+                                            {totalPages > 1 && (
+                                                <div className="flex justify-between items-center mt-6 bg-gray-200/50 p-1.5 rounded-2xl">
+                                                    <button 
+                                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                        disabled={currentPage === 1}
+                                                        className="px-4 py-2.5 bg-white rounded-xl font-black text-xs text-gray-700 shadow-sm disabled:opacity-50 transition-all active:scale-95"
+                                                    >上一頁</button>
+                                                    <span className="text-[10px] font-black text-gray-500">
+                                                        第 {currentPage} / {totalPages} 頁
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                        disabled={currentPage === totalPages}
+                                                        className="px-4 py-2.5 bg-white rounded-xl font-black text-xs text-gray-700 shadow-sm disabled:opacity-50 transition-all active:scale-95"
+                                                    >下一頁</button>
                                                 </div>
-                                                
-                                                {/* 右側：金額與編輯按鈕平行排列 */}
-                                                <div className="flex items-center shrink-0 gap-2 font-black">
-                                                    <span className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'} font-black`}>${Number(tx.amount).toLocaleString()}</span>
-                                                    <button onClick={() => setEditingTx(tx)} className="text-gray-400 bg-gray-50 p-2 rounded-xl active:scale-95 transition-all flex items-center justify-center font-black border border-gray-100 hover:text-blue-500 hover:bg-blue-50">
-                                                        <SvgIcon name="edit" size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                            )}
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         )}
