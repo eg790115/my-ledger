@@ -57,18 +57,18 @@
 </head>
 
 <body class="bg-gray-50 text-gray-900">
-  <!-- ✅ React 一定要有 root -->
   <div id="root"></div>
 
   <script type="text/babel">
     console.log("BABEL BOOT OK");
+    console.log("BUILD", "2026-02-24-APP-OK");
 
     const { useEffect, useMemo, useState } = React;
 
-    // ✅ 你的 GAS /exec
+    // ✅ 你的 GAS /exec（保持你目前這個）
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
 
-    // ✅ 這串要跟 GAS 的 APP_SECRET 一模一樣
+    // ✅ 通關密碼直接填入
     const APP_SECRET = "0970220807";
 
     const LS = {
@@ -89,6 +89,19 @@
       try { return JSON.parse(s); } catch { return fallback; }
     };
 
+    const safeArrayLS = (key) => {
+      const raw = localStorage.getItem(key);
+      if (raw === null || raw === "null" || raw === "undefined") return [];
+      const v = safeParse(raw, []);
+      return Array.isArray(v) ? v : [];
+    };
+
+    const safeStringLS = (key, fallback="") => {
+      const v = localStorage.getItem(key);
+      if (v === null || v === "null" || v === "undefined") return fallback;
+      return v;
+    };
+
     async function postGAS(payload) {
       const res = await fetch(gasUrl, {
         method: "POST",
@@ -100,14 +113,16 @@
 
     function App() {
       const [online, setOnline] = useState(navigator.onLine);
-      const [pending, setPending] = useState(() => safeParse(localStorage.getItem(LS.pending), []));
-      const [txCache, setTxCache] = useState(() => safeParse(localStorage.getItem(LS.txCache), []));
-      const [lastSync, setLastSync] = useState(localStorage.getItem(LS.lastSync) || "----/--/-- --:--");
 
-      const [user, setUser] = useState(localStorage.getItem(LS.lastUser) || null);
+      const [pending, setPending] = useState(() => safeArrayLS(LS.pending));
+      const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
+      const [lastSync, setLastSync] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
+
+      const [user, setUser] = useState(() => safeStringLS(LS.lastUser, ""));
       const [pin, setPin] = useState("");
-      const [sessionToken, setSessionToken] = useState(localStorage.getItem(LS.sessionToken) || "");
-      const [sessionExp, setSessionExp] = useState(Number(localStorage.getItem(LS.sessionExp) || 0));
+
+      const [sessionToken, setSessionToken] = useState(() => safeStringLS(LS.sessionToken, ""));
+      const [sessionExp, setSessionExp] = useState(() => Number(safeStringLS(LS.sessionExp, "0")));
 
       const [status, setStatus] = useState("");
 
@@ -125,47 +140,70 @@
       useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(pending)), [pending]);
       useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
 
-      const sessionValid = useMemo(() => sessionToken && sessionExp && Date.now() < sessionExp, [sessionToken, sessionExp]);
+      const sessionValid = useMemo(() => {
+        return !!(sessionToken && sessionExp && Date.now() < sessionExp);
+      }, [sessionToken, sessionExp]);
 
-      const addOffline = () => {
+      const toast = (msg) => {
+        setStatus(msg);
+        setTimeout(() => setStatus(""), 2500);
+      };
+
+      const clearLocal = () => {
+        Object.keys(localStorage).forEach(k => {
+          if (k.includes("v16") || k.includes("pending") || k.includes("tx_cache") || k.includes("last_sync") || k.includes("session_")) {
+            localStorage.removeItem(k);
+          }
+        });
+        setPending([]);
+        setTxCache([]);
+        setSessionToken("");
+        setSessionExp(0);
+        setLastSync("----/--/-- --:--");
+        toast("已清除本機資料");
+      };
+
+      const addOffline = (member) => {
         const item = {
           id: Date.now(),
           action: "ADD_TX",
-          member: user || "爸爸",
+          member: member,
           type: "expense",
           amount: 100,
           category: "餐飲",
-          desc: "離線測試",
+          desc: "離線暫存",
           date: nowStr(),
-          recorder: user || "離線",
+          recorder: online ? (user || "系統") : "離線",
         };
         setPending(p => [...p, item]);
-        setStatus("已暫存 1 筆（待同步）");
+        toast("已暫存 1 筆（待同步）");
       };
 
       const login = async () => {
-        if (!online) { setStatus("離線：無法雲端登入，但可先新增暫存"); return; }
-        if (!user || !pin) { setStatus("請選成員並輸入 PIN"); return; }
-        setStatus("登入中...");
+        if (!online) { toast("離線：無法雲端登入，但可先新增暫存"); return; }
+        if (!user || !pin) { toast("請選成員並輸入 PIN"); return; }
+        toast("登入中...");
         try {
           const data = await postGAS({ secret: APP_SECRET, action: "AUTH_LOGIN", name: user, pin });
           if (data.result !== "success") throw new Error(data.message || "登入失敗");
           setSessionToken(data.sessionToken);
           setSessionExp(Number(data.sessionExp));
+
           localStorage.setItem(LS.sessionToken, data.sessionToken);
           localStorage.setItem(LS.sessionExp, String(data.sessionExp));
           localStorage.setItem(LS.lastUser, user);
-          setStatus("登入成功（已取得 session）");
+
           setPin("");
+          toast("登入成功");
         } catch (e) {
-          setStatus("登入失敗：" + (e.message || e));
+          toast("登入失敗：" + (e.message || e));
         }
       };
 
       const fetchCloud = async () => {
-        if (!online) { setStatus("離線：無法抓雲端"); return; }
-        if (!sessionValid) { setStatus("請先登入（或 session 過期）"); return; }
-        setStatus("抓取雲端資料中...");
+        if (!online) { toast("離線：無法抓雲端"); return; }
+        if (!sessionValid) { toast("請先登入（或 session 過期）"); return; }
+        toast("抓取雲端資料中...");
         try {
           const data = await postGAS({ secret: APP_SECRET, action: "GET_TX", sessionToken });
           if (data.result !== "success") throw new Error(data.message || "GET_TX 失敗");
@@ -179,12 +217,36 @@
             type: t["類型"] || "expense",
           }));
           setTxCache(formatted);
+
           const ts = nowStr();
           setLastSync(ts);
           localStorage.setItem(LS.lastSync, ts);
-          setStatus("雲端抓取成功");
+
+          toast("雲端抓取成功");
         } catch (e) {
-          setStatus("抓取失敗：" + (e.message || e));
+          toast("抓取失敗：" + (e.message || e));
+        }
+      };
+
+      const syncPending = async () => {
+        if (!online) { toast("離線：無法同步"); return; }
+        if (!sessionValid) { toast("請先登入（或 session 過期）"); return; }
+        if (!pending.length) { toast("目前沒有待同步"); return; }
+
+        toast("同步中...");
+        try {
+          // 一筆一筆送（成功才刪）
+          for (const tx of [...pending]) {
+            const payload = { ...tx, secret: APP_SECRET, sessionToken };
+            const res = await postGAS(payload);
+            if (res.result !== "success") throw new Error(res.message || "同步失敗");
+            setPending(prev => prev.filter(p => p.id !== tx.id));
+          }
+          toast("同步完成");
+          // 同步完順便刷新
+          await fetchCloud();
+        } catch (e) {
+          toast("同步中斷：" + (e.message || e));
         }
       };
 
@@ -194,11 +256,25 @@
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-2xl font-black italic">家庭記帳</div>
-                <div className="text-xs text-white/60 mt-1">狀態：{online ? "線上" : "離線"} · 待同步 {pending.length} · 最後同步 {lastSync}</div>
+                <div className="text-xs text-white/60 mt-1">
+                  狀態：{online ? "線上" : "離線"} · 待同步 {Array.isArray(pending) ? pending.length : 0} · 最後同步 {lastSync}
+                </div>
               </div>
               <div className={`px-3 py-1 rounded-xl text-xs font-black ${sessionValid ? "bg-green-500/20 text-green-200" : "bg-yellow-500/20 text-yellow-200"}`}>
                 {sessionValid ? "已登入" : "未登入"}
               </div>
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button onClick={clearLocal} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/10 text-xs font-black active:scale-95">
+                清除本機
+              </button>
+              <button onClick={syncPending} className="px-4 py-2 rounded-2xl bg-blue-600 text-white text-xs font-black active:scale-95">
+                同步暫存
+              </button>
+              <button onClick={fetchCloud} className="px-4 py-2 rounded-2xl bg-white text-gray-900 text-xs font-black active:scale-95">
+                抓雲端
+              </button>
             </div>
           </div>
 
@@ -214,25 +290,49 @@
             <input value={pin} onChange={(e)=>setPin(e.target.value)} maxLength={6} inputMode="numeric"
               placeholder="輸入 6 位 PIN"
               className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
-            <div className="flex gap-2">
-              <button onClick={login} className="flex-1 py-3 rounded-2xl bg-gray-900 text-white font-black">登入</button>
-              <button onClick={fetchCloud} className="flex-1 py-3 rounded-2xl bg-blue-600 text-white font-black">抓雲端</button>
-            </div>
+            <button onClick={login} className="w-full py-3 rounded-2xl bg-gray-900 text-white font-black active:scale-95">
+              登入
+            </button>
           </div>
 
           <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm font-black text-gray-700">離線暫存（可先新增）</div>
-              <button onClick={addOffline} className="px-4 py-2 rounded-2xl bg-gray-900 text-white font-black text-sm">+ 新增測試暫存</button>
+              <div className="flex gap-2">
+                <button onClick={() => addOffline("爸爸")} className="px-3 py-2 rounded-2xl bg-gray-900 text-white font-black text-sm active:scale-95">+ 爸爸</button>
+                <button onClick={() => addOffline("媽媽")} className="px-3 py-2 rounded-2xl bg-gray-900 text-white font-black text-sm active:scale-95">+ 媽媽</button>
+              </div>
             </div>
-            {pending.length === 0 ? (
+
+            {(Array.isArray(pending) && pending.length === 0) ? (
               <div className="text-sm text-gray-500">目前沒有暫存</div>
             ) : (
               <div className="space-y-2">
-                {pending.slice().reverse().slice(0,5).map(x => (
+                {(Array.isArray(pending) ? pending : []).slice().reverse().slice(0,8).map(x => (
                   <div key={x.id} className="bg-gray-100 rounded-2xl p-3 text-sm">
                     <div className="font-black">{x.member} · {x.category} · ${x.amount}</div>
                     <div className="text-gray-500 text-xs mt-1">{x.date} · {x.desc}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
+            <div className="text-sm font-black text-gray-700 mb-2">本機舊資料（最後同步）</div>
+            {txCache.length === 0 ? (
+              <div className="text-sm text-gray-500">尚未抓取雲端資料</div>
+            ) : (
+              <div className="space-y-2">
+                {txCache.slice().reverse().slice(0,6).map(t => (
+                  <div key={t.id} className="bg-gray-100 rounded-2xl p-3 text-sm flex justify-between items-center">
+                    <div className="min-w-0">
+                      <div className="font-black truncate">{t.member} · {t.category}</div>
+                      <div className="text-gray-500 text-xs mt-1 truncate">{t.date} {t.desc ? `· ${t.desc}` : ""}</div>
+                    </div>
+                    <div className={`font-black tabular-nums ${t.type==="income" ? "text-green-600" : "text-red-600"}`}>
+                      ${Number(t.amount||0).toLocaleString()}
+                    </div>
                   </div>
                 ))}
               </div>
