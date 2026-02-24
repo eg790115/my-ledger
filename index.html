@@ -1,915 +1,257 @@
-<script type="text/babel">
-const { useState, useEffect, useMemo, useRef } = React;
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>家庭記帳</title>
 
-const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec';
+  <!-- PWA / Theme -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#111827">
 
-// ✅ 跟 GAS 的 APP_SECRET 設成同一串
-const APP_SECRET = "請在這裡換成你自己的通關碼_一串亂數英文數字";
-
-const APP_VERSION = "2026.02.24.300-BPLUS";
-
-// 本機 key
-const LS = {
-  members: "family_member_config_v16",
-  lastSync: "last_sync_time_v16",
-  txCache: "local_tx_cache_v16",           // 離線舊資料（最後同步）
-  pending: "pending_sync_v16",             // 離線暫存隊列
-  sessionToken: "session_token_v16",       // 24h session
-  sessionExp: "session_exp_v16",
-  lastUser: "last_login_user_v16",
-  pinHashPrefix: "pin_hash_v16_",          // pin_hash_v16_爸爸 / 媽媽
-};
-
-const CHANGELOG = [
-  { version: APP_VERSION, date: "2026/02/24", note: "B+：前端不再持有 PIN；登入後才抓雲端；離線可新增暫存/看暫存；上線自動同步；離線看舊資料需解鎖（PIN/生物辨識）。" }
-];
-
-// --- 內建圖示元件（沿用你原本的） ---
-const SvgIcon = ({ name, size = 24, className = "" }) => {
-  const icons = {
-    wallet: <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z"/>,
-    plus: <path d="M12 5v14m-7-7h14"/>,
-    history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
-    chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
-    settings: (
-      <React.Fragment>
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
-      </React.Fragment>
-    ),
-    logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
-    refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
-    bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
-    key: <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3m-3-3l2.5-2.5"/>,
-    user: <React.Fragment><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></React.Fragment>,
-    close: <path d="M18 6L6 18M6 6l12 12"/>,
-    info: <React.Fragment><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></React.Fragment>,
-    check: <path d="M20 6L9 17l-5-5"/>,
-    edit: <React.Fragment><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></React.Fragment>,
-    trash: <React.Fragment><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></React.Fragment>,
-    shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-  };
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 aspect-square ${className}`}>
-      {icons[name] || <circle cx="12" cy="12" r="10"/>}
-    </svg>
-  );
-};
-
-// --- 小工具：hash PIN（不存明碼）---
-async function sha256Base64(str) {
-  const enc = new TextEncoder();
-  const data = enc.encode(str);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  const bytes = new Uint8Array(digest);
-  let bin = "";
-  for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-function nowStr() {
-  const now = new Date();
-  return `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-}
-function safeJsonParse(v, fallback) {
-  try { return JSON.parse(v); } catch(e){ return fallback; }
-}
-async function postGAS(payload) {
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" }, // 避免不必要的 preflight
-    body: JSON.stringify(payload)
-  });
-  return await res.json();
-}
-
-// --- 交易表單（沿用你原本，略）---
-const AddTransactionForm = ({ categories, defaultMember, onSubmit, isLoading, allowMemberPick = true }) => {
-  const inputRef = useRef(null);
-  const [isFocused, setIsFocused] = useState(false);
-  const [formData, setFormData] = useState({
-    amount: '',
-    category: categories[0] || '一般',
-    member: defaultMember || '爸爸',
-    type: 'expense',
-    desc: '',
-    date: ''
-  });
-
-  useEffect(()=> {
-    setFormData(prev => ({...prev, member: defaultMember || prev.member}));
-  }, [defaultMember]);
-
-  const renderAmount = () => {
-    const val = formData.amount;
-    if (isFocused) return (val === '' || val === '0') ? <span className="text-gray-300 animate-cursor">_</span> : val;
-    return (val === '' || val === '0') ? "0" : val;
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black">
-      <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-8 text-sm text-gray-500">
-        <button onClick={() => setFormData({...formData, type: 'expense'})} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'expense' ? 'bg-white text-red-500 shadow-sm font-black' : ''}`}>支出</button>
-        <button onClick={() => setFormData({...formData, type: 'income'})} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'income' ? 'bg-white text-green-500 shadow-sm font-black' : ''}`}>收入</button>
-      </div>
-
-      <div className="relative flex items-center justify-center mb-8 py-2 min-h-[80px] cursor-pointer font-black text-gray-800" onClick={() => inputRef.current?.focus()}>
-        <span className="text-2xl font-black text-gray-300 mr-1 mt-2">$</span>
-        <div className={`text-6xl font-black text-center min-w-[1.5rem] tracking-tighter transition-colors ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`}>{renderAmount()}</div>
-        <input ref={inputRef} type="number" inputMode="decimal" className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer font-black"
-          value={formData.amount}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          onChange={(e) => setFormData({...formData, amount: e.target.value})}
-        />
-      </div>
-
-      <div className="space-y-4 text-left">
-        <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
-          <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">日期與時間 (未選則為現在)</label>
-          <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800"
-            value={formData.date}
-            onChange={(e) => setFormData({...formData, date: e.target.value})}
-          />
-        </div>
-
-        <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
-          <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">類別</label>
-          <select className="w-full bg-transparent border-none outline-none appearance-none font-black"
-            value={formData.category}
-            onChange={(e) => setFormData({...formData, category: e.target.value})}>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-
-        <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
-          <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">備註說明</label>
-          <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
-            placeholder="輸入內容..."
-            value={formData.desc}
-            onChange={(e) => setFormData({...formData, desc: e.target.value})}
-          />
-        </div>
-
-        {allowMemberPick && (
-          <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-            <label className="text-[9px] font-black text-gray-400 uppercase block mb-2">紀錄對象（離線也可選）</label>
-            <div className="flex gap-2">
-              {["爸爸","媽媽"].map(m => (
-                <button key={m} type="button"
-                  onClick={() => setFormData({...formData, member: m})}
-                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${
-                    formData.member === m ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-400'
-                  }`}>
-                  {m}{formData.member===m?' ✓':''}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <button
-        disabled={!formData.amount || formData.amount === '0' || isLoading}
-        onClick={() => onSubmit(formData)}
-        className="w-full mt-8 py-5 bg-gray-900 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl disabled:opacity-30">
-        {isLoading ? "處理中..." : "確認存檔"}
-      </button>
-    </div>
-  );
-};
-
-const App = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [transactions, setTransactions] = useState([]);
-  const [pending, setPending] = useState(() => safeJsonParse(localStorage.getItem(LS.pending), []));
-  const [txCache, setTxCache] = useState(() => safeJsonParse(localStorage.getItem(LS.txCache), []));
-  const [familyConfig, setFamilyConfig] = useState(() => safeJsonParse(localStorage.getItem(LS.members), [
-    { name: '爸爸', color: 'bg-blue-600', bioEnabled: false },
-    { name: '媽媽', color: 'bg-pink-600', bioEnabled: false }
-  ]));
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
-
-  const [sessionToken, setSessionToken] = useState(() => localStorage.getItem(LS.sessionToken) || "");
-  const [sessionExp, setSessionExp] = useState(() => Number(localStorage.getItem(LS.sessionExp) || 0));
-  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem(LS.lastUser) || null);
-
-  const [selectingUser, setSelectingUser] = useState(null);
-  const [pinInput, setPinInput] = useState("");
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-
-  const [lastSyncText, setLastSyncText] = useState(() => localStorage.getItem(LS.lastSync) || '----/--/-- --:--');
-
-  // 解鎖狀態：控制離線能否看舊資料
-  const [isUnlockedLocal, setIsUnlockedLocal] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem(LS.pending, JSON.stringify(pending));
-  }, [pending]);
-
-  useEffect(() => {
-    localStorage.setItem(LS.txCache, JSON.stringify(txCache));
-  }, [txCache]);
-
-  useEffect(() => {
-    localStorage.setItem(LS.members, JSON.stringify(familyConfig));
-  }, [familyConfig]);
-
-  useEffect(() => {
-    if (window.PublicKeyCredential) {
-      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v));
-    }
-  }, []);
-
-  const showStatus = (type, text) => {
-    setStatusMsg({ type, text });
-    setTimeout(() => setStatusMsg({ type: '', text: '' }), 3000);
-  };
-
-  const isOnline = () => navigator.onLine;
-
-  // 只抓 members（不含 PIN）
-  const fetchMembers = async () => {
-    try {
-      const res = await fetch(gasUrl);
-      const data = await res.json();
-      if (data.members && data.members.length) {
-        setFamilyConfig(data.members);
-      }
-    } catch (e) {
-      // 離線或失敗就用本機的
-    }
-  };
-
-  // 登入後抓雲端交易
-  const fetchTransactionsCloud = async (token) => {
-    const data = await postGAS({ secret: APP_SECRET, action: "GET_TX", sessionToken: token });
-    if (data.result !== "success") throw new Error(data.message || "GET_TX failed");
-
-    // 轉成你 UI 用的格式
-    const formatted = (data.transactions || []).map((t, i) => ({
-      id: t.id || i,
-      amount: parseFloat(t['金額']) || 0,
-      category: t['類別'] || '一般',
-      date: t['日期時間'] || t['日期'] || '',
-      member: t['成員'] || '未知',
-      recorder: t['記錄者'] || '系統',
-      desc: t['備註'] || '',
-      type: t['類型'] || 'expense'
-    }));
-
-    setTransactions(formatted);
-    setTxCache(formatted); // ✅ 存本機作離線舊資料
-    const timeStr = nowStr();
-    setLastSyncText(timeStr);
-    localStorage.setItem(LS.lastSync, timeStr);
-    return formatted;
-  };
-
-  // 自動上傳 pending（有網路 + 已登入）
-  const processPending = async (token) => {
-    if (!pending.length) return;
-    const queue = [...pending];
-    for (const tx of queue) {
-      // tx 可能是 add / UPDATE_TX / DELETE_TX
-      const payload = { ...tx, secret: APP_SECRET, sessionToken: token };
-      const res = await postGAS(payload);
-      if (res.result !== "success") {
-        throw new Error(res.message || "sync pending failed");
-      }
-      setPending(prev => prev.filter(p => p.id !== tx.id || p.action !== tx.action));
-    }
-  };
-
-  // 網路恢復 + 已登入 → 自動同步（你選規則2=A）
-  useEffect(() => {
-    const onOnline = async () => {
-      if (!sessionToken || !currentUser) return;
-      try {
-        setIsLoading(true);
-        await processPending(sessionToken);
-        await fetchTransactionsCloud(sessionToken);
-        showStatus("success", "自動同步完成");
-      } catch(e) {
-        // session 過期就提醒重登
-        showStatus("info", "需要重新登入才能同步");
-      } finally {
-        setIsLoading(false);
-      }
+  <!-- 動態 Manifest -->
+  <script>
+    const manifestJSON = {
+      "name": "家庭記帳",
+      "short_name": "記帳",
+      "display": "standalone",
+      "start_url": ".",
+      "background_color": "#111827",
+      "theme_color": "#111827",
+      "icons": [{
+        "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z'/%3E%3C/svg%3E",
+        "sizes": "512x512",
+        "type": "image/svg+xml"
+      }]
     };
-    window.addEventListener("online", onOnline);
-    return () => window.removeEventListener("online", onOnline);
-  }, [sessionToken, currentUser, pending]);
+    const blob = new Blob([JSON.stringify(manifestJSON)], { type: 'application/manifest+json' });
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = URL.createObjectURL(blob);
+    document.head.appendChild(manifestLink);
+  </script>
 
-  // App 啟動先抓 members
-  useEffect(() => {
-    fetchMembers();
-  }, []);
+  <!-- ✅ 必要 CDN：React / ReactDOM / Babel / Tailwind -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 
-  // Session 過期就清掉
-  useEffect(() => {
-    if (sessionToken && sessionExp && Date.now() > sessionExp) {
-      localStorage.removeItem(LS.sessionToken);
-      localStorage.removeItem(LS.sessionExp);
-      setSessionToken("");
-      setSessionExp(0);
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      background-color: #111827;
+      margin: 0;
+      overflow-x: hidden;
     }
-  }, []);
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .animate-in { animation: fadeIn 0.25s ease-out forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    #root { min-height: 100vh; display: flex; flex-direction: column; }
+  </style>
+</head>
 
-  // 顯示用日期（沿用你原本簡化版）
-  const displayDateClean = (val) => {
-    if (!val) return '';
-    let str = String(val).replace(/上午|下午|AM|PM/gi, '').trim();
-    const isEdited = str.includes('(已編輯)');
-    str = str.replace(' (已編輯)', '').replace('(已編輯)', '');
-    str = str.replace(/-/g, '/').replace('T', ' ');
-    const parts = str.split(' ');
-    if (parts.length > 1) {
-      const cleaned = `${parts[0]} ${parts[1].split(':').slice(0, 2).join(':')}`;
-      return isEdited ? cleaned + ' (已編輯)' : cleaned;
-    }
-    return isEdited ? str + ' (已編輯)' : str;
-  };
+<body class="bg-gray-50 text-gray-900">
+  <!-- ✅ React 一定要有 root -->
+  <div id="root"></div>
 
-  // ---- 解鎖：離線看舊資料 / 用 PIN 或 生物辨識 ----
-  const unlockWithPinLocal = async (name, pin) => {
-    const stored = localStorage.getItem(LS.pinHashPrefix + name);
-    if (!stored) return false;
-    const h = await sha256Base64(`${name}::${pin}::${APP_SECRET}`); // 加 salt
-    return h === stored;
-  };
+  <script type="text/babel">
+    console.log("BABEL BOOT OK");
 
-  const saveLocalPinHash = async (name, pin) => {
-    const h = await sha256Base64(`${name}::${pin}::${APP_SECRET}`);
-    localStorage.setItem(LS.pinHashPrefix + name, h);
-  };
+    const { useEffect, useMemo, useState } = React;
 
-  const bioLoginLocal = async (name) => {
-    const base64Id = localStorage.getItem(`bio_cred_${name}`);
-    if (!base64Id) return false;
-    try {
-      const idStr = atob(base64Id);
-      const idArray = new Uint8Array(idStr.length);
-      for (let i = 0; i < idStr.length; i++) idArray[i] = idStr.charCodeAt(i);
-      const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
-      await navigator.credentials.get({
-        publicKey: { challenge, allowCredentials: [{ type: "public-key", id: idArray }], userVerification: "required" }
+    // ✅ 你的 GAS /exec
+    const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
+
+    // ✅ 這串要跟 GAS 的 APP_SECRET 一模一樣
+    const APP_SECRET = "0970220807";
+
+    const LS = {
+      pending: "pending_sync_v16",
+      txCache: "local_tx_cache_v16",
+      lastSync: "last_sync_time_v16",
+      sessionToken: "session_token_v16",
+      sessionExp: "session_exp_v16",
+      lastUser: "last_login_user_v16",
+    };
+
+    const nowStr = () => {
+      const d = new Date();
+      return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
+
+    const safeParse = (s, fallback) => {
+      try { return JSON.parse(s); } catch { return fallback; }
+    };
+
+    async function postGAS(payload) {
+      const res = await fetch(gasUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
       });
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  // ---- 登入（線上驗證 PIN）----
-  const loginOnline = async (name, pin) => {
-    const data = await postGAS({ secret: APP_SECRET, action: "AUTH_LOGIN", name, pin });
-    if (data.result !== "success") throw new Error(data.message || "login failed");
-
-    localStorage.setItem(LS.sessionToken, data.sessionToken);
-    localStorage.setItem(LS.sessionExp, String(data.sessionExp));
-    localStorage.setItem(LS.lastUser, name);
-
-    setSessionToken(data.sessionToken);
-    setSessionExp(Number(data.sessionExp));
-    setCurrentUser(name);
-
-    // ✅ 存本機解鎖 hash（不存明碼 PIN）
-    await saveLocalPinHash(name, pin);
-
-    // ✅ 你要求：每次登入就刷新
-    await processPending(data.sessionToken);
-    await fetchTransactionsCloud(data.sessionToken);
-
-    setIsUnlockedLocal(true);
-    showStatus("success", "登入成功並已刷新");
-  };
-
-  // ---- 快速新增：離線未解鎖也能用 ----
-  const handleAdd = async (newTx) => {
-    setIsLoading(true);
-    let finalDateStr;
-    if (newTx.date) {
-      finalDateStr = newTx.date.replace('T', ' ').replace(/-/g, '/');
-    } else {
-      finalDateStr = nowStr();
+      return await res.json();
     }
 
-    const completeTx = {
-      ...newTx,
-      date: finalDateStr,
-      recorder: currentUser || "離線",
-      id: Date.now()
-    };
+    function App() {
+      const [online, setOnline] = useState(navigator.onLine);
+      const [pending, setPending] = useState(() => safeParse(localStorage.getItem(LS.pending), []));
+      const [txCache, setTxCache] = useState(() => safeParse(localStorage.getItem(LS.txCache), []));
+      const [lastSync, setLastSync] = useState(localStorage.getItem(LS.lastSync) || "----/--/-- --:--");
 
-    // UI 先顯示（暫存也加入一份到本機）
-    setPending(prev => [...prev, completeTx]);
-    showStatus("info", isOnline() && sessionToken ? "已加入同步佇列" : "已暫存（待同步）");
+      const [user, setUser] = useState(localStorage.getItem(LS.lastUser) || null);
+      const [pin, setPin] = useState("");
+      const [sessionToken, setSessionToken] = useState(localStorage.getItem(LS.sessionToken) || "");
+      const [sessionExp, setSessionExp] = useState(Number(localStorage.getItem(LS.sessionExp) || 0));
 
-    // 若線上且已登入：立即上傳（然後刷新）
-    try {
-      if (isOnline() && sessionToken && currentUser) {
-        await processPending(sessionToken);
-        await fetchTransactionsCloud(sessionToken);
-        showStatus("success", "已同步");
-      }
-    } catch (e) {
-      showStatus("info", "已暫存（稍後自動同步）");
-    } finally {
-      setIsLoading(false);
-      setActiveTab('dashboard');
-    }
-  };
+      const [status, setStatus] = useState("");
 
-  // ---- 暫存清單（可編輯/刪除）----
-  const [editingPendingId, setEditingPendingId] = useState(null);
-  const pendingToShow = useMemo(() => pending.slice().reverse(), [pending]);
+      useEffect(() => {
+        const onOn = () => setOnline(true);
+        const onOff = () => setOnline(false);
+        window.addEventListener("online", onOn);
+        window.addEventListener("offline", onOff);
+        return () => {
+          window.removeEventListener("online", onOn);
+          window.removeEventListener("offline", onOff);
+        };
+      }, []);
 
-  const updatePendingItem = (id, patch) => {
-    setPending(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
-  };
-  const deletePendingItem = (id) => {
-    setPending(prev => prev.filter(p => p.id !== id));
-  };
+      useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(pending)), [pending]);
+      useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
 
-  // ---- Dashboard 統計：未登入時用 txCache（離線舊資料），已登入用 transactions ----
-  const visibleTx = useMemo(() => {
-    if (sessionToken && currentUser) return transactions;
-    // 離線要看舊資料：必須解鎖
-    if (isUnlockedLocal) return txCache;
-    return [];
-  }, [sessionToken, currentUser, transactions, txCache, isUnlockedLocal]);
+      const sessionValid = useMemo(() => sessionToken && sessionExp && Date.now() < sessionExp, [sessionToken, sessionExp]);
 
-  const myTx = useMemo(() => {
-    if (!currentUser) return [];
-    return visibleTx.filter(t => t.member === currentUser);
-  }, [visibleTx, currentUser]);
+      const addOffline = () => {
+        const item = {
+          id: Date.now(),
+          action: "ADD_TX",
+          member: user || "爸爸",
+          type: "expense",
+          amount: 100,
+          category: "餐飲",
+          desc: "離線測試",
+          date: nowStr(),
+          recorder: user || "離線",
+        };
+        setPending(p => [...p, item]);
+        setStatus("已暫存 1 筆（待同步）");
+      };
 
-  const stats = useMemo(() => {
-    const income = myTx.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    const expense = myTx.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
-    return { income, expense, balance: income - expense };
-  }, [myTx]);
+      const login = async () => {
+        if (!online) { setStatus("離線：無法雲端登入，但可先新增暫存"); return; }
+        if (!user || !pin) { setStatus("請選成員並輸入 PIN"); return; }
+        setStatus("登入中...");
+        try {
+          const data = await postGAS({ secret: APP_SECRET, action: "AUTH_LOGIN", name: user, pin });
+          if (data.result !== "success") throw new Error(data.message || "登入失敗");
+          setSessionToken(data.sessionToken);
+          setSessionExp(Number(data.sessionExp));
+          localStorage.setItem(LS.sessionToken, data.sessionToken);
+          localStorage.setItem(LS.sessionExp, String(data.sessionExp));
+          localStorage.setItem(LS.lastUser, user);
+          setStatus("登入成功（已取得 session）");
+          setPin("");
+        } catch (e) {
+          setStatus("登入失敗：" + (e.message || e));
+        }
+      };
 
-  // ---- 手動刷新：已登入才刷新雲端 ----
-  const refreshCloud = async () => {
-    if (!isOnline()) { showStatus("info", "目前離線"); return; }
-    if (!sessionToken || !currentUser) { showStatus("info", "請先登入"); return; }
-    setIsLoading(true);
-    try {
-      await processPending(sessionToken);
-      await fetchTransactionsCloud(sessionToken);
-      showStatus("success", "刷新完成");
-    } catch(e) {
-      showStatus("error", "刷新失敗，可能需要重新登入");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      const fetchCloud = async () => {
+        if (!online) { setStatus("離線：無法抓雲端"); return; }
+        if (!sessionValid) { setStatus("請先登入（或 session 過期）"); return; }
+        setStatus("抓取雲端資料中...");
+        try {
+          const data = await postGAS({ secret: APP_SECRET, action: "GET_TX", sessionToken });
+          if (data.result !== "success") throw new Error(data.message || "GET_TX 失敗");
+          const formatted = (data.transactions || []).map((t, i) => ({
+            id: t.id || i,
+            amount: parseFloat(t["金額"]) || 0,
+            category: t["類別"] || "一般",
+            date: t["日期時間"] || "",
+            member: t["成員"] || "",
+            desc: t["備註"] || "",
+            type: t["類型"] || "expense",
+          }));
+          setTxCache(formatted);
+          const ts = nowStr();
+          setLastSync(ts);
+          localStorage.setItem(LS.lastSync, ts);
+          setStatus("雲端抓取成功");
+        } catch (e) {
+          setStatus("抓取失敗：" + (e.message || e));
+        }
+      };
 
-  const logoutAll = () => {
-    localStorage.removeItem(LS.sessionToken);
-    localStorage.removeItem(LS.sessionExp);
-    setSessionToken("");
-    setSessionExp(0);
-    setTransactions([]);
-    setCurrentUser(null);
-    setSelectingUser(null);
-    setPinInput("");
-    setIsUnlockedLocal(false);
-    setActiveTab("dashboard");
-    showStatus("info", "已登出");
-  };
-
-  // ---- 登入畫面（離線：可解鎖看舊資料；也可直接快速新增） ----
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
-        <div className="mb-10 text-white">
-          <div className="bg-blue-600 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 text-white">
-            <SvgIcon name="wallet" size={36} />
-          </div>
-          <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
-          <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
-          <div className="mt-4 text-[11px] text-gray-400 flex items-center justify-center gap-2">
-            <span className={`px-2 py-1 rounded-lg ${isOnline() ? "bg-green-600/20 text-green-300" : "bg-red-600/20 text-red-300"}`}>
-              {isOnline() ? "線上" : "離線"}
-            </span>
-            <span className="opacity-70">待同步：{pending.length} 筆</span>
-          </div>
-        </div>
-
-        {!selectingUser ? (
-          <div className="grid grid-cols-1 gap-5 w-full max-w-xs text-white">
-            {familyConfig.map(user => (
-              <button key={user.name} onClick={() => setSelectingUser(user)}
-                className={`${user.color || "bg-blue-600"} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
-                {user.name}
-              </button>
-            ))}
-
-            {/* ✅ 離線未解鎖也能快速新增 */}
-            <button onClick={() => { setCurrentUser("離線"); setActiveTab("add"); }}
-              className="bg-white/10 py-5 rounded-[2rem] font-black text-base border border-white/10 active:scale-95 transition text-white flex items-center justify-center gap-2">
-              <SvgIcon name="plus" size={20}/> 離線快速新增（不看舊資料）
-            </button>
-
-            {/* ✅ 可看暫存清單 */}
-            <button onClick={() => { setCurrentUser("離線"); setActiveTab("pending"); }}
-              className="bg-white/5 py-4 rounded-[2rem] font-black text-sm border border-white/10 active:scale-95 transition text-gray-200 flex items-center justify-center gap-2">
-              <SvgIcon name="history" size={18}/> 查看暫存清單（{pending.length}）
-            </button>
-          </div>
-        ) : (
-          <div className="w-full max-w-xs animate-in text-white text-center font-black">
-            <p className="font-black text-3xl mb-2 tracking-tight">{selectingUser.name}</p>
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest opacity-60 mb-6">
-              {isOnline() ? "輸入 6 位密碼登入（雲端）" : "離線解鎖（看舊資料）"}
-            </p>
-
-            {/* PIN 點點 */}
-            <div className="flex justify-center gap-4 mb-8">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className={`w-3 h-3 rounded-full border-2 border-blue-500 transition-all duration-200 ${
-                  pinInput.length > i ? 'bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]' : 'bg-transparent'
-                }`}></div>
-              ))}
+      return (
+        <div className="min-h-screen bg-gray-900 text-white p-6 flex flex-col gap-4">
+          <div className="bg-white/10 rounded-3xl p-5 border border-white/10 animate-in">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-2xl font-black italic">家庭記帳</div>
+                <div className="text-xs text-white/60 mt-1">狀態：{online ? "線上" : "離線"} · 待同步 {pending.length} · 最後同步 {lastSync}</div>
+              </div>
+              <div className={`px-3 py-1 rounded-xl text-xs font-black ${sessionValid ? "bg-green-500/20 text-green-200" : "bg-yellow-500/20 text-yellow-200"}`}>
+                {sessionValid ? "已登入" : "未登入"}
+              </div>
             </div>
+          </div>
 
-            {/* 數字鍵盤 */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              {[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k => (
-                <button key={k}
-                  onClick={async () => {
-                    if (k === 'C') { setPinInput(""); return; }
-                    if (k === '←') { setPinInput(pinInput.slice(0, -1)); return; }
-                    const n = pinInput + k;
-                    if (n.length > 6) return;
-                    setPinInput(n);
-                    if (n.length === 6) {
-                      try {
-                        // 線上：後端驗證 + 立刻刷新
-                        if (isOnline()) {
-                          setIsLoading(true);
-                          await loginOnline(selectingUser.name, n);
-                          setSelectingUser(null);
-                          setPinInput("");
-                          setActiveTab("dashboard");
-                        } else {
-                          // 離線：用本機 hash 驗證（不存明碼）
-                          const ok = await unlockWithPinLocal(selectingUser.name, n);
-                          if (!ok) throw new Error("離線密碼不正確或本機尚無驗證資料");
-                          localStorage.setItem(LS.lastUser, selectingUser.name);
-                          setCurrentUser(selectingUser.name);
-                          setIsUnlockedLocal(true);
-                          setSelectingUser(null);
-                          setPinInput("");
-                          showStatus("success", "離線解鎖成功");
-                          setActiveTab("dashboard");
-                        }
-                      } catch (e) {
-                        setPinInput("");
-                        showStatus("error", String(e.message || e));
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    }
-                  }}
-                  className="bg-white/10 h-16 rounded-3xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white">
-                  {k}
+          <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
+            <div className="text-sm font-black text-gray-700 mb-3">成員登入（線上才可驗證）</div>
+            <div className="flex gap-2 mb-3">
+              {["爸爸","媽媽"].map(n => (
+                <button key={n} onClick={() => setUser(n)} className={`flex-1 py-3 rounded-2xl font-black ${user===n ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}>
+                  {n}
                 </button>
               ))}
             </div>
-
-            {/* 生物辨識：線上/離線都可（離線用本機解鎖） */}
-            {biometricAvailable && (
-              <div className="mb-6 p-4 bg-white/5 rounded-3xl border border-blue-500/20 text-left">
-                {selectingUser.bioEnabled ? (
-                  <button
-                    disabled={isLoading}
-                    onClick={async () => {
-                      setIsLoading(true);
-                      try {
-                        const ok = await bioLoginLocal(selectingUser.name);
-                        if (!ok) throw new Error("生物辨識失敗或未綁定");
-                        // 生物辨識只做「本機解鎖」：線上仍需 PIN 才能取雲端
-                        localStorage.setItem(LS.lastUser, selectingUser.name);
-                        setCurrentUser(selectingUser.name);
-                        setIsUnlockedLocal(true);
-                        setSelectingUser(null);
-                        setActiveTab("dashboard");
-                        showStatus("success", "本機解鎖成功");
-                      } catch(e) {
-                        showStatus("error", e.message || "解鎖失敗");
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    }}
-                    className="w-full py-4 bg-blue-600 text-white rounded-2xl flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition shadow-xl disabled:opacity-40">
-                    <SvgIcon name="bio" size={22}/> 生物辨識解鎖（本機）
-                  </button>
-                ) : (
-                  <div className="text-[11px] text-gray-400">
-                    尚未開啟生物辨識。請先線上登入後到「設定」開啟。
-                  </div>
-                )}
-              </div>
-            )}
-
-            <button onClick={() => { setSelectingUser(null); setPinInput(""); }}
-              className="text-gray-500 text-xs font-black uppercase tracking-widest underline underline-offset-4 active:text-blue-500">
-              返回成員列表
-            </button>
-          </div>
-        )}
-
-        {statusMsg.text && (
-          <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[200] pointer-events-none px-4">
-            <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
-              statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white')
-            }`}>
-              <span className="text-sm font-bold tracking-tight">{statusMsg.text}</span>
+            <input value={pin} onChange={(e)=>setPin(e.target.value)} maxLength={6} inputMode="numeric"
+              placeholder="輸入 6 位 PIN"
+              className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
+            <div className="flex gap-2">
+              <button onClick={login} className="flex-1 py-3 rounded-2xl bg-gray-900 text-white font-black">登入</button>
+              <button onClick={fetchCloud} className="flex-1 py-3 rounded-2xl bg-blue-600 text-white font-black">抓雲端</button>
             </div>
           </div>
-        )}
-      </div>
-    );
-  }
 
-  // 下面：登入後/離線模式主畫面（簡化：保留你原本4頁，外加 pending）
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
-      <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black shadow-lg ${
-            currentUser==="媽媽" ? "bg-pink-600" : (currentUser==="爸爸" ? "bg-blue-600" : "bg-gray-600")
-          }`}>{String(currentUser).charAt(0)}</div>
-          <div>
-            <h1 className="text-2xl font-black tracking-tighter italic">家庭記帳</h1>
-            <div className="text-[10px] text-gray-400 flex items-center gap-2 mt-1">
-              <span className={`px-2 py-0.5 rounded-lg ${isOnline() ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}`}>
-                {isOnline() ? "線上" : "離線"}
-              </span>
-              <span>待同步：{pending.length}</span>
-              <span className="text-blue-500 font-mono">Last {lastSyncText}</span>
+          <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-black text-gray-700">離線暫存（可先新增）</div>
+              <button onClick={addOffline} className="px-4 py-2 rounded-2xl bg-gray-900 text-white font-black text-sm">+ 新增測試暫存</button>
             </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button onClick={refreshCloud}
-            className={`p-2.5 bg-gray-50 rounded-xl transition-all flex items-center justify-center active:scale-90 text-gray-600 ${isLoading ? 'animate-spin text-blue-500' : ''}`}>
-            <SvgIcon name="refresh" size={20}/>
-          </button>
-          <button onClick={logoutAll}
-            className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition-all flex items-center justify-center">
-            <SvgIcon name="logout" size={20}/>
-          </button>
-        </div>
-      </header>
-
-      <main className="p-6 flex-1 overflow-y-auto scrollbar-hide">
-        {/* Dashboard */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6 animate-in">
-            <div className="bg-gray-900 p-8 rounded-[3rem] shadow-2xl text-white relative overflow-hidden text-center">
-              <span className="text-[10px] font-black uppercase mb-3 block tracking-widest">本月估算結餘</span>
-              <div className="text-5xl font-black mb-8 tracking-tighter tabular-nums">${stats.balance.toLocaleString()}</div>
-              <div className="flex w-full gap-4 pt-6 border-t border-white/10 text-sm text-gray-300">
-                <div className="flex-1 text-center">
-                  <p className="text-[9px] uppercase mb-1">收入</p>
-                  <p className="text-xl text-green-400 font-black">+${stats.income.toLocaleString()}</p>
-                </div>
-                <div className="flex-1 border-l border-white/10 text-center">
-                  <p className="text-[9px] uppercase mb-1">支出</p>
-                  <p className="text-xl text-red-400 font-black">-${stats.expense.toLocaleString()}</p>
-                </div>
-              </div>
-              {!sessionToken && (
-                <div className="mt-5 text-[11px] text-yellow-200/80 flex items-center justify-center gap-2">
-                  <SvgIcon name="shield" size={14}/> 未登入雲端：顯示離線資料（需解鎖） / 可新增暫存
-                </div>
-              )}
-            </div>
-
-            {/* 暫存提示 */}
-            {pending.length > 0 && (
-              <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl text-blue-700 text-sm flex items-center justify-between">
-                <div className="font-black">待同步 {pending.length} 筆</div>
-                <button onClick={() => setActiveTab("pending")} className="px-3 py-2 bg-white rounded-xl border border-blue-100 text-blue-600 font-black active:scale-95">
-                  查看/編輯
-                </button>
-              </div>
-            )}
-
-            {/* 離線未解鎖時不顯示舊資料 */}
-            {!sessionToken && !isUnlockedLocal && (
-              <div className="bg-white p-5 rounded-2xl border border-gray-100 text-gray-700 text-sm">
-                目前為離線未解鎖狀態：可以「新增暫存」與「查看暫存清單」。<br/>
-                若要看舊資料，請回到登入頁用 PIN 或生物辨識解鎖。
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Add */}
-        {activeTab === 'add' && (
-          <AddTransactionForm
-            categories={['餐飲','交通','購物','居家','水電','醫療','薪資','投資','雜項']}
-            defaultMember={currentUser === "離線" ? "爸爸" : currentUser}
-            onSubmit={handleAdd}
-            isLoading={isLoading}
-            allowMemberPick={true}
-          />
-        )}
-
-        {/* Pending list (可編輯) */}
-        {activeTab === 'pending' && (
-          <div className="space-y-3 animate-in pb-24">
-            <div className="flex items-end justify-between">
-              <div>
-                <h3 className="font-black text-lg text-gray-800">暫存清單</h3>
-                <p className="text-[11px] text-gray-500 mt-1">離線新增會先在此，線上登入後自動同步</p>
-              </div>
-              <button onClick={() => setActiveTab("add")} className="px-4 py-2 bg-gray-900 text-white rounded-xl font-black active:scale-95">
-                + 新增
-              </button>
-            </div>
-
-            {pendingToShow.length === 0 ? (
-              <div className="py-12 text-center text-gray-400 text-sm">目前沒有暫存</div>
-            ) : (
-              pendingToShow.map(tx => (
-                <div key={tx.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                  {editingPendingId === tx.id ? (
-                    <div className="space-y-3">
-                      <div className="flex gap-2">
-                        <input className="flex-1 bg-gray-100 rounded-xl px-3 py-2 font-black"
-                          value={tx.amount}
-                          onChange={(e)=>updatePendingItem(tx.id,{amount:e.target.value})}
-                          inputMode="decimal"
-                          placeholder="金額"
-                        />
-                        <select className="bg-gray-100 rounded-xl px-3 py-2 font-black"
-                          value={tx.type}
-                          onChange={(e)=>updatePendingItem(tx.id,{type:e.target.value})}>
-                          <option value="expense">支出</option>
-                          <option value="income">收入</option>
-                        </select>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <select className="flex-1 bg-gray-100 rounded-xl px-3 py-2 font-black"
-                          value={tx.category}
-                          onChange={(e)=>updatePendingItem(tx.id,{category:e.target.value})}>
-                          {['餐飲','交通','購物','居家','水電','醫療','薪資','投資','雜項'].map(c=>(
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
-                        <select className="bg-gray-100 rounded-xl px-3 py-2 font-black"
-                          value={tx.member}
-                          onChange={(e)=>updatePendingItem(tx.id,{member:e.target.value})}>
-                          <option value="爸爸">爸爸</option>
-                          <option value="媽媽">媽媽</option>
-                        </select>
-                      </div>
-
-                      <input className="w-full bg-gray-100 rounded-xl px-3 py-2 font-black"
-                        value={tx.desc || ""}
-                        onChange={(e)=>updatePendingItem(tx.id,{desc:e.target.value})}
-                        placeholder="備註"
-                      />
-
-                      <div className="flex gap-2">
-                        <button onClick={()=>setEditingPendingId(null)}
-                          className="flex-1 py-3 bg-gray-100 rounded-xl font-black active:scale-95">
-                          完成
-                        </button>
-                        <button onClick={()=>deletePendingItem(tx.id)}
-                          className="flex-1 py-3 bg-red-50 text-red-600 rounded-xl font-black active:scale-95">
-                          刪除
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-black text-gray-800 truncate">
-                          {tx.category} · {tx.member} · {tx.type==='income'?'收入':'支出'}
-                        </div>
-                        <div className="text-[11px] text-gray-500 mt-1 truncate">
-                          {displayDateClean(tx.date)} {tx.desc ? `· ${tx.desc}` : ""}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className={`font-black tabular-nums text-lg ${tx.type==='income'?'text-green-600':'text-red-600'}`}>
-                          ${Number(tx.amount||0).toLocaleString()}
-                        </div>
-                        <button onClick={()=>setEditingPendingId(tx.id)}
-                          className="p-2 rounded-xl bg-gray-50 border border-gray-100 text-gray-500 active:scale-95">
-                          <SvgIcon name="edit" size={16}/>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* History：只有已登入雲端 or 離線已解鎖才可看 */}
-        {activeTab === 'history' && (
-          <div className="space-y-3 animate-in pb-24">
-            <div className="flex items-end justify-between">
-              <div>
-                <h3 className="font-black text-lg text-gray-800">歷史帳目</h3>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {sessionToken ? "雲端資料（已登入）" : (isUnlockedLocal ? "離線資料（最後同步）" : "未解鎖：請解鎖或登入")}
-                </p>
-              </div>
-              <button onClick={() => setActiveTab("pending")} className="px-4 py-2 bg-blue-50 text-blue-700 rounded-xl font-black border border-blue-100 active:scale-95">
-                暫存 {pending.length}
-              </button>
-            </div>
-
-            {(!sessionToken && !isUnlockedLocal) ? (
-              <div className="bg-white p-5 rounded-2xl border border-gray-100 text-gray-700 text-sm">
-                目前未解鎖，無法查看舊資料。<br/>
-                你可以先新增暫存，或回登入頁用 PIN/生物辨識解鎖。
-              </div>
+            {pending.length === 0 ? (
+              <div className="text-sm text-gray-500">目前沒有暫存</div>
             ) : (
               <div className="space-y-2">
-                {myTx.slice().reverse().slice(0, 50).map(tx => (
-                  <div key={tx.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm">
-                    <div className="min-w-0">
-                      <div className="font-black text-gray-800 truncate">{tx.category}</div>
-                      <div className="text-[11px] text-gray-500 mt-1 truncate">{displayDateClean(tx.date)} {tx.desc ? `· ${tx.desc}` : ""}</div>
-                    </div>
-                    <div className={`font-black tabular-nums text-lg ${tx.type==='income'?'text-green-600':'text-red-600'}`}>
-                      ${Number(tx.amount||0).toLocaleString()}
-                    </div>
+                {pending.slice().reverse().slice(0,5).map(x => (
+                  <div key={x.id} className="bg-gray-100 rounded-2xl p-3 text-sm">
+                    <div className="font-black">{x.member} · {x.category} · ${x.amount}</div>
+                    <div className="text-gray-500 text-xs mt-1">{x.date} · {x.desc}</div>
                   </div>
                 ))}
-                <div className="text-[11px] text-gray-400 text-center py-6">（此處先顯示最近 50 筆，之後可接你原本完整分頁篩選版本）</div>
               </div>
             )}
           </div>
-        )}
 
-        {/* Settings（簡化：你要改 PIN / Bio 開關，我先保留入口，下一輪可把你原本完整設定頁搬回來） */}
-        {activeTab === 'settings' && (
-          <div className="space-y-4 animate-in pb-24">
-            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-              <h3 className="font-black text-sm mb-4 flex items-center gap-2 text-gray-800">
-                <SvgIcon name="settings" size={18}/> 設定
-              </h3>
-
-              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                <div className="text-[11px] text-gray-500">目前身份</div>
-                <div className="text-lg font-black text-gray-800 mt-1">{currentUser}</div>
-                <div className="text-[11px] text-gray-500 mt-2">雲端登入</div>
-                <div className="text-sm font-black mt-1">{sessionToken ? "已登入" : "未登入"}</div>
-              </div>
-
-              <div className="text-[11px] text-gray-400 mt-4">
-                改 PIN / 生物辨識開關（下一輪把你原本完整設定頁搬回）<br/>
-                目前你已符合：不回傳 PIN + 登入後才抓雲端 + 離線暫存 + 自動同步。
+          {status && (
+            <div className="fixed bottom-10 left-0 right-0 flex justify-center px-4">
+              <div className="bg-black/70 text-white px-5 py-3 rounded-2xl text-sm font-black border border-white/10">
+                {status}
               </div>
             </div>
-          </div>
-        )}
-      </main>
-
-      {/* Bottom nav */}
-      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20 safe-bottom">
-        <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="chart" /></button>
-        <button onClick={() => setActiveTab('history')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'history' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="history" /></button>
-        <button onClick={() => setActiveTab('add')} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === 'add' ? 'bg-blue-700 text-white rotate-45 shadow-blue-200' : 'bg-gray-900 text-white'}`}><SvgIcon name="plus" size={32} /></button>
-        <button onClick={() => setActiveTab('pending')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'pending' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}>
-          <div className="relative">
-            <SvgIcon name="history" />
-            {pending.length>0 && <span className="absolute -top-2 -right-2 text-[10px] bg-red-500 text-white rounded-full px-2 py-0.5">{pending.length}</span>}
-          </div>
-        </button>
-        <button onClick={() => setActiveTab('settings')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'settings' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="settings" /></button>
-      </nav>
-
-      {/* Toast */}
-      {statusMsg.text && (
-        <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[400] pointer-events-none px-4">
-          <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
-            statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white')
-          }`}>
-            <span className="text-sm font-bold tracking-tight">{statusMsg.text}</span>
-          </div>
+          )}
         </div>
-      )}
-    </div>
-  );
-};
+      );
+    }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
-</script>
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
