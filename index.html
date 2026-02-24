@@ -1,357 +1,1387 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>家庭記帳</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>家庭記帳</title>
+    
+    <!-- PWA 全螢幕設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#111827">
 
-  <!-- PWA / Theme -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#111827">
+    <!-- 動態生成 Manifest -->
+    <script>
+        const manifestJSON = {
+            "name": "家庭記帳",
+            "short_name": "記帳",
+            "display": "standalone",
+            "start_url": ".",
+            "background_color": "#111827",
+            "theme_color": "#111827",
+            "icons": [{
+                "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z'/%3E%3C/svg%3E",
+                "sizes": "512x512",
+                "type": "image/svg+xml"
+            }]
+        };
+        const blob = new Blob([JSON.stringify(manifestJSON)], { type: 'application/manifest+json' });
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = URL.createObjectURL(blob);
+        document.head.appendChild(manifestLink);
+    </script>
 
-  <!-- 動態 Manifest -->
-  <script>
-    const manifestJSON = {
-      "name": "家庭記帳",
-      "short_name": "記帳",
-      "display": "standalone",
-      "start_url": ".",
-      "background_color": "#111827",
-      "theme_color": "#111827",
-      "icons": [{
-        "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 24 24' fill='none' stroke='%233b82f6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z'/%3E%3C/svg%3E",
-        "sizes": "512x512",
-        "type": "image/svg+xml"
-      }]
-    };
-    const blob = new Blob([JSON.stringify(manifestJSON)], { type: 'application/manifest+json' });
-    const manifestLink = document.createElement('link');
-    manifestLink.rel = 'manifest';
-    manifestLink.href = URL.createObjectURL(blob);
-    document.head.appendChild(manifestLink);
-  </script>
-
-  <!-- ✅ 必要 CDN：React / ReactDOM / Babel / Tailwind -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
-    body {
-      font-family: 'Noto Sans TC', sans-serif;
-      -webkit-tap-highlight-color: transparent;
-      background-color: #111827;
-      margin: 0;
-      overflow-x: hidden;
-    }
-    .scrollbar-hide::-webkit-scrollbar { display: none; }
-    .animate-in { animation: fadeIn 0.25s ease-out forwards; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
-    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-    #root { min-height: 100vh; display: flex; flex-direction: column; }
-  </style>
+    <!-- 載入環境 -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            -webkit-tap-highlight-color: transparent; 
+            user-select: none;
+            background-color: #111827;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .animate-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        .animate-cursor { animation: cursor-blink 1s step-end infinite; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        #root { min-height: 100vh; display: flex; flex-direction: column; }
+    </style>
 </head>
+<body class="bg-gray-50 text-gray-900 text-left font-black">
+    <div id="root"></div>
 
-<body class="bg-gray-50 text-gray-900">
-  <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
 
-  <script type="text/babel">
-    console.log("BABEL BOOT OK");
-    console.log("BUILD", "2026-02-24-APP-OK");
+        // ✅ GAS
+        const gasUrl = 'https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec';
+        // ✅ 通關密碼（你指定）
+        const APP_SECRET = '0970220807';
 
-    const { useEffect, useMemo, useState } = React;
+        // ✅ 24 小時 session
+        const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
-    // ✅ 你的 GAS /exec（保持你目前這個）
-    const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
-
-    // ✅ 通關密碼直接填入
-    const APP_SECRET = "0970220807";
-
-    const LS = {
-      pending: "pending_sync_v16",
-      txCache: "local_tx_cache_v16",
-      lastSync: "last_sync_time_v16",
-      sessionToken: "session_token_v16",
-      sessionExp: "session_exp_v16",
-      lastUser: "last_login_user_v16",
-    };
-
-    const nowStr = () => {
-      const d = new Date();
-      return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    };
-
-    const safeParse = (s, fallback) => {
-      try { return JSON.parse(s); } catch { return fallback; }
-    };
-
-    const safeArrayLS = (key) => {
-      const raw = localStorage.getItem(key);
-      if (raw === null || raw === "null" || raw === "undefined") return [];
-      const v = safeParse(raw, []);
-      return Array.isArray(v) ? v : [];
-    };
-
-    const safeStringLS = (key, fallback="") => {
-      const v = localStorage.getItem(key);
-      if (v === null || v === "null" || v === "undefined") return fallback;
-      return v;
-    };
-
-    async function postGAS(payload) {
-      const res = await fetch(gasUrl, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-      });
-      return await res.json();
-    }
-
-    function App() {
-      const [online, setOnline] = useState(navigator.onLine);
-
-      const [pending, setPending] = useState(() => safeArrayLS(LS.pending));
-      const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
-      const [lastSync, setLastSync] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
-
-      const [user, setUser] = useState(() => safeStringLS(LS.lastUser, ""));
-      const [pin, setPin] = useState("");
-
-      const [sessionToken, setSessionToken] = useState(() => safeStringLS(LS.sessionToken, ""));
-      const [sessionExp, setSessionExp] = useState(() => Number(safeStringLS(LS.sessionExp, "0")));
-
-      const [status, setStatus] = useState("");
-
-      useEffect(() => {
-        const onOn = () => setOnline(true);
-        const onOff = () => setOnline(false);
-        window.addEventListener("online", onOn);
-        window.addEventListener("offline", onOff);
-        return () => {
-          window.removeEventListener("online", onOn);
-          window.removeEventListener("offline", onOff);
+        // ✅ localStorage keys（用 v16 避免舊版 pin/隊列污染）
+        const LS = {
+            lastSync: 'last_sync_time_v16',
+            pending: 'pending_sync_v16',
+            members: 'family_member_config_v16',
+            txCache: 'local_tx_cache_v16',
+            sessionToken: 'session_token_v16',
+            sessionExp: 'session_exp_v16',
+            lastUser: 'last_login_user_v16',
+            // 離線解鎖（不存 PIN 明碼）
+            pinHashPrefix: 'pin_hash_v16_' // pin_hash_v16_爸爸
         };
-      }, []);
 
-      useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(pending)), [pending]);
-      useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
+        const APP_VERSION = "2026.02.24.210-B+";
 
-      const sessionValid = useMemo(() => {
-        return !!(sessionToken && sessionExp && Date.now() < sessionExp);
-      }, [sessionToken, sessionExp]);
+        const CHANGELOG = [
+            { version: APP_VERSION, date: "2026/02/24", note: "B+：前端不再保存 PIN；登入後才抓雲端資料；離線可新增暫存+可看暫存清單；上線自動同步；每次登入即刷新。" }
+        ];
 
-      const toast = (msg) => {
-        setStatus(msg);
-        setTimeout(() => setStatus(""), 2500);
-      };
-
-      const clearLocal = () => {
-        Object.keys(localStorage).forEach(k => {
-          if (k.includes("v16") || k.includes("pending") || k.includes("tx_cache") || k.includes("last_sync") || k.includes("session_")) {
-            localStorage.removeItem(k);
-          }
-        });
-        setPending([]);
-        setTxCache([]);
-        setSessionToken("");
-        setSessionExp(0);
-        setLastSync("----/--/-- --:--");
-        toast("已清除本機資料");
-      };
-
-      const addOffline = (member) => {
-        const item = {
-          id: Date.now(),
-          action: "ADD_TX",
-          member: member,
-          type: "expense",
-          amount: 100,
-          category: "餐飲",
-          desc: "離線暫存",
-          date: nowStr(),
-          recorder: online ? (user || "系統") : "離線",
+        // --- 安全/防呆 ---
+        const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
+        const safeArrayLS = (key) => {
+            const raw = localStorage.getItem(key);
+            if (raw === null || raw === "null" || raw === "undefined") return [];
+            const v = safeParse(raw, []);
+            return Array.isArray(v) ? v : [];
         };
-        setPending(p => [...p, item]);
-        toast("已暫存 1 筆（待同步）");
-      };
+        const safeObjLS = (key, fallback) => {
+            const raw = localStorage.getItem(key);
+            if (raw === null || raw === "null" || raw === "undefined") return fallback;
+            const v = safeParse(raw, fallback);
+            return (v && typeof v === 'object') ? v : fallback;
+        };
+        const safeStringLS = (key, fallback="") => {
+            const v = localStorage.getItem(key);
+            if (v === null || v === "null" || v === "undefined") return fallback;
+            return v;
+        };
 
-      const login = async () => {
-        if (!online) { toast("離線：無法雲端登入，但可先新增暫存"); return; }
-        if (!user || !pin) { toast("請選成員並輸入 PIN"); return; }
-        toast("登入中...");
-        try {
-          const data = await postGAS({ secret: APP_SECRET, action: "AUTH_LOGIN", name: user, pin });
-          if (data.result !== "success") throw new Error(data.message || "登入失敗");
-          setSessionToken(data.sessionToken);
-          setSessionExp(Number(data.sessionExp));
+        const nowStr = () => {
+            const now = new Date();
+            return `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        };
 
-          localStorage.setItem(LS.sessionToken, data.sessionToken);
-          localStorage.setItem(LS.sessionExp, String(data.sessionExp));
-          localStorage.setItem(LS.lastUser, user);
-
-          setPin("");
-          toast("登入成功");
-        } catch (e) {
-          toast("登入失敗：" + (e.message || e));
+        async function postGAS(payload) {
+            const res = await fetch(gasUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            return await res.json();
         }
-      };
 
-      const fetchCloud = async () => {
-        if (!online) { toast("離線：無法抓雲端"); return; }
-        if (!sessionValid) { toast("請先登入（或 session 過期）"); return; }
-        toast("抓取雲端資料中...");
-        try {
-          const data = await postGAS({ secret: APP_SECRET, action: "GET_TX", sessionToken });
-          if (data.result !== "success") throw new Error(data.message || "GET_TX 失敗");
-          const formatted = (data.transactions || []).map((t, i) => ({
-            id: t.id || i,
-            amount: parseFloat(t["金額"]) || 0,
-            category: t["類別"] || "一般",
-            date: t["日期時間"] || "",
-            member: t["成員"] || "",
-            desc: t["備註"] || "",
-            type: t["類型"] || "expense",
-          }));
-          setTxCache(formatted);
+        const hasValidSession = () => {
+            const token = safeStringLS(LS.sessionToken, "");
+            const exp = Number(safeStringLS(LS.sessionExp, "0"));
+            return !!(token && exp && Date.now() < exp);
+        };
 
-          const ts = nowStr();
-          setLastSync(ts);
-          localStorage.setItem(LS.lastSync, ts);
-
-          toast("雲端抓取成功");
-        } catch (e) {
-          toast("抓取失敗：" + (e.message || e));
+        async function sha256Base64(str) {
+            const enc = new TextEncoder();
+            const data = enc.encode(str);
+            const digest = await crypto.subtle.digest("SHA-256", data);
+            const bytes = new Uint8Array(digest);
+            let bin = "";
+            for (let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
         }
-      };
 
-      const syncPending = async () => {
-        if (!online) { toast("離線：無法同步"); return; }
-        if (!sessionValid) { toast("請先登入（或 session 過期）"); return; }
-        if (!pending.length) { toast("目前沒有待同步"); return; }
+        // --- 內建圖示元件 ---
+        const SvgIcon = ({ name, size = 24, className = "" }) => {
+            const icons = {
+                wallet: <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z"/>,
+                plus: <path d="M12 5v14m-7-7h14"/>,
+                history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
+                chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
+                settings: (
+                    <React.Fragment>
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+                    </React.Fragment>
+                ),
+                logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
+                refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
+                bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
+                key: <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3m-3-3l2.5-2.5"/>,
+                user: <React.Fragment><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></React.Fragment>,
+                close: <path d="M18 6L6 18M6 6l12 12"/>,
+                info: <React.Fragment><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></React.Fragment>,
+                shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>,
+                check: <path d="M20 6L9 17l-5-5"/>,
+                edit: <React.Fragment><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></React.Fragment>,
+                trash: <React.Fragment><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></React.Fragment>
+            };
+            return (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 aspect-square ${className}`}>
+                    {icons[name] || <circle cx="12" cy="12" r="10"/>}
+                </svg>
+            );
+        };
 
-        toast("同步中...");
-        try {
-          // 一筆一筆送（成功才刪）
-          for (const tx of [...pending]) {
-            const payload = { ...tx, secret: APP_SECRET, sessionToken };
-            const res = await postGAS(payload);
-            if (res.result !== "success") throw new Error(res.message || "同步失敗");
-            setPending(prev => prev.filter(p => p.id !== tx.id));
-          }
-          toast("同步完成");
-          // 同步完順便刷新
-          await fetchCloud();
-        } catch (e) {
-          toast("同步中斷：" + (e.message || e));
-        }
-      };
+        const AddTransactionForm = ({ categories, loginUser, onSubmit, isLoading, allowMemberPick }) => {
+            const inputRef = useRef(null);
+            const [isFocused, setIsFocused] = useState(false);
+            const [formData, setFormData] = useState({ 
+                amount: '', category: categories[0] || '一般', member: loginUser, 
+                type: 'expense', desc: '', date: '' 
+            });
 
-      return (
-        <div className="min-h-screen bg-gray-900 text-white p-6 flex flex-col gap-4">
-          <div className="bg-white/10 rounded-3xl p-5 border border-white/10 animate-in">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-2xl font-black italic">家庭記帳</div>
-                <div className="text-xs text-white/60 mt-1">
-                  狀態：{online ? "線上" : "離線"} · 待同步 {Array.isArray(pending) ? pending.length : 0} · 最後同步 {lastSync}
+            const otherMember = loginUser === '爸爸' ? '媽媽' : '爸爸';
+
+            useEffect(()=> {
+                setFormData(prev => ({...prev, member: loginUser || prev.member}));
+            }, [loginUser]);
+
+            const renderAmount = () => {
+                const val = formData.amount;
+                if (isFocused) return (val === '' || val === '0') ? <span className="text-gray-300 animate-cursor">_</span> : val;
+                return (val === '' || val === '0') ? "0" : val;
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black">
+                    <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-8 text-sm text-gray-500">
+                        <button onClick={() => setFormData({...formData, type: 'expense'})} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'expense' ? 'bg-white text-red-500 shadow-sm font-black' : ''}`}>支出</button>
+                        <button onClick={() => setFormData({...formData, type: 'income'})} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'income' ? 'bg-white text-green-500 shadow-sm font-black' : ''}`}>收入</button>
+                    </div>
+
+                    <div className="relative flex items-center justify-center mb-8 py-2 min-h-[80px] cursor-pointer font-black text-gray-800" onClick={() => inputRef.current?.focus()}>
+                        <span className="text-2xl font-black text-gray-300 mr-1 mt-2">$</span>
+                        <div className={`text-6xl font-black text-center min-w-[1.5rem] tracking-tighter transition-colors ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`}>{renderAmount()}</div>
+                        <input ref={inputRef} type="number" inputMode="decimal" className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer font-black" value={formData.amount} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
+                    </div>
+
+                    <div className="space-y-4 text-left">
+                        <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
+                            <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">日期與時間 (未選則為現在)</label>
+                            <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                        </div>
+                        <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
+                            <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">類別</label>
+                            <select className="w-full bg-transparent border-none outline-none appearance-none font-black" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
+                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
+                            <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">備註說明</label>
+                            <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300" placeholder="輸入內容..." value={formData.desc} onChange={(e) => setFormData({...formData, desc: e.target.value})} />
+                        </div>
+
+                        {/* ✅ 離線也能指定爸爸/媽媽 */}
+                        {allowMemberPick && (
+                            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                                <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 text-gray-500">紀錄對象</label>
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setFormData({...formData, member: loginUser})} className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === loginUser ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-400'}`}>自己 {formData.member === loginUser && '✓'}</button>
+                                    <button type="button" onClick={() => setFormData({...formData, member: otherMember})} className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === otherMember ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-400'}`}>給{otherMember}紀錄 {formData.member === otherMember && '✓'}</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <button disabled={!formData.amount || formData.amount === '0' || isLoading} onClick={() => onSubmit(formData)} className="w-full mt-8 py-5 bg-gray-900 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl disabled:opacity-30">{isLoading ? "處理中..." : "確認存檔"}</button>
                 </div>
-              </div>
-              <div className={`px-3 py-1 rounded-xl text-xs font-black ${sessionValid ? "bg-green-500/20 text-green-200" : "bg-yellow-500/20 text-yellow-200"}`}>
-                {sessionValid ? "已登入" : "未登入"}
-              </div>
-            </div>
+            );
+        };
 
-            <div className="flex gap-2 mt-4">
-              <button onClick={clearLocal} className="px-4 py-2 rounded-2xl bg-white/10 border border-white/10 text-xs font-black active:scale-95">
-                清除本機
-              </button>
-              <button onClick={syncPending} className="px-4 py-2 rounded-2xl bg-blue-600 text-white text-xs font-black active:scale-95">
-                同步暫存
-              </button>
-              <button onClick={fetchCloud} className="px-4 py-2 rounded-2xl bg-white text-gray-900 text-xs font-black active:scale-95">
-                抓雲端
-              </button>
-            </div>
-          </div>
+        const EditTransactionModal = ({ tx, categories, loginUser, onSave, onDelete, onCancel, isLoading, isPending }) => {
+            const [formData, setFormData] = useState({ ...tx });
+            const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
-          <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
-            <div className="text-sm font-black text-gray-700 mb-3">成員登入（線上才可驗證）</div>
-            <div className="flex gap-2 mb-3">
-              {["爸爸","媽媽"].map(n => (
-                <button key={n} onClick={() => setUser(n)} className={`flex-1 py-3 rounded-2xl font-black ${user===n ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}>
-                  {n}
-                </button>
-              ))}
-            </div>
-            <input value={pin} onChange={(e)=>setPin(e.target.value)} maxLength={6} inputMode="numeric"
-              placeholder="輸入 6 位 PIN"
-              className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
-            <button onClick={login} className="w-full py-3 rounded-2xl bg-gray-900 text-white font-black active:scale-95">
-              登入
-            </button>
-          </div>
+            useEffect(() => {
+                let formattedDate = '';
+                if (tx.date) {
+                    formattedDate = String(tx.date).replace(' (已編輯)', '').replace('(已編輯)', '').replace(/\//g, '-').replace(' ', 'T');
+                    if (formattedDate.length > 16) formattedDate = formattedDate.slice(0, 16);
+                }
+                setFormData({ ...tx, date: formattedDate });
+            }, [tx]);
 
-          <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-black text-gray-700">離線暫存（可先新增）</div>
-              <div className="flex gap-2">
-                <button onClick={() => addOffline("爸爸")} className="px-3 py-2 rounded-2xl bg-gray-900 text-white font-black text-sm active:scale-95">+ 爸爸</button>
-                <button onClick={() => addOffline("媽媽")} className="px-3 py-2 rounded-2xl bg-gray-900 text-white font-black text-sm active:scale-95">+ 媽媽</button>
-              </div>
-            </div>
+            const otherMember = loginUser === '爸爸' ? '媽媽' : '爸爸';
 
-            {(Array.isArray(pending) && pending.length === 0) ? (
-              <div className="text-sm text-gray-500">目前沒有暫存</div>
-            ) : (
-              <div className="space-y-2">
-                {(Array.isArray(pending) ? pending : []).slice().reverse().slice(0,8).map(x => (
-                  <div key={x.id} className="bg-gray-100 rounded-2xl p-3 text-sm">
-                    <div className="font-black">{x.member} · {x.category} · ${x.amount}</div>
-                    <div className="text-gray-500 text-xs mt-1">{x.date} · {x.desc}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            return (
+                <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black">
+                    <div className="w-full max-w-sm relative">
+                        <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition"><SvgIcon name="close" size={32}/></button>
+                        <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
+                            <h2 className="text-xl font-black text-center mb-6 text-gray-800 pt-2">{isPending ? "編輯暫存" : "編輯帳目"}</h2>
+                            
+                            <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6 text-sm text-gray-500">
+                                <button onClick={() => setFormData({...formData, type: 'expense'})} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'expense' ? 'bg-white text-red-500 shadow-sm font-black' : ''}`}>支出</button>
+                                <button onClick={() => setFormData({...formData, type: 'income'})} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'income' ? 'bg-white text-green-500 shadow-sm font-black' : ''}`}>收入</button>
+                            </div>
 
-          <div className="bg-white rounded-3xl p-5 text-gray-900 animate-in">
-            <div className="text-sm font-black text-gray-700 mb-2">本機舊資料（最後同步）</div>
-            {txCache.length === 0 ? (
-              <div className="text-sm text-gray-500">尚未抓取雲端資料</div>
-            ) : (
-              <div className="space-y-2">
-                {txCache.slice().reverse().slice(0,6).map(t => (
-                  <div key={t.id} className="bg-gray-100 rounded-2xl p-3 text-sm flex justify-between items-center">
-                    <div className="min-w-0">
-                      <div className="font-black truncate">{t.member} · {t.category}</div>
-                      <div className="text-gray-500 text-xs mt-1 truncate">{t.date} {t.desc ? `· ${t.desc}` : ""}</div>
+                            <div className="relative flex items-center justify-center mb-6 py-2 border-b border-gray-100 pb-6 text-gray-800">
+                                <span className="text-2xl font-black text-gray-300 mr-1 mt-1">$</span>
+                                <input type="number" inputMode="decimal" className={`w-32 text-5xl font-black text-center outline-none bg-transparent ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`} value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
+                            </div>
+
+                            <div className="space-y-4 text-left">
+                                <div className="bg-gray-100 p-3.5 rounded-2xl">
+                                    <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">時間</label>
+                                    <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800 text-sm" value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
+                                </div>
+                                <div className="flex gap-3">
+                                    <div className="bg-gray-100 p-3.5 rounded-2xl flex-1">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">類別</label>
+                                        <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
+                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="bg-gray-100 p-3.5 rounded-2xl flex-1">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">對象</label>
+                                        <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm" value={formData.member} onChange={(e) => setFormData({...formData, member: e.target.value})}>
+                                            <option value={loginUser}>自己</option>
+                                            <option value={otherMember}>{otherMember}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-100 p-3.5 rounded-2xl">
+                                    <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">備註</label>
+                                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm" placeholder="選填" value={formData.desc} onChange={(e) => setFormData({...formData, desc: e.target.value})} />
+                                </div>
+                            </div>
+                            
+                            <div className="flex gap-3 mt-8">
+                                {!showConfirmDelete ? (
+                                    <>
+                                        <button disabled={isLoading} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
+                                            <SvgIcon name="trash" size={18}/> 刪除
+                                        </button>
+                                        <button disabled={!formData.amount || formData.amount === '0' || isLoading} onClick={() => onSave(formData)} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30">
+                                            {isLoading ? "處理中..." : "儲存變更"}
+                                        </button>
+                                    </>
+                                ) : (
+                                    <div className="w-full animate-in bg-red-50 p-4 rounded-2xl text-center border border-red-100">
+                                        <p className="text-red-600 font-black text-xs mb-3">確定永久刪除此紀錄？</p>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setShowConfirmDelete(false)} className="flex-1 py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
+                                            <button disabled={isLoading} onClick={() => onDelete(tx.id)} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                        </div>
                     </div>
-                    <div className={`font-black tabular-nums ${t.type==="income" ? "text-green-600" : "text-red-600"}`}>
-                      ${Number(t.amount||0).toLocaleString()}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('dashboard');
+
+            // ✅ 雲端交易資料（登入後才抓）
+            const [transactions, setTransactions] = useState(() => safeArrayLS(LS.txCache));
+            const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
+
+            // ✅ members（不含 pin）
+            const [familyConfig, setFamilyConfig] = useState(() => {
+                const saved = safeArrayLS(LS.members);
+                return saved.length ? saved : [
+                    { name: '爸爸', color: 'bg-blue-600', bioEnabled: false },
+                    { name: '媽媽', color: 'bg-pink-600', bioEnabled: false }
+                ];
+            });
+
+            // ✅ session
+            const [sessionToken, setSessionToken] = useState(() => safeStringLS(LS.sessionToken, ""));
+            const [sessionExp, setSessionExp] = useState(() => Number(safeStringLS(LS.sessionExp, "0")));
+
+            const [currentUser, setCurrentUser] = useState(() => {
+                const last = safeStringLS(LS.lastUser, "");
+                if (!last) return null;
+                const user = (safeArrayLS(LS.members).find(u => u.name === last)) || null;
+                return user;
+            });
+
+            const [gasVersion, setGasVersion] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+            const [statusMsg, setStatusMsg] = useState({ type: '', text: '' });
+            const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+            const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, '----/--/-- --:--'));
+
+            // ✅ 離線暫存隊列（可編輯）
+            const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
+
+            // ✅ 離線解鎖狀態：能否看舊資料
+            const [isUnlockedLocal, setIsUnlockedLocal] = useState(false);
+
+            const [pinInput, setPinInput] = useState("");
+            const [selectingUser, setSelectingUser] = useState(null);
+
+            const [isChangingPin, setIsChangingPin] = useState(false);
+            const [pinChangeStep, setPinChangeStep] = useState(1);
+            const [tempPin, setTempPin] = useState("");
+            const [newPinCache, setNewPinCache] = useState("");
+            const [showChangelog, setShowChangelog] = useState(false);
+
+            // 歷史紀錄篩選與分頁狀態
+            const [historyFilter, setHistoryFilter] = useState('all'); 
+            const [timeFilter, setTimeFilter] = useState('all'); 
+            const [currentPage, setCurrentPage] = useState(1);
+            const ITEMS_PER_PAGE = 10;
+
+            const [editingTx, setEditingTx] = useState(null);
+            const [editingIsPending, setEditingIsPending] = useState(false);
+
+            const showStatus = (type, text) => {
+                setStatusMsg({ type, text });
+                setTimeout(() => setStatusMsg({ type: '', text: '' }), 3000);
+            };
+
+            const sessionValid = useMemo(() => {
+                return !!(sessionToken && sessionExp && Date.now() < sessionExp);
+            }, [sessionToken, sessionExp]);
+
+            // ✅ 存本機
+            useEffect(() => {
+                localStorage.setItem(LS.pending, JSON.stringify(syncQueue));
+            }, [syncQueue]);
+
+            useEffect(() => {
+                localStorage.setItem(LS.members, JSON.stringify(familyConfig));
+            }, [familyConfig]);
+
+            useEffect(() => {
+                localStorage.setItem(LS.txCache, JSON.stringify(txCache));
+            }, [txCache]);
+
+            useEffect(() => {
+                if (window.PublicKeyCredential) {
+                    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v));
+                }
+            }, []);
+
+            // ✅ 篩選變更 → 回第一頁
+            useEffect(() => { setCurrentPage(1); }, [historyFilter, timeFilter]);
+
+            // ✅ App 啟動先抓 members（不含 PIN）
+            useEffect(() => {
+                (async () => {
+                    try {
+                        const res = await fetch(gasUrl);
+                        const data = await res.json();
+                        if (data.gasVersion) setGasVersion(data.gasVersion);
+                        if (data.members && data.members.length) {
+                            setFamilyConfig(data.members);
+                        }
+                    } catch (e) {
+                        // 離線就用本機
+                    }
+                })();
+            }, []);
+
+            // ✅ 網路回來自動同步（規則2=A）
+            useEffect(() => {
+                const onOnline = async () => {
+                    if (!navigator.onLine) return;
+                    if (!sessionValid || !currentUser) return;
+                    try {
+                        await processOfflineQueue();
+                        await refreshCloudTx();
+                        showStatus('success', '自動同步完成');
+                    } catch(e) {
+                        // session 可能過期
+                    }
+                };
+                window.addEventListener('online', onOnline);
+                return () => window.removeEventListener('online', onOnline);
+            }, [sessionValid, currentUser, syncQueue, sessionToken]);
+
+            const displayDateClean = (val) => {
+                if (!val) return '';
+                let str = String(val).replace(/上午|下午|AM|PM/gi, '').trim();
+                const isEdited = str.includes('(已編輯)');
+                str = str.replace(' (已編輯)', '').replace('(已編輯)', '');
+                if (str.includes(':')) {
+                    const parts = str.split(' ');
+                    if (parts.length > 1) {
+                        const cleaned = `${parts[0].replace(/-/g, '/')} ${parts[1].split(':').slice(0, 2).join(':')}`;
+                        return isEdited ? cleaned + ' (已編輯)' : cleaned;
+                    } else if (str.includes('T')) {
+                        const partsISO = str.split('T');
+                        const cleaned = `${partsISO[0].replace(/-/g, '/')} ${partsISO[1].split(':').slice(0, 2).join(':')}`;
+                        return isEdited ? cleaned + ' (已編輯)' : cleaned;
+                    }
+                }
+                const cleaned = str.replace(/-/g, '/');
+                return isEdited ? cleaned + ' (已編輯)' : cleaned;
+            };
+
+            // -------------------------
+            // B+ 核心：登入 / 抓雲端 / 同步
+            // -------------------------
+            const refreshCloudTx = async () => {
+                if (!sessionValid || !currentUser) return;
+                const data = await postGAS({ secret: APP_SECRET, action: "GET_TX", sessionToken });
+                if (data.result !== "success") throw new Error(data.message || "GET_TX failed");
+                const formatted = (data.transactions || []).map((t, i) => ({
+                    id: t.id || i, 
+                    amount: parseFloat(t['金額']) || 0,
+                    category: t['類別'] || '一般',
+                    date: t['日期時間'] || t['日期'] || '',
+                    member: t['成員'] || '未知',
+                    recorder: t['記錄者'] || '系統', 
+                    desc: t['備註'] || '',
+                    type: t['類型'] || 'expense'
+                }));
+                setTransactions(formatted);
+                setTxCache(formatted);
+
+                const ts = nowStr();
+                setLastSyncText(ts);
+                localStorage.setItem(LS.lastSync, ts);
+            };
+
+            const processOfflineQueue = async () => {
+                if (!navigator.onLine) return;
+                if (!sessionValid || !currentUser) return;
+                if (!syncQueue.length) return;
+
+                const queue = [...syncQueue];
+                for (const tx of queue) {
+                    const payload = { ...tx, secret: APP_SECRET, sessionToken };
+                    const res = await postGAS(payload);
+                    if (res.result !== "success") break;
+                    setSyncQueue(prev => prev.filter(q => !(q.id === tx.id && (q.action||"") === (tx.action||""))));
+                }
+            };
+
+            const loginOnline = async (name, pin) => {
+                setIsLoading(true);
+                try {
+                    const data = await postGAS({ secret: APP_SECRET, action: "AUTH_LOGIN", name, pin });
+                    if (data.result !== "success") throw new Error(data.message || "登入失敗");
+
+                    localStorage.setItem(LS.sessionToken, data.sessionToken);
+                    localStorage.setItem(LS.sessionExp, String(data.sessionExp));
+                    localStorage.setItem(LS.lastUser, name);
+
+                    setSessionToken(data.sessionToken);
+                    setSessionExp(Number(data.sessionExp));
+
+                    // ✅ 只存 hash 做離線 PIN 解鎖（不存 PIN 明碼）
+                    const h = await sha256Base64(`${name}::${pin}::${APP_SECRET}`);
+                    localStorage.setItem(LS.pinHashPrefix + name, h);
+
+                    // 更新 currentUser（用 members 中的顏色/bio）
+                    const u = familyConfig.find(x => x.name === name) || { name, color: name === '媽媽' ? 'bg-pink-600' : 'bg-blue-600', bioEnabled: false };
+                    setCurrentUser(u);
+                    setIsUnlockedLocal(true);
+
+                    // ✅ 你指定：每次登入就刷新 + 若有暫存就先同步再刷新
+                    await processOfflineQueue();
+                    await refreshCloudTx();
+
+                    showStatus('success', '登入成功');
+                } catch (e) {
+                    showStatus('error', e.message || '登入失敗');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const unlockWithPinLocal = async (name, pin) => {
+                const stored = localStorage.getItem(LS.pinHashPrefix + name);
+                if (!stored) return false;
+                const h = await sha256Base64(`${name}::${pin}::${APP_SECRET}`);
+                return h === stored;
+            };
+
+            // 生物辨識：本機解鎖（不等於雲端登入）
+            const handleBioLoginLocal = async (name) => {
+                try {
+                    const base64Id = localStorage.getItem(`bio_cred_${name}`);
+                    if (!base64Id) { showStatus('info', '請先線上登入後到設定啟用'); return false; }
+                    const idStr = atob(base64Id); 
+                    const idArray = new Uint8Array(idStr.length);
+                    for (let i = 0; i < idStr.length; i++) idArray[i] = idStr.charCodeAt(i);
+                    const challenge = new Uint8Array(32); window.crypto.getRandomValues(challenge);
+                    await navigator.credentials.get({ publicKey: { challenge, allowCredentials: [{ type: "public-key", id: idArray }], userVerification: "required" } });
+                    setIsUnlockedLocal(true);
+                    showStatus('success', '本機解鎖成功');
+                    return true;
+                } catch (err) { showStatus('error', '指紋/臉部驗證失敗'); return false; }
+            };
+
+            // -------------------------
+            // 原功能：新增/更新/刪除
+            // -------------------------
+            const handleAdd = async (newTx) => {
+                setIsLoading(true);
+
+                let finalDateStr;
+                if (newTx.date) finalDateStr = newTx.date.replace('T', ' ').replace(/-/g, '/');
+                else finalDateStr = nowStr();
+
+                const completeTx = { 
+                    ...newTx, 
+                    date: finalDateStr, 
+                    recorder: currentUser?.name || '離線', 
+                    id: Date.now() 
+                };
+
+                // UI 立即顯示（僅當已解鎖/已登入才顯示在雲端清單）
+                if (currentUser?.name && isUnlockedLocal) {
+                    setTransactions(prev => [...prev, completeTx]);
+                }
+
+                // ✅ 離線或未登入：一律進暫存
+                if (!navigator.onLine || !sessionValid || !currentUser) {
+                    setSyncQueue(prev => [...prev, completeTx]);
+                    showStatus('info', '已暫存（待同步）');
+                    setIsLoading(false);
+                    setActiveTab('dashboard');
+                    return;
+                }
+
+                // ✅ 線上且已登入：先送雲端，成功後刷新
+                try {
+                    const res = await postGAS({ ...completeTx, secret: APP_SECRET, sessionToken });
+                    if (res.result !== "success") throw new Error(res.message || "寫入失敗");
+                    showStatus('success', '已同步');
+                    await refreshCloudTx();
+                } catch (e) {
+                    setSyncQueue(prev => [...prev, completeTx]);
+                    showStatus('info', '已暫存（稍後自動同步）');
+                } finally {
+                    setIsLoading(false);
+                    setActiveTab('dashboard');
+                }
+            };
+
+            const handleUpdateTx = async (updatedTx) => {
+                // ✅ 如果是暫存：只改本機暫存，不打雲端
+                if (editingIsPending) {
+                    setSyncQueue(prev => prev.map(q => q.id === updatedTx.id ? { ...q, ...updatedTx } : q));
+                    setEditingTx(null);
+                    setEditingIsPending(false);
+                    showStatus('success', '暫存已更新');
+                    return;
+                }
+
+                setIsLoading(true);
+                let finalDateStr = updatedTx.date;
+                if (finalDateStr && finalDateStr.includes('T')) finalDateStr = finalDateStr.replace('T', ' ').replace(/-/g, '/');
+                if (!String(finalDateStr).includes('(已編輯)')) finalDateStr = `${finalDateStr} (已編輯)`;
+
+                const txPayload = { ...updatedTx, date: finalDateStr, action: 'UPDATE_TX' };
+
+                setTransactions(prev => prev.map(t => t.id === updatedTx.id ? { ...txPayload, recorder: t.recorder } : t));
+                setEditingTx(null);
+
+                try {
+                    if (navigator.onLine && sessionValid && currentUser) {
+                        const res = await postGAS({ ...txPayload, secret: APP_SECRET, sessionToken });
+                        if (res.result !== "success") throw new Error(res.message || "更新失敗");
+                        showStatus('success', '紀錄已更新');
+                        await refreshCloudTx();
+                    } else {
+                        setSyncQueue(prev => [...prev, txPayload]);
+                        showStatus('info', '已暫存（待同步）');
+                    }
+                } catch (e) {
+                    setSyncQueue(prev => [...prev, txPayload]);
+                    showStatus('info', '已暫存（待同步）');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleDeleteTx = async (id) => {
+                // ✅ 暫存刪除
+                if (editingIsPending) {
+                    setSyncQueue(prev => prev.filter(q => q.id !== id));
+                    setEditingTx(null);
+                    setEditingIsPending(false);
+                    showStatus('success', '暫存已刪除');
+                    return;
+                }
+
+                setIsLoading(true);
+                const txPayload = { id, action: 'DELETE_TX' };
+
+                setTransactions(prev => prev.filter(t => t.id !== id));
+                setEditingTx(null);
+
+                try {
+                    if (navigator.onLine && sessionValid && currentUser) {
+                        const res = await postGAS({ ...txPayload, secret: APP_SECRET, sessionToken });
+                        if (res.result !== "success") throw new Error(res.message || "刪除失敗");
+                        showStatus('success', '紀錄已刪除');
+                        await refreshCloudTx();
+                    } else {
+                        setSyncQueue(prev => [...prev, txPayload]);
+                        showStatus('info', '已暫存（待同步）');
+                    }
+                } catch (e) {
+                    setSyncQueue(prev => [...prev, txPayload]);
+                    showStatus('info', '已暫存（待同步）');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // -------------------------
+            // 設定：改 PIN / Bio
+            // -------------------------
+            const handlePinChangeSubmit = async (val) => {
+                const next = tempPin + val;
+                if (next.length > 6) return;
+                setTempPin(next);
+
+                if (next.length !== 6) return;
+
+                // step1: 驗證舊 PIN（線上才驗）
+                if (pinChangeStep === 1) {
+                    if (!navigator.onLine || !sessionValid) {
+                        setTempPin("");
+                        showStatus('error', '需線上登入後才能更換密碼');
+                        return;
+                    }
+                    // 直接用後端驗證：用 AUTH_LOGIN 試登（不切換 session）
+                    try {
+                        const data = await postGAS({ secret: APP_SECRET, action: "AUTH_LOGIN", name: currentUser.name, pin: next });
+                        if (data.result !== "success") throw new Error("目前密碼不正確");
+                        setPinChangeStep(2);
+                        setTempPin("");
+                    } catch (e) {
+                        setTempPin("");
+                        showStatus('error', '目前密碼不正確');
+                    }
+                    return;
+                }
+
+                if (pinChangeStep === 2) {
+                    setNewPinCache(next);
+                    setPinChangeStep(3);
+                    setTempPin("");
+                    return;
+                }
+
+                if (pinChangeStep === 3) {
+                    if (next !== newPinCache) {
+                        setTempPin("");
+                        setPinChangeStep(2);
+                        showStatus('error', '兩次輸入不相符');
+                        return;
+                    }
+                    await handleUpdatePin(currentUser.name, tempPin /*old in step1 already validated*/ , next);
+                }
+            };
+
+            const handleUpdatePin = async (name, oldPin, newPin) => {
+                setIsLoading(true);
+                try {
+                    const res = await postGAS({ 
+                        secret: APP_SECRET, 
+                        sessionToken, 
+                        action: 'UPDATE_PIN', 
+                        name, 
+                        oldPin: oldPin || "", 
+                        newPin 
+                    });
+                    if (res.result !== "success") throw new Error(res.message || "更新失敗");
+
+                    // ✅ 更新本機離線解鎖 hash
+                    const h = await sha256Base64(`${name}::${newPin}::${APP_SECRET}`);
+                    localStorage.setItem(LS.pinHashPrefix + name, h);
+
+                    showStatus('success', '密碼更新成功');
+                    setIsChangingPin(false);
+                    setTempPin("");
+                    setPinChangeStep(1);
+                } catch (e) {
+                    showStatus('error', e.message || '更新失敗');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const updateBioState = async (name, enabled) => {
+                setIsLoading(true);
+                try {
+                    const res = await postGAS({ secret: APP_SECRET, sessionToken, action: 'UPDATE_BIO', name, enabled });
+                    if (res.result !== "success") throw new Error(res.message || "設定失敗");
+                    setFamilyConfig(prev => prev.map(u => u.name === name ? { ...u, bioEnabled: enabled } : u));
+                    showStatus('success', enabled ? '生物辨識已開啟' : '已關閉');
+                } catch (e) {
+                    showStatus('error', e.message || '設定失敗');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleToggleBio = async () => {
+                const willEnable = !currentUser.bioEnabled;
+                if (willEnable) {
+                    if (!window.PublicKeyCredential) { showStatus('error', '不支援生物辨識'); return; }
+                    try {
+                        const challenge = new Uint8Array(32); window.crypto.getRandomValues(challenge);
+                        const userID = new Uint8Array(16); window.crypto.getRandomValues(userID);
+                        const cred = await navigator.credentials.create({
+                            publicKey: { challenge, rp: { name: "家庭記帳" }, user: { id: userID, name: currentUser.name, displayName: currentUser.name }, pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }], authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" }, timeout: 60000 }
+                        });
+                        const base64Id = btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(cred.rawId))));
+                        localStorage.setItem(`bio_cred_${currentUser.name}`, base64Id);
+                        await updateBioState(currentUser.name, true);
+                    } catch (err) { showStatus('error', '驗證失敗或已取消'); }
+                } else {
+                    localStorage.removeItem(`bio_cred_${currentUser.name}`);
+                    await updateBioState(currentUser.name, false);
+                }
+            };
+
+            // -------------------------
+            // Dashboard / history 資料來源規則
+            // -------------------------
+            const visibleTransactions = useMemo(() => {
+                // 已登入 → 顯示雲端
+                if (sessionValid && currentUser) return transactions;
+                // 未登入但已本機解鎖 → 顯示最後同步快取
+                if (isUnlockedLocal) return txCache;
+                // 未解鎖：不顯示舊資料
+                return [];
+            }, [sessionValid, currentUser, transactions, txCache, isUnlockedLocal]);
+
+            const myTransactions = useMemo(() => {
+                if (!currentUser) return [];
+                return visibleTransactions.filter(t => t.member === currentUser.name);
+            }, [visibleTransactions, currentUser]);
+
+            const recentDisplayTransactions = useMemo(() => {
+                if (!currentUser) return [];
+                return visibleTransactions.filter(t => t.member === currentUser.name || t.recorder === currentUser.name);
+            }, [visibleTransactions, currentUser]);
+
+            const stats = useMemo(() => {
+                const income = myTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                const expense = myTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                return { income, expense, balance: income - expense };
+            }, [myTransactions]);
+
+            // 計算篩選與分頁（雲端/快取都可以）
+            const filteredHistory = useMemo(() => {
+                return myTransactions.slice().reverse()
+                    .filter(tx => historyFilter === 'all' || tx.type === historyFilter)
+                    .filter(tx => {
+                        if (timeFilter === 'all') return true;
+                        if (!tx.date) return true;
+                        let cleanDateStr = String(tx.date).replace(/ \(已編輯\)/g, '').replace(/\(已編輯\)/g, '').replace(/-/g, '/');
+                        if (cleanDateStr.includes('T')) cleanDateStr = cleanDateStr.replace('T', ' ');
+                        const txDate = new Date(cleanDateStr);
+                        if (isNaN(txDate.getTime())) return true;
+                        const now = new Date();
+                        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                        const txTime = txDate.getTime();
+                        switch (timeFilter) {
+                            case 'last_1_week': return txTime >= (todayStart - 7 * 24 * 60 * 60 * 1000);
+                            case 'last_1_month': return txTime >= (todayStart - 30 * 24 * 60 * 60 * 1000);
+                            case 'last_3_months': return txTime >= (todayStart - 90 * 24 * 60 * 60 * 1000);
+                            case 'last_6_months': return txTime >= (todayStart - 180 * 24 * 60 * 60 * 1000);
+                            default: return true;
+                        }
+                    });
+            }, [myTransactions, historyFilter, timeFilter]);
+
+            const totalPages = Math.ceil(filteredHistory.length / ITEMS_PER_PAGE) || 1;
+            const paginatedHistory = useMemo(() => {
+                const start = (currentPage - 1) * ITEMS_PER_PAGE;
+                return filteredHistory.slice(start, start + ITEMS_PER_PAGE);
+            }, [filteredHistory, currentPage]);
+
+            // -------------------------
+            // UI：登入頁
+            // -------------------------
+            if (!currentUser) {
+                return (
+                    <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
+                        <div className="mb-12 text-white">
+                            <div className="bg-blue-600 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 text-white"><SvgIcon name="wallet" size={36} /></div>
+                            <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
+                            <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
+
+                            <div className="mt-4 flex items-center justify-center gap-3 text-[11px]">
+                                <span className={`px-2 py-1 rounded-lg ${navigator.onLine ? "bg-green-600/20 text-green-300" : "bg-red-600/20 text-red-300"}`}>
+                                    {navigator.onLine ? "線上" : "離線"}
+                                </span>
+                                <span className="text-white/50">待同步 {syncQueue.length}</span>
+                            </div>
+                        </div>
+
+                        {!selectingUser ? (
+                            <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white">
+                                {familyConfig.map(user => (
+                                    <button key={user.name} onClick={() => setSelectingUser(user)} className={`${user.color} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
+                                        {user.name}
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="w-full max-w-xs animate-in text-white text-center font-black">
+                                <p className="font-black text-3xl mb-2 tracking-tight text-white">{selectingUser.name}</p>
+
+                                <p className="text-gray-500 text-xs font-bold uppercase tracking-widest opacity-60 mb-8">
+                                    {navigator.onLine ? "驗證 6 位密碼（雲端登入）" : "離線解鎖（看舊資料）"}
+                                </p>
+
+                                <div className="flex justify-center gap-4 mb-10">
+                                    {[...Array(6)].map((_, i) => (
+                                        <div key={i} className={`w-3 h-3 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? 'bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]' : 'bg-transparent'}`}></div>
+                                    ))}
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-4 mb-8 text-white">
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(k => (
+                                        <button key={k} onClick={async () => {
+                                            if (k === 'C') { setPinInput(""); return; }
+                                            if (k === '←') { setPinInput(pinInput.slice(0, -1)); return; }
+                                            const n = pinInput + k;
+                                            if (n.length > 6) return;
+                                            setPinInput(n);
+
+                                            if (n.length === 6) {
+                                                if (navigator.onLine) {
+                                                    // ✅ 線上：雲端登入
+                                                    await loginOnline(selectingUser.name, n);
+                                                    setSelectingUser(null);
+                                                    setPinInput("");
+                                                    return;
+                                                }
+
+                                                // ✅ 離線：本機 PIN 解鎖（無 hash 則視為未解鎖）
+                                                const ok = await unlockWithPinLocal(selectingUser.name, n);
+                                                if (ok) {
+                                                    setIsUnlockedLocal(true);
+                                                    // 仍設定 currentUser（用於新增暫存歸屬）
+                                                    const u = familyConfig.find(x => x.name === selectingUser.name) || selectingUser;
+                                                    setCurrentUser(u);
+                                                    localStorage.setItem(LS.lastUser, selectingUser.name);
+                                                    showStatus('success', '離線解鎖成功');
+                                                    setSelectingUser(null);
+                                                    setPinInput("");
+                                                } else {
+                                                    setPinInput("");
+                                                    showStatus('error', '離線尚無驗證資料或密碼不正確');
+                                                }
+                                            }
+                                        }} className="bg-white/10 h-16 rounded-3xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white">{k}</button>
+                                    ))}
+                                </div>
+
+                                {/* ✅ 生物辨識：本機解鎖 */}
+                                {biometricAvailable && (
+                                    <div className="mb-8 p-5 bg-white/5 rounded-3xl border border-blue-500/20 text-left">
+                                        {selectingUser.bioEnabled ? (
+                                            <button onClick={async () => {
+                                                const ok = await handleBioLoginLocal(selectingUser.name);
+                                                if (ok) {
+                                                    const u = familyConfig.find(x => x.name === selectingUser.name) || selectingUser;
+                                                    setCurrentUser(u);
+                                                    localStorage.setItem(LS.lastUser, selectingUser.name);
+                                                    setSelectingUser(null);
+                                                }
+                                            }} className="w-full py-4 bg-blue-600 text-white rounded-2xl flex items-center justify-center gap-3 font-black text-lg active:scale-95 transition shadow-xl">
+                                                <SvgIcon name="bio" size={24} /> 生物辨識解鎖（本機）
+                                            </button>
+                                        ) : (
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-1 text-blue-400 font-black uppercase tracking-widest text-[11px]"><SvgIcon name="info" size={14} /><span>解鎖提示</span></div>
+                                                <p className="text-[11px] text-gray-400 font-bold leading-relaxed">尚未開啟生物辨識功能。<br/>請線上登入後前往「設定」頁面開啟。</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <button onClick={() => {setSelectingUser(null); setPinInput("");}} className="text-gray-500 text-xs font-black uppercase tracking-widest underline underline-offset-4 active:text-blue-500">返回成員列表</button>
+                            </div>
+                        )}
+
+                        {statusMsg.text && (
+                            <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[200] pointer-events-none px-4 text-center">
+                                <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
+                                    statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type==='error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white')
+                                }`}>
+                                    <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                );
+            }
 
-          {status && (
-            <div className="fixed bottom-10 left-0 right-0 flex justify-center px-4">
-              <div className="bg-black/70 text-white px-5 py-3 rounded-2xl text-sm font-black border border-white/10">
-                {status}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
+            // -------------------------
+            // UI：主畫面
+            // -------------------------
+            return (
+                <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
 
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
-  </script>
+                    {/* 編輯 Modal（支援暫存編輯） */}
+                    {editingTx && (
+                        <EditTransactionModal 
+                            tx={editingTx} 
+                            categories={['餐飲', '交通', '購物', '居家', '水電', '醫療', '薪資', '投資', '雜項']} 
+                            loginUser={currentUser.name} 
+                            onSave={handleUpdateTx} 
+                            onDelete={handleDeleteTx}
+                            onCancel={() => { setEditingTx(null); setEditingIsPending(false); }}
+                            isLoading={isLoading} 
+                            isPending={editingIsPending}
+                        />
+                    )}
+
+                    {/* 更新紀錄 */}
+                    {showChangelog && (
+                        <div className="fixed inset-0 z-[300] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-gray-800 text-left">
+                            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 relative">
+                                <button onClick={() => setShowChangelog(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24} /></button>
+                                <h3 className="font-black text-xl mb-6 flex items-center gap-2 italic text-left text-gray-800"><SvgIcon name="info" size={20} className="text-blue-600" /> 更新紀錄</h3>
+                                <div className="space-y-6 max-h-[60vh] overflow-y-auto scrollbar-hide text-[11px]">
+                                    {CHANGELOG.map(log => (
+                                        <div key={log.version} className="border-l-2 border-blue-100 pl-4 py-1 text-gray-800 font-bold">
+                                            <div className="flex justify-between items-center mb-1"><span>v{log.version}</span><span className="font-bold text-gray-400 text-[10px]">{log.date}</span></div>
+                                            <p className="text-gray-500 leading-relaxed">{log.note}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 更換密碼 Modal */}
+                    {isChangingPin && (
+                        <div className="fixed inset-0 z-[300] bg-gray-900/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 animate-in text-white text-center">
+                            <button onClick={() => {setIsChangingPin(false); setTempPin(""); setPinChangeStep(1);}} className="absolute top-10 right-10 text-gray-400 active:scale-90"><SvgIcon name="close" size={32}/></button>
+                            <div className="mb-10">
+                                <div className="bg-blue-600/20 p-4 rounded-3xl mb-4 inline-block text-blue-500"><SvgIcon name="key" size={32}/></div>
+                                <h2 className="text-2xl font-black text-white mb-2">
+                                    {pinChangeStep === 1 ? '請輸入目前密碼' : pinChangeStep === 2 ? '請設定新密碼' : '請再次輸入新密碼'}
+                                </h2>
+                                <p className="text-gray-400 text-xs font-bold">
+                                    {pinChangeStep === 1 ? '需線上登入後才可更換密碼' : '請確保這是您容易記住的 6 位數字'}
+                                </p>
+                            </div>
+                            <div className="flex justify-center gap-4 mb-12">
+                                {[...Array(6)].map((_, i) => (<div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-blue-500 transition-all ${tempPin.length > i ? 'bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]' : 'bg-transparent'}`}></div>))}
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 w-full max-w-xs">
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, '←'].map(k => (
+                                    <button key={k} onClick={() => {
+                                        if (k === 'C') setTempPin("");
+                                        else if (k === '←') setTempPin(tempPin.slice(0, -1));
+                                        else handlePinChangeSubmit(k);
+                                    }} className="bg-white/10 h-16 rounded-3xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white">{k}</button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Header */}
+                    <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800">
+                        <div className="flex items-center gap-3 text-left">
+                            <div className={`${currentUser.color || (currentUser.name==='媽媽'?'bg-pink-600':'bg-blue-600')} w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/30`}>{currentUser.name.charAt(0)}</div>
+                            <div>
+                                <h1 className="text-2xl font-black tracking-tighter italic">家庭記帳</h1>
+                                <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded-lg ${navigator.onLine ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"}`}>
+                                        {navigator.onLine ? "線上" : "離線"}
+                                    </span>
+                                    {!sessionValid && <span className="text-yellow-600">未雲端登入（僅顯示快取/暫存）</span>}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="text-right leading-none">
+                                <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
+                                <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
+                            </div>
+                            <div className="relative">
+                                <button onClick={async () => {
+                                    if (!navigator.onLine) { showStatus('info', '目前離線'); return; }
+                                    if (!sessionValid) { showStatus('info', '請先雲端登入'); return; }
+                                    setIsLoading(true);
+                                    try {
+                                        await processOfflineQueue();
+                                        await refreshCloudTx();
+                                        showStatus('success', '刷新完成');
+                                    } catch(e) {
+                                        showStatus('error', '刷新失敗（可能需重新登入）');
+                                    } finally {
+                                        setIsLoading(false);
+                                    }
+                                }} className={`p-2.5 bg-gray-50 rounded-xl transition-all flex items-center justify-center active:scale-90 text-gray-600 ${isLoading ? 'animate-spin text-blue-500' : ''}`}>
+                                    <SvgIcon name="refresh" size={20}/>
+                                </button>
+                                {syncQueue.length > 0 && (
+                                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 border-2 border-white text-[8px] text-white flex items-center justify-center rounded-full shadow-md animate-bounce">
+                                        {syncQueue.length}
+                                    </div>
+                                )}
+                            </div>
+                            <button onClick={() => {
+                                setCurrentUser(null);
+                                setIsUnlockedLocal(false);
+                                setActiveTab('dashboard');
+                            }} className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition-all flex items-center justify-center">
+                                <SvgIcon name="logout" size={20}/>
+                            </button>
+                        </div>
+                    </header>
+
+                    <main className="p-6 flex-1 overflow-y-auto scrollbar-hide text-gray-800">
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-6 animate-in">
+                                <div className="bg-gray-900 p-8 rounded-[3rem] shadow-2xl text-white relative overflow-hidden text-center">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[60px] rounded-full"></div>
+                                    <span className="text-[10px] font-black uppercase mb-3 block tracking-widest">本月估算結餘</span>
+                                    <div className="text-5xl font-black mb-8 tracking-tighter tabular-nums">${stats.balance.toLocaleString()}</div>
+                                    <div className="flex w-full gap-4 pt-6 border-t border-white/5 text-sm text-gray-300">
+                                        <div className="flex-1 text-center"><p className="text-[9px] uppercase mb-1 font-black">收入</p><p className="text-xl text-green-400 font-black">+${stats.income.toLocaleString()}</p></div>
+                                        <div className="flex-1 border-l border-white/5 text-center"><p className="text-[9px] uppercase mb-1 font-black">支出</p><p className="text-xl text-red-400 font-black">-${stats.expense.toLocaleString()}</p></div>
+                                    </div>
+
+                                    {!sessionValid && (
+                                        <div className="mt-6 text-[11px] text-yellow-200/80 flex items-center justify-center gap-2">
+                                            <SvgIcon name="shield" size={14}/> 未雲端登入：僅顯示最後快取（需解鎖）與暫存
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* 最近動態 */}
+                                <div className="space-y-4 text-left">
+                                    <h3 className="font-black text-lg px-1">最近動態</h3>
+
+                                    {/* 若未解鎖且未登入，不顯示舊資料 */}
+                                    {(!sessionValid && !isUnlockedLocal) ? (
+                                        <div className="bg-white p-5 rounded-3xl border border-gray-100 text-gray-500 text-sm">
+                                            目前未解鎖，無法顯示舊資料。<br/>
+                                            你仍可在「新增」記帳（會暫存），或回登入頁用 PIN/生物辨識解鎖。
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {recentDisplayTransactions.slice(-5).reverse().map(tx => {
+                                                const isForOthers = tx.recorder === currentUser.name && tx.member !== currentUser.name;
+                                                const isReceivedFromOthers = tx.member === currentUser.name && tx.recorder !== currentUser.name;
+                                                const badgeMember = isForOthers ? tx.member : null;
+
+                                                return (
+                                                    <div key={tx.id} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-4 shadow-sm active:bg-gray-50 transition-colors text-left">
+                                                        <div className="relative">
+                                                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] shrink-0 leading-none ${tx.type === 'income' ? 'bg-green-600 text-white shadow-lg' : 'bg-red-600 text-white shadow-lg'}`}>
+                                                                {tx.type === 'income' ? '收入' : '支出'}
+                                                            </div>
+                                                            {badgeMember && (
+                                                                <div className={`absolute -top-1 -right-1 w-6 h-6 rounded-full border-2 border-white shadow-md flex items-center justify-center text-[10px] text-white font-black ${badgeMember === '媽媽' ? 'bg-pink-500' : 'bg-blue-500'}`}>
+                                                                    {badgeMember.charAt(0)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 font-bold text-base truncate text-gray-800">{tx.category}</div>
+                                                            <div className="text-[10px] text-gray-400 mt-1 font-medium">
+                                                                {isReceivedFromOthers ? `由${tx.recorder}記 · ` : (isForOthers ? `幫${tx.member}記 · ` : '')}{displayDateClean(tx.date)}
+                                                            </div>
+                                                        </div>
+                                                        <div className={`font-black tabular-nums text-lg shrink-0 ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>${Number(tx.amount).toLocaleString()}</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'add' && (
+                            <AddTransactionForm 
+                                categories={['餐飲', '交通', '購物', '居家', '水電', '醫療', '薪資', '投資', '雜項']} 
+                                loginUser={currentUser.name} 
+                                onSubmit={handleAdd} 
+                                isLoading={isLoading}
+                                allowMemberPick={true}
+                            />
+                        )}
+
+                        {activeTab === 'history' && (
+                            <div className="space-y-4 animate-in pb-24 text-left">
+                                {/* ✅ 暫存清單（可編輯） */}
+                                {syncQueue.length > 0 && (
+                                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="font-black text-blue-800">待同步暫存（{syncQueue.length}）</div>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!navigator.onLine) { showStatus('info','目前離線'); return; }
+                                                    if (!sessionValid) { showStatus('info','請先雲端登入'); return; }
+                                                    setIsLoading(true);
+                                                    try {
+                                                        await processOfflineQueue();
+                                                        await refreshCloudTx();
+                                                        showStatus('success','同步完成');
+                                                    } catch(e) {
+                                                        showStatus('error','同步失敗（可能需重新登入）');
+                                                    } finally {
+                                                        setIsLoading(false);
+                                                    }
+                                                }}
+                                                className="px-3 py-2 bg-blue-600 text-white rounded-xl font-black text-xs active:scale-95 disabled:opacity-40"
+                                                disabled={isLoading}
+                                            >
+                                                {isLoading ? "同步中..." : "立即同步"}
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            {syncQueue.slice().reverse().slice(0, 10).map(tx => (
+                                                <div key={tx.id} className="bg-white p-4 rounded-2xl border border-blue-100 flex justify-between items-center">
+                                                    <div className="min-w-0">
+                                                        <div className="font-black text-gray-800 truncate">
+                                                            {tx.category || '一般'} · {tx.type === 'income' ? '收入' : '支出'}
+                                                        </div>
+                                                        <div className="text-[10px] text-gray-500 mt-1 truncate">
+                                                            {tx.member ? `給${tx.member} · ` : ''}{displayDateClean(tx.date)} {tx.desc ? `· ${tx.desc}` : ''}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <span className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                                            ${Number(tx.amount || 0).toLocaleString()}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => { setEditingTx(tx); setEditingIsPending(true); }}
+                                                            className="text-gray-400 bg-gray-50 p-2 rounded-xl active:scale-95 transition-all border border-gray-100 hover:text-blue-500 hover:bg-blue-50"
+                                                        >
+                                                            <SvgIcon name="edit" size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {syncQueue.length > 10 && <div className="text-[11px] text-blue-700/70 text-center pt-1">（僅顯示最近 10 筆暫存）</div>}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 原本歷史清單 */}
+                                <div className="flex justify-between items-end ml-1 pr-1">
+                                    <div>
+                                        <h3 className="font-black text-lg text-gray-800">歷史帳目紀錄</h3>
+                                        <div className="relative mt-2">
+                                            <select 
+                                                value={timeFilter}
+                                                onChange={(e) => setTimeFilter(e.target.value)}
+                                                className="appearance-none bg-gray-200 text-gray-600 font-black text-[11px] py-1.5 pl-3 pr-7 rounded-lg outline-none cursor-pointer"
+                                            >
+                                                <option value="all">全部時間</option>
+                                                <option value="last_1_week">近一周</option>
+                                                <option value="last_1_month">近一個月</option>
+                                                <option value="last_3_months">近三個月</option>
+                                                <option value="last_6_months">近六個月</option>
+                                            </select>
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                                                <svg className="w-3 h-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex bg-gray-200 p-1 rounded-xl gap-1">
+                                        <button onClick={() => setHistoryFilter('all')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${historyFilter === 'all' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>全部</button>
+                                        <button onClick={() => setHistoryFilter('income')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${historyFilter === 'income' ? 'bg-white shadow-sm text-green-600' : 'text-gray-500'}`}>收入</button>
+                                        <button onClick={() => setHistoryFilter('expense')} className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${historyFilter === 'expense' ? 'bg-white shadow-sm text-red-600' : 'text-gray-500'}`}>支出</button>
+                                    </div>
+                                </div>
+
+                                {/* 若未解鎖且未登入，提示 */}
+                                {(!sessionValid && !isUnlockedLocal) ? (
+                                    <div className="py-12 text-center">
+                                        <p className="text-xs font-black text-gray-400">未解鎖：無法顯示舊資料。你仍可新增暫存，或回登入頁解鎖。</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2.5 text-gray-800 text-left">
+                                        {filteredHistory.length === 0 ? (
+                                            <div className="py-12 text-center">
+                                                <p className="text-xs font-black text-gray-400">此區間目前無符合的紀錄</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {paginatedHistory.map(tx => {
+                                                    const isReceivedFromOthers = tx.member === currentUser.name && tx.recorder !== currentUser.name;
+                                                    return (
+                                                        <div key={tx.id} className="bg-white p-4 rounded-[1.5rem] border border-gray-100 flex justify-between items-center shadow-sm text-left">
+                                                            <div className="flex gap-4 items-center min-w-0 text-left">
+                                                                <div className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-[17px] shrink-0 leading-none ${tx.type === 'income' ? 'bg-green-600 text-white shadow-lg' : 'bg-red-600 text-white shadow-lg'}`}>{tx.type === 'income' ? '收入' : '支出'}</div>
+                                                                <div className="min-w-0 text-left text-gray-800">
+                                                                    <div className="flex items-center gap-2 font-bold text-base truncate text-gray-800">{tx.category}</div>
+                                                                    <div className="text-[10px] text-gray-400 block truncate font-medium mt-1 text-left">
+                                                                        {isReceivedFromOthers ? `由${tx.recorder}記 · ` : ''}{displayDateClean(tx.date)}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center shrink-0 gap-2">
+                                                                <span className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>${Number(tx.amount).toLocaleString()}</span>
+                                                                {/* ✅ 只有雲端登入時才允許編輯雲端資料（避免離線快取被誤改） */}
+                                                                <button
+                                                                    onClick={() => { 
+                                                                        if (!sessionValid) { showStatus('info','需雲端登入後才能編輯'); return; }
+                                                                        setEditingTx(tx); 
+                                                                        setEditingIsPending(false);
+                                                                    }}
+                                                                    className="text-gray-400 bg-gray-50 p-2 rounded-xl active:scale-95 transition-all flex items-center justify-center border border-gray-100 hover:text-blue-500 hover:bg-blue-50"
+                                                                >
+                                                                    <SvgIcon name="edit" size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+
+                                                {totalPages > 1 && (
+                                                    <div className="flex justify-between items-center mt-6 bg-gray-200/50 p-1.5 rounded-2xl">
+                                                        <button 
+                                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                            disabled={currentPage === 1}
+                                                            className="px-4 py-2.5 bg-white rounded-xl font-black text-xs text-gray-700 shadow-sm disabled:opacity-50 transition-all active:scale-95"
+                                                        >上一頁</button>
+                                                        <span className="text-[10px] font-black text-gray-500">
+                                                            第 {currentPage} / {totalPages} 頁
+                                                        </span>
+                                                        <button 
+                                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                            disabled={currentPage === totalPages}
+                                                            className="px-4 py-2.5 bg-white rounded-xl font-black text-xs text-gray-700 shadow-sm disabled:opacity-50 transition-all active:scale-95"
+                                                        >下一頁</button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'settings' && (
+                            <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
+                                <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
+                                    <h3 className="font-black text-xs mb-6 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1"><SvgIcon name="user" size={16} className="text-blue-500" /> 安全與帳戶管理</h3>
+                                    <div className="space-y-3 text-left text-gray-800">
+                                        <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 text-left">
+                                            <div>
+                                                <p className="text-gray-400 text-[10px] font-black uppercase mb-1 text-left leading-none">使用身份</p>
+                                                <p className="font-black text-gray-800 text-base leading-none mt-1">{currentUser.name}</p>
+                                            </div>
+                                            <button onClick={() => {setIsChangingPin(true); setPinChangeStep(1);}} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all">更換密碼</button>
+                                        </div>
+
+                                        <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 text-left">
+                                            <div>
+                                                <p className="text-gray-400 text-[10px] font-black uppercase mb-1 text-left leading-none">生物辨識 / 裝置解鎖</p>
+                                                <p className="font-black text-gray-800 text-sm leading-none mt-1">{currentUser.bioEnabled ? '已開啟' : '尚未開啟'}</p>
+                                            </div>
+                                            <button onClick={handleToggleBio} className={`px-4 py-2 rounded-xl font-black text-xs active:scale-95 transition-all ${currentUser.bioEnabled ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-600 text-white shadow-lg'}`}>
+                                                {currentUser.bioEnabled ? '關閉' : '開啟'}
+                                            </button>
+                                        </div>
+
+                                        <div onClick={() => setShowChangelog(true)} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 cursor-pointer active:bg-gray-100 transition-colors text-gray-800 leading-none">
+                                            <div>
+                                                <p className="text-gray-400 text-[10px] font-black uppercase mb-1 text-left">App 版本</p>
+                                                <p className="font-mono font-bold leading-none mt-1 text-gray-800">v{APP_VERSION}</p>
+                                            </div>
+                                            <div className="bg-white p-2 rounded-lg border border-gray-200 text-gray-400 active:scale-90"><SvgIcon name="info" size={16} /></div>
+                                        </div>
+
+                                        <div className="flex justify-between p-4 bg-gray-50 rounded-2xl text-[11px] font-bold text-gray-400 text-left">
+                                            <span>雲端狀態</span>
+                                            <span className={`${sessionValid ? "text-green-600" : "text-yellow-600"} font-black flex items-center gap-1`}>
+                                                <SvgIcon name="check" size={10}/> {sessionValid ? "已登入" : "未登入"}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20 safe-bottom">
+                        <button onClick={() => setActiveTab('dashboard')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="chart" /></button>
+                        <button onClick={() => setActiveTab('history')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'history' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="history" /></button>
+                        <button onClick={() => setActiveTab('add')} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === 'add' ? 'bg-blue-700 text-white rotate-45 shadow-blue-200' : 'bg-gray-900 text-white'}`}><SvgIcon name="plus" size={32} /></button>
+                        <div className="flex-1"></div>
+                        <button onClick={() => setActiveTab('settings')} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === 'settings' ? 'text-blue-600 bg-blue-50 shadow-inner' : 'text-gray-400'}`}><SvgIcon name="settings" /></button>
+                    </nav>
+
+                    {statusMsg.text && (
+                        <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[400] pointer-events-none px-4 text-center">
+                            <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
+                                statusMsg.type === 'success' ? 'bg-green-600 text-white' : (statusMsg.type === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white')
+                            }`}>
+                                <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
