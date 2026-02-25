@@ -272,7 +272,7 @@
       );
     };
 
-    // --- Edit Modal（沿用你原本樣式）---
+    // --- Edit Modal ---
     const EditTransactionModal = ({ tx, categories, loginUser, onSave, onDelete, onCancel, isLoading, title }) => {
       const [formData, setFormData] = useState({ ...tx });
       const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -487,6 +487,17 @@
         return isEdited ? str + " (已編輯)" : str;
       };
 
+      // --- 強制重新驗證輔助函數 (延遲2秒讓圖卡飛完) ---
+      const forceReloginForToken = () => {
+        setTimeout(() => {
+          setCurrentUser(null);
+          setSelectingUser(null);
+          setPinInput("");
+          setBootstrapSecret("");
+          setShowBootstrapModal(true);
+        }, 2000);
+      };
+
       // --- Cloud: bootstrap/refresh/verify/fetch ---
       const refreshDeviceToken = async () => {
         const data = await postGAS({ action: "DEVICE_REFRESH", deviceToken: getDeviceToken() });
@@ -529,10 +540,15 @@
         return formatted;
       };
 
-      // ✅ 同步：由外層決定要不要 refresh，避免你原本重複 refresh 的卡頓
+      // ✅ 同步：每次同步都檢查 Token，失效則阻擋並跳回認證
       const processQueueToCloud = async ({ doRefreshFirst }) => {
         if (!navigator.onLine) return;
-        if (!deviceValid()) return;
+        
+        if (!deviceValid()) {
+          showStatus("error", "雲端憑證已過期，請重新綁定");
+          forceReloginForToken();
+          return;
+        }
 
         try {
           if (doRefreshFirst) await refreshDeviceToken();
@@ -548,11 +564,15 @@
             }
           }
 
-          // 背景更新雲端資料（有需要才顯示圖卡）
+          // 背景更新雲端資料
           await fetchCloudTx();
           showStatus("success", "同步完成");
         } catch (e) {
-          showStatus("error", e.message || "同步失敗");
+          const msg = e.message || "同步失敗";
+          showStatus("error", msg);
+          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) {
+            forceReloginForToken();
+          }
         } finally {
           setLoadingCard({ show:false, text:"" });
         }
@@ -612,7 +632,6 @@
 
           const left = Math.max(0, BIO_MAX_FAIL - fail);
           if (left <= 0) {
-            // lock longer if exhausted (e.g. 30s)
             const lockMs = 30000;
             setBioLockedUntil(name, Date.now() + lockMs);
             showStatus("error", `驗證失敗，已暫停 30 秒（剩餘 0 次）`);
@@ -687,7 +706,6 @@
           const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
 
-          // 成功後登出重登
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name);
           setShowChangePinModal(false);
           showStatus("success","密碼更新成功，請重新登入");
@@ -702,31 +720,37 @@
         }
       };
 
-      // --- Transactions add/update/delete (省掉不必要 refresh；需要時才 refresh) ---
+      // --- Transactions add/update/delete ---
       const handleAdd = async (newTx) => {
         const finalDateStr = newTx.date ? newTx.date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const completeTx = { ...newTx, date: finalDateStr, recorder: currentUser.name, id: Date.now() };
 
-        // 離線或憑證無效：只暫存
         if (!navigator.onLine || !deviceValid()) {
           setSyncQueue(prev => [...prev, completeTx]);
           showStatus("info","已暫存（待同步）");
           setActiveTab("dashboard");
+          if (navigator.onLine && !deviceValid()) forceReloginForToken();
           return;
         }
 
         try {
           setLoadingCard({ show:true, text:"正在寫入..." });
-          await refreshDeviceToken(); // 只 refresh 一次
+          await refreshDeviceToken();
           const res = await postGAS({ ...completeTx, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "寫入失敗");
 
-          // 背景拉最新
           await fetchCloudTx();
           showStatus("success","已同步");
         } catch (e) {
-          setSyncQueue(prev => [...prev, completeTx]);
-          showStatus("error", e.message || "寫入失敗，已暫存");
+          const msg = e.message || "寫入失敗";
+          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) {
+            showStatus("error", "憑證已過期，紀錄已自動暫存");
+            setSyncQueue(prev => [...prev, completeTx]);
+            forceReloginForToken();
+          } else {
+            setSyncQueue(prev => [...prev, completeTx]);
+            showStatus("error", msg + "，已暫存");
+          }
         } finally {
           setLoadingCard({ show:false, text:"" });
           setActiveTab("dashboard");
@@ -742,7 +766,12 @@
           return;
         }
 
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能編輯"); return; }
+        if (!navigator.onLine || !deviceValid()) { 
+          showStatus("error","需連線且雲端已綁定才能編輯"); 
+          if (navigator.onLine && !deviceValid()) forceReloginForToken();
+          return; 
+        }
+
         try {
           setLoadingCard({ show:true, text:"正在更新..." });
           await refreshDeviceToken();
@@ -758,7 +787,9 @@
           await fetchCloudTx();
           showStatus("success","已更新");
         } catch (e) {
-          showStatus("error", e.message || "更新失敗");
+          const msg = e.message || "更新失敗";
+          showStatus("error", msg);
+          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
         } finally {
           setLoadingCard({ show:false, text:"" });
           setEditingTx(null);
@@ -775,7 +806,12 @@
           return;
         }
 
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能刪除"); return; }
+        if (!navigator.onLine || !deviceValid()) { 
+          showStatus("error","需連線且雲端已綁定才能刪除"); 
+          if (navigator.onLine && !deviceValid()) forceReloginForToken();
+          return; 
+        }
+
         try {
           setLoadingCard({ show:true, text:"正在刪除..." });
           await refreshDeviceToken();
@@ -786,7 +822,9 @@
           await fetchCloudTx();
           showStatus("success","已刪除");
         } catch (e) {
-          showStatus("error", e.message || "刪除失敗");
+          const msg = e.message || "刪除失敗";
+          showStatus("error", msg);
+          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
         } finally {
           setLoadingCard({ show:false, text:"" });
           setEditingTx(null);
@@ -797,7 +835,6 @@
       // --- visible data ---
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        // 線上+憑證有效：優先 transactions，沒有就先用快取
         if (navigator.onLine && deviceValid()) return transactions.length ? transactions : txCache;
         return txCache;
       }, [currentUser, transactions, txCache]);
@@ -831,14 +868,13 @@
         });
       }, [visibleTransactions]);
 
-      // 統一的帳目圖卡渲染函數 (加入 allowEdit 參數控制是否能點擊)
+      // 統一的帳目圖卡渲染函數
       const renderTxCard = (tx, allowEdit = true) => (
         <div key={tx.id} onClick={() => allowEdit && setEditingTx(tx)} className={`bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm transition-colors ${allowEdit ? 'cursor-pointer active:bg-gray-50' : ''}`}>
           <div className="relative shrink-0">
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
               {tx.type==="income" ? "收入" : "支出"}
             </div>
-            {/* 只有當帳目屬於對方時，才顯示左上角的成員標籤 */}
             {tx.member !== currentUser.name && (
               <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white`}>
                 {tx.member}
@@ -848,11 +884,11 @@
           
           <div className="flex-1 min-w-0 pl-1">
             <div className="font-bold text-base truncate text-gray-800">{tx.category}</div>
-            <div className="flex items-center gap-2 mt-1.5 w-full overflow-hidden">
-              <span className="text-[10px] text-gray-400 font-medium shrink-0">{displayDateClean(tx.date)}</span>
-              {/* 備註欄加高並微調字體大小 */}
+            <div className="flex flex-col gap-1 mt-1.5 w-full">
+              <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(tx.date)}</span>
+              {/* 備註欄改為多行顯示，移除 overflow-hidden 與 truncate */}
               {tx.desc && (
-                <span className="text-[11px] text-gray-600 font-bold bg-gray-100 border border-gray-200 px-2 py-1 rounded-md truncate flex-1 min-w-0 flex items-center">
+                <span className="text-[11px] text-gray-600 font-bold bg-gray-100 border border-gray-200 px-2 py-1.5 rounded-lg whitespace-normal break-words w-full">
                   {tx.desc}
                 </span>
               )}
@@ -863,7 +899,6 @@
             <div className={`font-black tabular-nums text-lg leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
               ${Number(tx.amount||0).toLocaleString()}
             </div>
-            {/* 代記提示移至列表後方，並套用專屬顏色 */}
             {tx.recorder && tx.recorder !== tx.member && (
               <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
                 ✍️ {tx.recorder}代記
@@ -873,7 +908,7 @@
         </div>
       );
 
-      // ✅ 如果選到成員且設備已綁定生物辨識：直接跳生物辨識（不先圖卡）
+      // ✅ 如果選到成員且設備已綁定生物辨識：直接跳生物辨識
       useEffect(() => {
         if (!selectingUser) return;
         if (!biometricAvailable) return;
@@ -887,9 +922,7 @@
           setSelectingUser(null);
           setPinInput("");
 
-          // 背景同步/抓資料（只在需要等時出圖卡）
           if (navigator.onLine && deviceValid()) {
-            // 這邊不阻塞進主畫面
             setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
           }
         })();
@@ -956,7 +989,6 @@
 
                               if (n.length === 6) {
                                 try {
-                                  // ✅ PIN 一定要驗證：線上用 VERIFY_PIN；離線用本機 hash
                                   if (navigator.onLine) {
                                     if (!deviceValid()) {
                                       showStatus("error", "雲端尚未綁定，請先輸入雲端密碼");
@@ -977,12 +1009,10 @@
                                     }
                                   }
 
-                                  // ✅ 通過才登入
                                   setCurrentUser(selectingUser);
                                   setSelectingUser(null);
                                   setPinInput("");
 
-                                  // 背景抓/同步（不阻塞）
                                   if (navigator.onLine && deviceValid()) {
                                     setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
                                   }
@@ -1065,19 +1095,15 @@
               </div>
             )}
 
-            {/* Loading overlay */}
+            {/* Centered Loading overlay */}
             {loadingCard?.show && (
               <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
-                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
-                      <SvgIcon name="refresh" size={20} className="animate-spin text-blue-600"/>
-                    </div>
-                    <div>
-                      <div className="font-black text-base">處理中</div>
-                      <div className="text-[11px] text-gray-500 mt-1">{loadingCard.text || "請稍候..."}</div>
-                    </div>
+                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
+                  <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+                    <SvgIcon name="refresh" size={28} className="animate-spin text-blue-600"/>
                   </div>
+                  <div className="font-black text-lg">處理中</div>
+                  <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
                 </div>
               </div>
             )}
@@ -1161,19 +1187,15 @@
             </div>
           )}
 
-          {/* Loading overlay */}
+          {/* Centered Loading overlay */}
           {loadingCard?.show && (
             <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
-              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
-                    <SvgIcon name="refresh" size={20} className="animate-spin text-blue-600"/>
-                  </div>
-                  <div>
-                    <div className="font-black text-base">處理中</div>
-                    <div className="text-[11px] text-gray-500 mt-1">{loadingCard.text || "請稍候..."}</div>
-                  </div>
+              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+                  <SvgIcon name="refresh" size={28} className="animate-spin text-blue-600"/>
                 </div>
+                <div className="font-black text-lg">處理中</div>
+                <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
               </div>
             </div>
           )}
