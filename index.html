@@ -64,24 +64,23 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本號更新
-    const APP_VERSION = "2026.02.26.PRO.V3";
+    const APP_VERSION = "2026.02.26.PRO.V4";
     const GAS_TARGET_VERSION = "2026.02.26.PRO.V3";
 
     const LS = {
-      pending: "pending_sync_v20",
-      txCache: "local_tx_cache_v20",
-      lastSync: "last_sync_time_v20",
-      members: "family_member_config_v20",
+      pending: "pending_sync_v21",
+      txCache: "local_tx_cache_v21",
+      lastSync: "last_sync_time_v21",
+      members: "family_member_config_v21",
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
-      pinHashPrefix: "pin_hash_v20_",
+      pinHashPrefix: "pin_hash_v21_",
       bioCredPrefix: "bio_cred_",
       bioFailPrefix: "bio_fail_v1_", 
       bioLockPrefix: "bio_lock_v1_",
+      customGreeting: "custom_greeting_v1"
     };
 
-    // --- 三口小家庭 (7歲小孩+自住宅) 專用類別定義 ---
     const CATEGORY_MAP = {
       expense: {
         "食": ["早餐", "午餐", "晚餐", "買菜", "零食飲料", "外食聚餐", "其他"],
@@ -106,27 +105,20 @@
     };
     const getChildCat = (catStr) => catStr.includes('/') ? catStr.split('/')[1] : catStr;
 
-    // 用在誰身上的格式化處理
     const BEN_OPTIONS = ["爸爸", "媽媽", "兒子", "其他"];
-    const formatBen = (benArr) => {
-      if (!benArr || benArr.length === 0) return "";
-      if (benArr.includes("爸爸") && benArr.includes("媽媽") && benArr.includes("兒子")) return "全家共同";
-      return benArr.join("、");
+    const formatBen = (benStr, memberName) => {
+      if (!benStr) return "";
+      const arr = benStr.split(",").filter(Boolean);
+      if (arr.length === 0) return "";
+      if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家共同";
+      if (arr.length === 1 && arr[0] === memberName) return ""; // 沒點選別人(只有自己)就不顯示
+      return arr.join("、");
     };
 
     const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
-    const safeArrayLS = (key) => {
-      const raw = localStorage.getItem(key);
-      if (raw === null || raw === "null" || raw === "undefined") return [];
-      const v = safeParse(raw, []); return Array.isArray(v) ? v : [];
-    };
-    const safeStringLS = (key, fallback="") => {
-      const v = localStorage.getItem(key);
-      return (v === null || v === "null" || v === "undefined") ? fallback : v;
-    };
-    const safeNumberLS = (key, fallback=0) => {
-      const v = Number(localStorage.getItem(key)); return Number.isFinite(v) ? v : fallback;
-    };
+    const safeArrayLS = (key) => { const raw = localStorage.getItem(key); const v = safeParse(raw, []); return Array.isArray(v) ? v : []; };
+    const safeStringLS = (key, fallback="") => { const v = localStorage.getItem(key); return (v === null || v === "null" || v === "undefined") ? fallback : v; };
+    const safeNumberLS = (key, fallback=0) => { const v = Number(localStorage.getItem(key)); return Number.isFinite(v) ? v : fallback; };
 
     const nowStr = () => {
       const d = new Date();
@@ -190,7 +182,6 @@
       );
     };
 
-    // --- 母子類別共用選擇器 ---
     const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
       const pCats = Object.keys(CATEGORY_MAP[type] || CATEGORY_MAP.expense);
       const safeParentCat = pCats.includes(parentCat) ? parentCat : pCats[0];
@@ -198,15 +189,15 @@
 
       return (
         <div className="flex gap-2">
-          <div className="bg-gray-100 p-3.5 rounded-2xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
-            <label className="text-[9px] font-black text-blue-500 uppercase block mb-1 tracking-widest">主類別</label>
+          <div className="bg-gray-100 p-2.5 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
+            <label className="text-[8px] font-black text-blue-500 uppercase block mb-0.5 tracking-widest">主類別</label>
             <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"
               value={safeParentCat} onChange={(e) => onChange(e.target.value, CATEGORY_MAP[type][e.target.value][0])}>
               {pCats.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          <div className="bg-gray-100 p-3.5 rounded-2xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
-            <label className="text-[9px] font-black text-blue-500 uppercase block mb-1 tracking-widest">子項目</label>
+          <div className="bg-gray-100 p-2.5 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
+            <label className="text-[8px] font-black text-blue-500 uppercase block mb-0.5 tracking-widest">子項目</label>
             <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"
               value={childCat} onChange={(e) => onChange(safeParentCat, e.target.value)}>
               {cCats.map(c => <option key={c} value={c}>{c}</option>)}
@@ -216,32 +207,26 @@
       );
     };
 
-    // --- Add Form (支援發票拆分與花費對象) ---
     const AddTransactionForm = ({ loginUser, onSubmit, isLoading }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
       
       const [formData, setFormData] = useState({
-        amount: "",
-        parentCat: "食",
-        childCat: "晚餐",
-        member: loginUser,
-        beneficiary: [loginUser], // 新增花費對象 (陣列)
-        type: "expense",
-        desc: "", 
-        parentTitle: "", 
-        parentDesc: "",  
-        date: ""
+        amount: "", parentCat: "食", childCat: "晚餐", member: loginUser, beneficiary: [loginUser],
+        type: "expense", desc: "", parentTitle: "", parentDesc: "", date: ""
       });
 
       const [subItems, setSubItems] = useState([
-        { id: Date.now(), parentCat: "食", childCat: "晚餐", amount: "", desc: "" }
+        { id: Date.now(), parentCat: "食", childCat: "晚餐", amount: "", desc: "", beneficiary: [loginUser] }
       ]);
 
       const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
 
-      useEffect(() => { setFormData(prev => ({ ...prev, member: loginUser || prev.member, beneficiary: [loginUser || prev.member] })); }, [loginUser]);
+      useEffect(() => { 
+        setFormData(prev => ({ ...prev, member: loginUser || prev.member, beneficiary: [loginUser || prev.member] })); 
+        setSubItems(prev => prev.map(s => ({...s, beneficiary: [loginUser || prev.member]})));
+      }, [loginUser]);
 
       const handleTypeChange = (newType) => {
         const defaultP = newType === "expense" ? "食" : "收入";
@@ -252,12 +237,18 @@
 
       const toggleBeneficiary = (b) => {
         if (formData.beneficiary.includes(b)) {
-           if (formData.beneficiary.length > 1) {
-              setFormData({...formData, beneficiary: formData.beneficiary.filter(x => x !== b)});
-           }
-        } else {
-           setFormData({...formData, beneficiary: [...formData.beneficiary, b]});
-        }
+           if (formData.beneficiary.length > 1) setFormData({...formData, beneficiary: formData.beneficiary.filter(x => x !== b)});
+        } else setFormData({...formData, beneficiary: [...formData.beneficiary, b]});
+      };
+
+      const toggleSubBeneficiary = (id, b) => {
+        setSubItems(subItems.map(s => {
+          if (s.id !== id) return s;
+          const newBen = s.beneficiary.includes(b) 
+              ? (s.beneficiary.length > 1 ? s.beneficiary.filter(x => x !== b) : s.beneficiary)
+              : [...s.beneficiary, b];
+          return { ...s, beneficiary: newBen };
+        }));
       };
 
       const totalSplitAmount = useMemo(() => subItems.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0), [subItems]);
@@ -272,33 +263,25 @@
       const handleAddSubItem = () => {
         const defaultP = formData.type === "expense" ? "食" : "收入";
         const defaultC = CATEGORY_MAP[formData.type][defaultP][0];
-        setSubItems([...subItems, { id: Date.now(), parentCat: defaultP, childCat: defaultC, amount: "", desc: "" }]);
+        setSubItems([...subItems, { id: Date.now(), parentCat: defaultP, childCat: defaultC, amount: "", desc: "", beneficiary: [formData.member] }]);
       };
 
       const handleRemoveSubItem = (id) => { if (subItems.length > 1) setSubItems(subItems.filter(s => s.id !== id)); };
       const updateSubItem = (id, field, value) => { setSubItems(subItems.map(s => s.id === id ? { ...s, [field]: value } : s)); };
 
       const submitForm = () => {
-        const benStr = formData.beneficiary.join(",");
         if (isSplit) {
           const validSubs = subItems.filter(s => Number(s.amount) > 0);
           if (validSubs.length === 0) return;
-          
-          const combinedParentDesc = `${formData.parentTitle.trim() || "拆分紀錄"}|||${formData.parentDesc.trim()}`;
-          
+          const combinedParentDesc = `${formData.parentTitle.trim() || "多筆紀錄"}|||${formData.parentDesc.trim()}`;
           const multipleTxs = validSubs.map(s => ({
-            amount: s.amount,
-            category: `${s.parentCat}/${s.childCat}`,
-            member: formData.member,
-            beneficiary: benStr,
-            type: formData.type,
-            desc: s.desc,
-            date: formData.date,
-            parentDesc: combinedParentDesc
+            amount: s.amount, category: `${s.parentCat}/${s.childCat}`,
+            member: formData.member, beneficiary: s.beneficiary.join(","),
+            type: formData.type, desc: s.desc, date: formData.date, parentDesc: combinedParentDesc
           }));
           onSubmit(multipleTxs);
         } else {
-          onSubmit([{ ...formData, category: `${formData.parentCat}/${formData.childCat}`, beneficiary: benStr }]);
+          onSubmit([{ ...formData, category: `${formData.parentCat}/${formData.childCat}`, beneficiary: formData.beneficiary.join(",") }]);
         }
       };
 
@@ -319,10 +302,8 @@
                 {renderAmount()}
               </div>
               {!isSplit && (
-                <input ref={inputRef} type="number" inputMode="decimal"
-                  className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer font-black"
-                  value={formData.amount} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                <input ref={inputRef} type="number" inputMode="decimal" className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer font-black"
+                  value={formData.amount} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 />
               )}
             </div>
@@ -336,121 +317,109 @@
               </button>
             </div>
 
-            <div className="bg-gray-100 p-4 rounded-2xl text-gray-800 focus-within:border-blue-200 border border-transparent transition-colors">
-              <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">日期與時間 (未選則為現在)</label>
-              <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800"
-                value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-              />
+            {/* 縮小版的日期輸入 */}
+            <div className="bg-gray-100 py-2.5 px-4 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
+              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm w-[180px] text-right"
+                value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
             </div>
 
-            {/* 用在誰身上 (複選) */}
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-              <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 tracking-widest">花費對象 (可複選)</label>
-              <div className="flex flex-wrap gap-2">
-                {BEN_OPTIONS.map(b => (
-                  <button type="button" key={b}
-                    onClick={() => toggleBeneficiary(b)}
-                    className={`px-4 py-2 rounded-xl text-[11px] font-black transition-all border-2 ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-md" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}
-                  >
-                    {b} {formData.beneficiary.includes(b) && "✓"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 單筆模式：一般類別與備註 */}
+            {/* 單筆模式 */}
             {!isSplit && (
               <>
+                <div className="bg-gray-50 py-2.5 px-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
+                  <div className="flex gap-1.5 flex-1 justify-end">
+                    {BEN_OPTIONS.map(b => (
+                      <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
-                <div className="bg-gray-100 p-4 rounded-2xl text-gray-800 focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">備註說明 (選填)</label>
-                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300"
-                    placeholder="輸入內容..." value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
+                <div className="bg-gray-100 py-3 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
+                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                    placeholder="輸入說明..." value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
                 </div>
               </>
             )}
 
-            {/* 拆分模式：母項目標題/備註 + 子項目陣列 */}
+            {/* 拆分模式 */}
             {isSplit && (
               <>
                 <div className="flex gap-2">
-                  <div className="bg-gray-100 p-3.5 rounded-2xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
-                    <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">母項目標題</label>
+                  <div className="bg-gray-100 py-2.5 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
+                    <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目標題</label>
                     <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
                       placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })} />
                   </div>
-                  <div className="bg-gray-100 p-3.5 rounded-2xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
-                    <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">母項目備註</label>
+                  <div className="bg-gray-100 py-2.5 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
+                    <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目備註</label>
                     <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
                       placeholder="選填..." value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })} />
                   </div>
                 </div>
 
                 <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <label className="text-[10px] font-black text-blue-500 uppercase block tracking-widest px-2">填寫子項目明細</label>
+                  <label className="text-[10px] font-black text-blue-500 uppercase block tracking-widest px-2">子項目明細與花費對象</label>
                   {subItems.map((sub, index) => {
                     const pCats = Object.keys(CATEGORY_MAP[formData.type] || CATEGORY_MAP.expense);
                     const safeParentCat = pCats.includes(sub.parentCat) ? sub.parentCat : pCats[0];
                     const cCats = CATEGORY_MAP[formData.type][safeParentCat] || CATEGORY_MAP[formData.type][pCats[0]];
                     return (
-                      <div key={sub.id} className="bg-white border-2 border-gray-100 p-3.5 rounded-2xl relative shadow-sm">
+                      <div key={sub.id} className="bg-white border-2 border-gray-100 p-3 rounded-2xl relative shadow-sm">
                         {subItems.length > 1 && (
                           <button onClick={() => handleRemoveSubItem(sub.id)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-sm font-bold">✕</button>
                         )}
                         <div className="flex gap-2 mb-2">
-                          <div className="flex-1">
-                            <label className="text-[8px] font-black text-gray-400 block mb-1 px-1">主類別</label>
-                            <select className="w-full bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
-                              value={safeParentCat} onChange={(e) => {
-                                const newP = e.target.value;
-                                updateSubItem(sub.id, "parentCat", newP);
-                                updateSubItem(sub.id, "childCat", CATEGORY_MAP[formData.type][newP][0]);
-                              }}>
-                              {pCats.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[8px] font-black text-gray-400 block mb-1 px-1">子項目</label>
-                            <select className="w-full bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
-                              value={sub.childCat} onChange={(e) => updateSubItem(sub.id, "childCat", e.target.value)}>
-                              {cCats.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          </div>
+                          <select className="flex-1 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
+                            value={safeParentCat} onChange={(e) => { const newP = e.target.value; updateSubItem(sub.id, "parentCat", newP); updateSubItem(sub.id, "childCat", CATEGORY_MAP[formData.type][newP][0]); }}>
+                            {pCats.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <select className="flex-1 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
+                            value={sub.childCat} onChange={(e) => updateSubItem(sub.id, "childCat", e.target.value)}>
+                            {cCats.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
                         </div>
-
-                        <div className="flex gap-2 mt-2 items-center">
-                          <input type="text" className="flex-[2] bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-3 py-2.5 rounded-xl"
+                        <div className="flex gap-2 mb-2 items-center">
+                          <input type="text" className="flex-[2] bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-3 py-2 rounded-xl"
                             placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, "desc", e.target.value)} />
                           <div className="flex-1 relative">
-                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span>
-                            <input type="number" inputMode="decimal" className="w-full bg-gray-50 font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm pl-6 pr-2 py-2 rounded-xl text-right"
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span>
+                            <input type="number" inputMode="decimal" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right"
                               placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, "amount", e.target.value)} />
+                          </div>
+                        </div>
+                        {/* 子項目花費對象 */}
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase pr-2">對象</span>
+                          <div className="flex gap-1.5 flex-1 justify-end">
+                            {BEN_OPTIONS.map(b => (
+                              <button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)}
+                                className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-400"}`}>
+                                {b}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       </div>
                     )
                   })}
-                  
-                  <button onClick={handleAddSubItem} className="w-full py-3.5 bg-blue-50 text-blue-600 rounded-xl font-black text-xs active:scale-95 transition flex justify-center items-center gap-1 border border-blue-100">
-                    <SvgIcon name="plus" size={16} /> 繼續新增子項目
+                  <button onClick={handleAddSubItem} className="w-full py-3 bg-blue-50 text-blue-600 rounded-xl font-black text-xs active:scale-95 transition flex justify-center items-center gap-1 border border-blue-100">
+                    <SvgIcon name="plus" size={16} /> 新增子項目
                   </button>
                 </div>
               </>
             )}
 
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-              <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 text-gray-500 tracking-widest">記錄者 (所屬帳本)</label>
+            <div className="bg-gray-50 py-3 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">記錄帳本</label>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })}
-                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white shadow-md" : "bg-white border-gray-200 text-gray-400"}`}
-                >
-                  自己 {formData.member === loginUser && "✓"}
-                </button>
-                <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })}
-                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-gray-800 border-gray-800 text-white shadow-md" : "bg-white border-gray-200 text-gray-400"}`}
-                >
-                  給{otherMember}紀錄 {formData.member === otherMember && "✓"}
-                </button>
+                <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>自己</button>
+                <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>幫{otherMember}記</button>
               </div>
             </div>
           </div>
@@ -465,13 +434,10 @@
       );
     };
 
-    // --- Edit Modal (單筆編輯) ---
     const EditTransactionModal = ({ tx, loginUser, onSave, onDelete, onCancel, isLoading }) => {
       const [formData, setFormData] = useState({ 
-        ...tx, 
-        parentCat: getParentCat(tx.category), 
-        childCat: getChildCat(tx.category),
-        beneficiary: tx.beneficiary ? tx.beneficiary.split(",") : [tx.member]
+        ...tx, parentCat: getParentCat(tx.category), childCat: getChildCat(tx.category),
+        beneficiary: tx.beneficiary ? tx.beneficiary.split(",").filter(Boolean) : [tx.member]
       });
       const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
@@ -489,80 +455,63 @@
       const toggleBeneficiary = (b) => {
         if (formData.beneficiary.includes(b)) {
            if (formData.beneficiary.length > 1) setFormData({...formData, beneficiary: formData.beneficiary.filter(x => x !== b)});
-        } else {
-           setFormData({...formData, beneficiary: [...formData.beneficiary, b]});
-        }
+        } else setFormData({...formData, beneficiary: [...formData.beneficiary, b]});
       };
 
       const handleSave = () => onSave({ ...formData, category: `${formData.parentCat}/${formData.childCat}`, beneficiary: formData.beneficiary.join(",") });
 
       return (
-        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black">
+        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
           <div className="w-full max-w-sm relative">
-            <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition">
-              <SvgIcon name="close" size={32} />
-            </button>
+            <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition"><SvgIcon name="close" size={32} /></button>
             <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
               <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
               <h2 className="text-xl font-black text-center mb-6 text-gray-800 pt-2">編輯明細</h2>
 
               <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6 text-sm text-gray-500">
-                <button onClick={() => {
-                  const p = "食"; const c = CATEGORY_MAP["expense"][p][0];
-                  setFormData({ ...formData, type: "expense", parentCat: p, childCat: c })
-                }} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
-                <button onClick={() => {
-                  const p = "收入"; const c = CATEGORY_MAP["income"][p][0];
-                  setFormData({ ...formData, type: "income", parentCat: p, childCat: c })
-                }} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
+                <button onClick={() => { const p = "食"; const c = CATEGORY_MAP["expense"][p][0]; setFormData({ ...formData, type: "expense", parentCat: p, childCat: c }) }} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
+                <button onClick={() => { const p = "收入"; const c = CATEGORY_MAP["income"][p][0]; setFormData({ ...formData, type: "income", parentCat: p, childCat: c }) }} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
               </div>
 
               <div className="relative flex items-center justify-center mb-6 py-2 border-b border-gray-100 pb-6 text-gray-800">
                 <span className="text-2xl font-black text-gray-300 mr-1 mt-1">$</span>
-                <input type="number" inputMode="decimal"
-                  className={`w-32 text-5xl font-black text-center outline-none bg-transparent ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}
-                  value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                />
+                <input type="number" inputMode="decimal" className={`w-32 text-5xl font-black text-center outline-none bg-transparent ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}
+                  value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} />
               </div>
 
               <div className="space-y-4 text-left">
-                <div className="bg-gray-100 p-3.5 rounded-2xl focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">時間</label>
-                  <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800 text-sm"
-                    value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  />
+                <div className="bg-gray-100 py-2.5 px-4 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
+                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm w-[180px] text-right"
+                    value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
                 </div>
 
-                <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 tracking-widest">花費對象 (可複選)</label>
-                  <div className="flex flex-wrap gap-2">
+                <div className="bg-gray-50 py-2.5 px-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
+                  <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                     {BEN_OPTIONS.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
-                        className={`px-3 py-1.5 rounded-xl text-[10px] font-black transition-all border-2 ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-md" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}
-                      >
-                        {b} {formData.beneficiary.includes(b) && "✓"}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
+                        {b}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} 
-                  onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
+                <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
 
-                <div className="bg-gray-100 p-3.5 rounded-2xl focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">歸屬帳本</label>
-                  <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm"
+                <div className="bg-gray-100 py-3 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">帳本</label>
+                  <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-right"
                     value={formData.member} onChange={(e) => setFormData({ ...formData, member: e.target.value })}>
-                    <option value={loginUser}>自己</option>
-                    <option value={otherMember}>{otherMember}</option>
+                    <option value={loginUser}>自己</option><option value={otherMember}>{otherMember}</option>
                   </select>
                 </div>
 
-                <div className="bg-gray-100 p-3.5 rounded-2xl focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">單筆備註</label>
-                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
-                    placeholder="選填" value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })}
-                  />
+                <div className="bg-gray-100 py-3 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
+                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm text-right"
+                    placeholder="選填" value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
                 </div>
               </div>
 
@@ -592,13 +541,8 @@
       );
     };
 
-    // --- Edit Group Parent Modal (母項目編輯) ---
     const EditGroupParentModal = ({ group, onSave, onCancel, isLoading }) => {
-      const [formData, setFormData] = useState({
-        parentTitle: group.parentTitle,
-        parentDesc: group.parentDesc,
-        date: group.date
-      });
+      const [formData, setFormData] = useState({ parentTitle: group.parentTitle, parentDesc: group.parentDesc, date: group.date });
 
       useEffect(() => {
         let formattedDate = "";
@@ -615,40 +559,37 @@
       };
 
       return (
-        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black">
+        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
           <div className="w-full max-w-sm relative">
             <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition">
               <SvgIcon name="close" size={32} />
             </button>
             <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
-              <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
+              <div className="absolute top-0 left-0 w-full h-2 bg-gray-800"></div>
               <h2 className="text-xl font-black text-center mb-2 text-gray-800 pt-2">編輯母項目</h2>
               <p className="text-[10px] text-gray-400 text-center mb-6">修改後將同步更新旗下所有明細的時間與標題</p>
 
               <div className="space-y-4 text-left">
-                <div className="bg-gray-100 p-4 rounded-2xl focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">時間</label>
-                  <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800 text-sm"
-                    value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  />
+                <div className="bg-gray-100 py-2.5 px-4 rounded-xl flex items-center justify-between border border-transparent focus-within:border-gray-300 transition-colors">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
+                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm w-[180px] text-right"
+                    value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
                 </div>
-                <div className="bg-gray-100 p-4 rounded-2xl focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">母項目標題</label>
+                <div className="bg-gray-100 py-3 px-4 rounded-xl flex flex-col gap-1 border border-transparent focus-within:border-gray-300 transition-colors">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">母項目標題</label>
                   <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
-                    placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })}
-                  />
+                    placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })} />
                 </div>
-                <div className="bg-gray-100 p-4 rounded-2xl focus-within:border-blue-200 border border-transparent transition-colors">
-                  <label className="text-[9px] font-black text-gray-400 uppercase block mb-1 tracking-widest">母項目備註</label>
+                <div className="bg-gray-100 py-3 px-4 rounded-xl flex flex-col gap-1 border border-transparent focus-within:border-gray-300 transition-colors">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">母項目備註</label>
                   <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
-                    placeholder="選填" value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })}
-                  />
+                    placeholder="選填" value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })} />
                 </div>
               </div>
 
               <div className="mt-8">
-                <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
-                  {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
+                <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
+                  {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
                 </button>
               </div>
             </div>
@@ -660,9 +601,9 @@
     function App() {
       const [activeTab, setActiveTab] = useState("dashboard");
       const [familyConfig, setFamilyConfig] = useState(() => {
-        const saved = safeArrayLS(LS.members);
-        return saved.length ? saved : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }];
+        const saved = safeArrayLS(LS.members); return saved.length ? saved : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }];
       });
+      const [customSubtitle, setCustomSubtitle] = useState(() => safeStringLS(LS.customGreeting, "{name}，你好！"));
 
       const [currentUser, setCurrentUser] = useState(null);
       const [selectingUser, setSelectingUser] = useState(null);
@@ -689,8 +630,9 @@
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
       
       const [analysisDateFilter, setAnalysisDateFilter] = useState("1m");
-      const [analysisType, setAnalysisType] = useState("expense"); // expense, income, beneficiary
-      const [selectedParentCategory, setSelectedParentCategory] = useState(null);
+      const [analysisType, setAnalysisType] = useState("expense"); 
+      const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); // (Ben) OR (ParentCat)
+      const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); // (ParentCat under Ben)
 
       const [showBootstrapModal, setShowBootstrapModal] = useState(false);
       const [bootstrapSecret, setBootstrapSecret] = useState("");
@@ -700,20 +642,20 @@
       const [oldPin, setOldPin] = useState("");
       const [newPin, setNewPin] = useState("");
       const [newPin2, setNewPin2] = useState("");
-
       const [isLogOpen, setIsLogOpen] = useState(false);
 
-      const showStatus = (type, text) => {
-        setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000);
-      };
+      const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
       useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
       useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
+      useEffect(() => localStorage.setItem(LS.customGreeting, customSubtitle), [customSubtitle]);
 
       useEffect(() => setHistoryVisibleCount(20), [historySearch, historyTypeFilter, historyDateFilter, activeTab]);
-      useEffect(() => { if (activeTab !== "analysis") { setSelectedParentCategory(null); setAnalysisType("expense"); } }, [activeTab]);
+      useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
+      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter]); // reset on main filter change
+      useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); // reset level 2 when level 1 changes
 
       useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
@@ -754,17 +696,9 @@
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
         const formatted = (data.transactions || []).map((t, i) => ({
-          id: t.id || t["ID"] || String(i),
-          amount: parseFloat(t["金額"]) || 0,
-          category: t["類別"] || "其他",
-          date: t["日期時間"] || t["日期"] || "",
-          member: t["成員"] || "未知",
-          recorder: t["記錄者"] || "系統",
-          desc: t["備註"] || "",
-          type: t["類型"] || "expense",
-          groupId: t["GroupID"] || "",
-          parentDesc: t["ParentDesc"] || "",
-          beneficiary: t["Beneficiary"] || ""
+          id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
+          date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
+          desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
         }));
         setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); return formatted;
       };
@@ -792,29 +726,22 @@
       };
 
       const saveLocalPinHash = async (name, pin) => { const h = await sha256Base64(`${name}::${pin}::local`); localStorage.setItem(LS.pinHashPrefix + name, h); };
-      const unlockWithPinLocal = async (name, pin) => {
-        const stored = localStorage.getItem(LS.pinHashPrefix + name); if (!stored) return false;
-        const h = await sha256Base64(`${name}::${pin}::local`); return h === stored;
-      };
+      const unlockWithPinLocal = async (name, pin) => { const stored = localStorage.getItem(LS.pinHashPrefix + name); if (!stored) return false; const h = await sha256Base64(`${name}::${pin}::local`); return h === stored; };
 
       const handleBioLoginLocal = async (name) => {
         const lockedUntil = getBioLockedUntil(name);
         if (lockedUntil && Date.now() < lockedUntil) {
-          const sec = Math.ceil((lockedUntil - Date.now())/1000); const left = Math.max(0, BIO_MAX_FAIL - getBioFailCount(name));
-          showStatus("error", `請稍候 ${sec}s 再試（剩餘 ${left} 次）`); return false;
+          showStatus("error", `請稍候 ${Math.ceil((lockedUntil - Date.now())/1000)}s 再試（剩餘 ${Math.max(0, BIO_MAX_FAIL - getBioFailCount(name))} 次）`); return false;
         }
         try {
-          const base64Id = localStorage.getItem(getBioKey(name));
-          if (!base64Id) { showStatus("error","設備未綁定"); return false; }
-          const idStr = atob(base64Id); const idArray = new Uint8Array(idStr.length);
-          for (let i=0;i<idStr.length;i++) idArray[i] = idStr.charCodeAt(i);
+          const base64Id = localStorage.getItem(getBioKey(name)); if (!base64Id) { showStatus("error","設備未綁定"); return false; }
+          const idStr = atob(base64Id); const idArray = new Uint8Array(idStr.length); for (let i=0;i<idStr.length;i++) idArray[i] = idStr.charCodeAt(i);
           const challenge = new Uint8Array(32); window.crypto.getRandomValues(challenge);
           await navigator.credentials.get({ publicKey: { challenge, allowCredentials: [{ type:"public-key", id:idArray }], userVerification: "required" } });
           clearBioFail(name); return true;
         } catch (e) {
           const fail = getBioFailCount(name) + 1; setBioFailCount(name, fail); const left = Math.max(0, BIO_MAX_FAIL - fail);
-          if (left <= 0) { setBioLockedUntil(name, Date.now() + 30000); showStatus("error", `驗證失敗，已暫停 30 秒（剩餘 0 次）`);
-          } else { setBioLockedUntil(name, Date.now() + BIO_COOLDOWN_MS); showStatus("error", `驗證失敗，剩餘 ${left} 次（${Math.ceil(BIO_COOLDOWN_MS/1000)}s 後可再試）`); }
+          if (left <= 0) { setBioLockedUntil(name, Date.now() + 30000); showStatus("error", `驗證失敗，已暫停 30 秒（剩餘 0 次）`); } else { setBioLockedUntil(name, Date.now() + BIO_COOLDOWN_MS); showStatus("error", `驗證失敗，剩餘 ${left} 次（${Math.ceil(BIO_COOLDOWN_MS/1000)}s 後可再試）`); }
           return false;
         }
       };
@@ -856,22 +783,17 @@
 
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
-        const baseId = Date.now();
-        const isMulti = newTxs.length > 1;
-        const groupId = isMulti ? `G${baseId}` : "";
-        const parentDesc = isMulti ? newTxs[0].parentDesc : "";
-
+        const baseId = Date.now(); const isMulti = newTxs.length > 1;
+        const groupId = isMulti ? `G${baseId}` : ""; const parentDesc = isMulti ? newTxs[0].parentDesc : "";
         const completeTxs = newTxs.map((tx, idx) => ({ ...tx, date: baseDate, recorder: currentUser.name, id: String(baseId + idx), groupId, parentDesc }));
 
         if (!navigator.onLine || !deviceValid()) {
           setSyncQueue(prev => [...prev, ...completeTxs]); showStatus("info", `已暫存 ${completeTxs.length} 筆（待同步）`);
-          setActiveTab("dashboard"); if (navigator.onLine && !deviceValid()) forceReloginForToken();
-          return;
+          setActiveTab("dashboard"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return;
         }
 
         try {
-          setLoadingCard({ show:true, text: isMulti ? `寫入 ${completeTxs.length} 筆明細...` : "正在寫入..." });
-          await refreshDeviceToken();
+          setLoadingCard({ show:true, text: isMulti ? `寫入 ${completeTxs.length} 筆明細...` : "正在寫入..." }); await refreshDeviceToken();
           for (const tx of completeTxs) {
              const res = await postGAS({ ...tx, deviceToken: getDeviceToken() });
              if (res.result !== "success") throw new Error(res.message || "寫入失敗");
@@ -953,7 +875,6 @@
         return { income, expense, balance: income - expense };
       }, [myTransactions]);
 
-      // --- 資料聚合與解析 ---
       const groupTransactions = (list) => {
         const grouped = []; const groupMap = {};
         for (const tx of list) {
@@ -996,9 +917,7 @@
       const filteredHistoryGroups = useMemo(() => {
         if (!currentUser) return [];
         let list = allGroupedAndSorted.filter(item => item.member === currentUser.name);
-
         if (historyTypeFilter !== "all") list = list.filter(item => item.type === historyTypeFilter);
-
         if (historyDateFilter !== "all") {
           const now = new Date(); const cutoff = new Date();
           if (historyDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
@@ -1037,11 +956,10 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // --- 圖卡渲染 (外側編輯按鈕 & 花費對象標籤) ---
+      // --- 圖卡渲染 ---
       const renderStandaloneCard = (tx, allowEdit = true) => {
-        const benTag = formatBen(tx.beneficiary ? tx.beneficiary.split(",") : []);
-        const showBenTag = benTag && benTag !== currentUser.name;
-
+        const benTag = formatBen(tx.beneficiary, tx.member);
+        const showBenTag = benTag && benTag !== "";
         return (
           <div key={tx.id} className="flex gap-2 items-center mb-3">
             <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden">
@@ -1049,19 +967,20 @@
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
                 </div>
+                {tx.member !== currentUser.name && (
+                  <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
+                    {tx.member}
+                  </div>
+                )}
               </div>
               <div className="flex-1 min-w-0 pl-1">
-                <div className="font-bold text-base truncate text-gray-800 flex items-center gap-2">
-                  {getChildCat(tx.category)}
-                  {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">👦 {benTag}</span>}
+                <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-2">
+                  {getParentCat(tx.category)} - {getChildCat(tx.category)}
+                  {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{benTag}</span>}
                 </div>
                 <div className="flex flex-col gap-1 mt-1.5 w-full">
                   <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(tx.date)}</span>
-                  {tx.desc && (
-                    <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">
-                      {tx.desc}
-                    </span>
-                  )}
+                  {tx.desc && <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{tx.desc}</span>}
                 </div>
               </div>
               <div className="flex flex-col items-end justify-center shrink-0 pl-1">
@@ -1086,6 +1005,12 @@
 
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
+        
+        // 匯總母項目上的花費對象
+        const allBens = new Set();
+        group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
+        const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
+
         return (
           <div key={group.groupId} className="flex gap-2 items-start mb-3">
             <div className="flex-1 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
@@ -1094,23 +1019,24 @@
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                     {group.type==="income" ? "收入" : "支出"}
                   </div>
-                  {/* 使用 icon 圖卡表示多筆 */}
-                  <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white w-6 h-6 rounded-lg border-2 border-white shadow-sm z-10 flex items-center justify-center">
-                    <SvgIcon name="layers" size={12} />
+                  <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">
+                    多筆
                   </div>
+                  {group.member !== currentUser.name && (
+                    <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
+                      {group.member}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
-                  <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-1.5">
+                  <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-1.5 flex-wrap">
                     {group.parentTitle}
+                    {parentBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{parentBenTag}</span>}
                     <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 ${isExp ? 'rotate-180' : ''}`}>▼</span>
                   </div>
                   <div className="flex flex-col gap-1 mt-1 w-full">
                     <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(group.date)}</span>
-                    {group.parentDesc && (
-                      <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">
-                        {group.parentDesc}
-                      </span>
-                    )}
+                    {group.parentDesc && <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{group.parentDesc}</span>}
                   </div>
                 </div>
                 <div className="flex flex-col items-end justify-center shrink-0 pl-1">
@@ -1128,8 +1054,7 @@
               {isExp && (
                 <div className="bg-gray-50/80 p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
                   {group.children.map((child, idx) => {
-                    const benTag = formatBen(child.beneficiary ? child.beneficiary.split(",") : []);
-                    const showBenTag = benTag && benTag !== currentUser.name;
+                    const childBen = formatBen(child.beneficiary, group.member);
                     return (
                       <div key={child.id} className="flex gap-2 items-center">
                         <div className="flex-1 flex items-center gap-3 bg-white p-3 rounded-2xl shadow-sm border border-gray-200">
@@ -1138,8 +1063,8 @@
                           </div>
                           <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
                             <div className="font-bold text-sm text-gray-800 flex items-center gap-2">
-                              {getChildCat(child.category)}
-                              {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">👦 {benTag}</span>}
+                              {getParentCat(child.category)} - {getChildCat(child.category)}
+                              {childBen && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                             </div>
                             {child.desc && <div className="text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
                           </div>
@@ -1158,7 +1083,6 @@
                 </div>
               )}
             </div>
-            {/* 母項目專屬編輯按鈕 */}
             {allowEdit && (
               <button onClick={() => setEditingGroup(group)} className="w-12 h-12 shrink-0 bg-gray-800 text-white rounded-2xl flex items-center justify-center active:scale-90 transition-transform shadow-md">
                 <SvgIcon name="edit" size={18} />
@@ -1173,14 +1097,13 @@
         return renderStandaloneCard(item, allowEdit);
       };
 
-      // 動畫狀態用
       const [animTrigger, setAnimTrigger] = useState(false);
       useEffect(() => {
-        if (activeTab === "analysis") {
-           setAnimTrigger(false);
-           setTimeout(() => setAnimTrigger(true), 100);
-        }
-      }, [activeTab, analysisType, analysisDateFilter, selectedParentCategory]);
+        if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
+      }, [activeTab, analysisType, analysisDateFilter, selectedAnalysisLevel1, selectedAnalysisLevel2]);
+
+      // --- 這裡原本遺失的變數補回 ---
+      const bioBound = currentUser ? isDeviceBioBound(currentUser.name) : false;
 
       if (!currentUser) {
         return (
@@ -1224,15 +1147,12 @@
                       <div className="flex justify-center gap-3 mb-10">
                         {[...Array(6)].map((_, i) => <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? "bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]" : "bg-transparent"}`}></div>)}
                       </div>
-
                       <div className="grid grid-cols-3 gap-3 mb-8 text-white">
                         {[1,2,3,4,5,6,7,8,9,"C",0,"←"].map(k => (
                           <button key={k} onClick={async () => {
                               if (k === "C") { setPinInput(""); return; }
                               if (k === "←") { setPinInput(pinInput.slice(0,-1)); return; }
-                              const n = pinInput + k;
-                              if (n.length > 6) return;
-                              setPinInput(n);
+                              const n = pinInput + k; if (n.length > 6) return; setPinInput(n);
                               if (n.length === 6) {
                                 try {
                                   if (navigator.onLine) {
@@ -1285,7 +1205,7 @@
             {statusMsg.text && (
               <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
                 <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : "bg-blue-600 text-white"}`}>
-                  <span className="text-sm font-bold tracking-tight">{statusMsg.text}</span>
+                  <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
                 </div>
               </div>
             )}
@@ -1302,15 +1222,13 @@
         );
       }
 
-      const bioBound = isDeviceBioBound(currentUser.name);
-
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
           
           {showUnbindModal && (
-            <div className="fixed inset-0 z-[350] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white">
+            <div className="fixed inset-0 z-[350] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) {setShowUnbindModal(false); setUnbindPin("");} }}>
               <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
                 <button onClick={() => { setShowUnbindModal(false); setUnbindPin(""); }} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24}/></button>
                 <h3 className="font-black text-lg mb-2">解除綁定</h3>
@@ -1322,7 +1240,7 @@
           )}
 
           {showChangePinModal && (
-            <div className="fixed inset-0 z-[360] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white">
+            <div className="fixed inset-0 z-[360] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) setShowChangePinModal(false); }}>
               <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
                 <button onClick={() => setShowChangePinModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24}/></button>
                 <h3 className="font-black text-lg mb-2">更換密碼</h3>
@@ -1352,7 +1270,7 @@
               </div>
               <div className="flex flex-col justify-center">
                 <h1 className="text-xl font-black tracking-tighter italic leading-none mb-1">家庭記帳</h1>
-                <p className="text-[10px] text-gray-400 font-bold tracking-widest leading-none">{currentUser.name}，你好！</p>
+                <p className="text-[10px] text-gray-400 font-bold tracking-widest leading-none">{customSubtitle.replace(/{name}/g, currentUser.name)}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -1441,7 +1359,7 @@
                 <div className="flex justify-between items-center px-1">
                   <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
                   <div className="relative">
-                    <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedParentCategory(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
+                    <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
                       <option value="7d">最近 7 日</option><option value="14d">最近 14 日</option><option value="1m">最近 1 個月</option>
                       <option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option><option value="all">全部時間</option>
                     </select>
@@ -1450,9 +1368,9 @@
                 </div>
                 
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
-                  <button onClick={() => {setAnalysisType("expense"); setSelectedParentCategory(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出分析</button>
-                  <button onClick={() => {setAnalysisType("income"); setSelectedParentCategory(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
-                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedParentCategory(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-blue-600 shadow-sm" : ""}`}>對象分析</button>
+                  <button onClick={() => {setAnalysisType("expense"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出分析</button>
+                  <button onClick={() => {setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
+                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-blue-600 shadow-sm" : ""}`}>對象分析</button>
                 </div>
 
                 {(() => {
@@ -1468,55 +1386,74 @@
                     analysisTxs = analysisTxs.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
                   }
 
-                  if (analysisType === "expense" || analysisType === "income") {
-                     analysisTxs = analysisTxs.filter(t => t.type === analysisType);
-                  } else if (analysisType === "beneficiary") {
-                     analysisTxs = analysisTxs.filter(t => t.type === "expense"); // 對象分析通常看支出
-                  }
+                  if (analysisType === "expense" || analysisType === "income") analysisTxs = analysisTxs.filter(t => t.type === analysisType);
+                  else if (analysisType === "beneficiary") analysisTxs = analysisTxs.filter(t => t.type === "expense");
 
                   if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄</div>;
                   
-                  const groupTotals = {}; let grandTotal = 0;
+                  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef"];
+                  let level1Totals = {}; let grandTotal = 0;
+
                   analysisTxs.forEach(t => {
-                    const amt = Number(t.amount) || 0;
-                    grandTotal += amt;
+                    const amt = Number(t.amount) || 0; grandTotal += amt;
                     if (analysisType === "beneficiary") {
-                       const bens = t.beneficiary ? t.beneficiary.split(",") : ["未知"];
-                       // 如果多人，將金額平分 (簡易邏輯)
-                       const splitAmt = amt / bens.length;
-                       bens.forEach(b => {
-                          groupTotals[b] = (groupTotals[b] || 0) + splitAmt;
-                       });
+                       const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
+                       const splitAmt = bens.length ? amt / bens.length : amt;
+                       (bens.length ? bens : ["未知"]).forEach(b => { level1Totals[b] = (level1Totals[b] || 0) + splitAmt; });
                     } else {
                        const pCat = getParentCat(t.category);
-                       groupTotals[pCat] = (groupTotals[pCat] || 0) + amt;
+                       level1Totals[pCat] = (level1Totals[pCat] || 0) + amt;
                     }
                   });
-                  
-                  const sortedGroups = Object.entries(groupTotals).sort((a,b) => b[1] - a[1]);
-                  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef"];
-                  
+                  const sortedLevel1 = Object.entries(level1Totals).sort((a,b) => b[1] - a[1]);
                   let conicStr = ""; let currentPct = 0;
-                  sortedGroups.forEach(([cat, amt], idx) => {
+                  sortedLevel1.forEach(([cat, amt], idx) => {
                     const pct = (amt / grandTotal) * 100; const color = colors[idx % colors.length];
                     conicStr += `${color} ${currentPct}% ${currentPct + pct}%, `; currentPct += pct;
                   });
                   conicStr = conicStr.slice(0, -2);
 
-                  const childTotals = {};
-                  if (selectedParentCategory && analysisType !== "beneficiary") {
+                  let level2Totals = {}; let level1SelectedTotal = 0;
+                  if (selectedAnalysisLevel1) {
+                    if (analysisType === "beneficiary") {
+                      analysisTxs.forEach(t => {
+                        const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
+                        if (bens.includes(selectedAnalysisLevel1)) {
+                          const amt = (Number(t.amount) || 0) / bens.length;
+                          level1SelectedTotal += amt;
+                          const pCat = getParentCat(t.category);
+                          level2Totals[pCat] = (level2Totals[pCat] || 0) + amt;
+                        }
+                      });
+                    } else {
+                      analysisTxs.forEach(t => {
+                        if (getParentCat(t.category) === selectedAnalysisLevel1) {
+                          const cCat = getChildCat(t.category);
+                          const amt = Number(t.amount) || 0;
+                          level1SelectedTotal += amt;
+                          level2Totals[cCat] = (level2Totals[cCat] || 0) + amt;
+                        }
+                      });
+                    }
+                  }
+                  const sortedLevel2 = Object.entries(level2Totals).sort((a,b) => b[1] - a[1]);
+
+                  let level3Totals = {}; let level2SelectedTotal = 0;
+                  if (analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2) {
                     analysisTxs.forEach(t => {
-                      if (getParentCat(t.category) === selectedParentCategory) {
+                      const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
+                      if (bens.includes(selectedAnalysisLevel1) && getParentCat(t.category) === selectedAnalysisLevel2) {
+                        const amt = (Number(t.amount) || 0) / bens.length;
+                        level2SelectedTotal += amt;
                         const cCat = getChildCat(t.category);
-                        childTotals[cCat] = (childTotals[cCat] || 0) + (Number(t.amount) || 0);
+                        level3Totals[cCat] = (level3Totals[cCat] || 0) + amt;
                       }
                     });
                   }
-                  const sortedChildren = Object.entries(childTotals).sort((a,b) => b[1] - a[1]);
+                  const sortedLevel3 = Object.entries(level3Totals).sort((a,b) => b[1] - a[1]);
 
                   return (
                     <div className="space-y-4">
-                      {/* 圓餅圖與母分類清單 */}
                       <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 relative">
                         <div className="relative w-48 h-48 mx-auto mb-8 rounded-full shadow-lg" style={{ background: `conic-gradient(${conicStr})` }}>
                           <div className="absolute inset-0 m-auto w-32 h-32 bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
@@ -1528,10 +1465,10 @@
                         </div>
                         <div className="space-y-2">
                           {analysisType !== "beneficiary" && <div className="text-[9px] text-center font-black text-gray-400 uppercase tracking-widest mb-3 bg-gray-50 py-1.5 rounded-lg border border-gray-100">點擊下方分類查看細項</div>}
-                          {sortedGroups.map(([cat, amt], idx) => {
-                            const isSelected = selectedParentCategory === cat;
+                          {sortedLevel1.map(([cat, amt], idx) => {
+                            const isSelected = selectedAnalysisLevel1 === cat;
                             return (
-                              <div key={cat} onClick={() => analysisType !== "beneficiary" && setSelectedParentCategory(isSelected ? null : cat)} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-colors border ${isSelected ? 'bg-blue-50/50 border-blue-200' : 'bg-gray-50/50 hover:bg-gray-100 border-transparent'}`}>
+                              <div key={cat} onClick={() => { setSelectedAnalysisLevel1(isSelected ? null : cat); setSelectedAnalysisLevel2(null); }} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-colors border ${isSelected ? 'bg-blue-50/50 border-blue-200' : 'bg-gray-50/50 hover:bg-gray-100 border-transparent'}`}>
                                 <div className="flex items-center gap-3">
                                   <div className="w-3 h-3 rounded-full shadow-sm" style={{ background: colors[idx % colors.length] }}></div>
                                   <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
@@ -1548,24 +1485,49 @@
                         </div>
                       </div>
 
-                      {/* 子項目長條圖 (有動畫效果) */}
-                      {selectedParentCategory && analysisType !== "beneficiary" && (
+                      {selectedAnalysisLevel1 && (
                         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 animate-in relative overflow-hidden">
                           <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500"></div>
                           <h4 className="font-black text-gray-800 mb-5 flex items-center gap-2 text-sm pt-2">
-                            「{selectedParentCategory}」子項目分析
+                            「{selectedAnalysisLevel1}」{analysisType === "beneficiary" ? "母項目花費分析" : "子項目明細"}
                           </h4>
                           <div className="space-y-4">
-                            {sortedChildren.map(([cCat, amt]) => {
-                               const pct = (amt / groupTotals[selectedParentCategory]) * 100;
+                            {sortedLevel2.map(([cat, amt]) => {
+                               const pct = (amt / level1SelectedTotal) * 100;
+                               const isL2Selected = selectedAnalysisLevel2 === cat;
                                return (
-                                 <div key={cCat}>
+                                 <div key={cat} className={analysisType === "beneficiary" ? "cursor-pointer" : ""} onClick={() => analysisType === "beneficiary" && setSelectedAnalysisLevel2(isL2Selected ? null : cat)}>
                                     <div className="flex justify-between text-xs font-bold mb-1.5">
-                                       <span className="text-gray-700">{cCat}</span>
-                                       <span className="text-gray-500 tabular-nums">${amt.toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
+                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-700'}`}>{cat} {analysisType === "beneficiary" && <span className="text-[9px] text-gray-400 ml-1">▼</span>}</span>
+                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
-                                       <div className="h-full bg-blue-500 rounded-full transition-all duration-1000 ease-out" style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                    </div>
+                                 </div>
+                               )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2 && (
+                        <div className="bg-gray-800 p-6 rounded-[2.5rem] shadow-lg animate-in relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-full h-1.5 bg-pink-500"></div>
+                          <h4 className="font-black text-white mb-5 flex items-center gap-2 text-sm pt-2">
+                            「{selectedAnalysisLevel2}」子項目明細
+                          </h4>
+                          <div className="space-y-4">
+                            {sortedLevel3.map(([cCat, amt]) => {
+                               const pct = (amt / level2SelectedTotal) * 100;
+                               return (
+                                 <div key={cCat}>
+                                    <div className="flex justify-between text-xs font-bold mb-1.5 text-white">
+                                       <span>{cCat}</span>
+                                       <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
+                                    </div>
+                                    <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
+                                       <div className="h-full bg-pink-500 rounded-full transition-all duration-1000 ease-out" style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
                                     </div>
                                  </div>
                                )
@@ -1583,14 +1545,19 @@
 
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
-                {/* 自定義問候頭部 */}
-                <div className="px-2 pt-2 pb-4">
-                  <h2 className="text-3xl font-black tracking-tight text-gray-800">{currentUser.name}，你好！</h2>
-                  <p className="text-xs font-bold text-gray-400 mt-1">今天想記錄點什麼呢？</p>
+                <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
+                  <h3 className="font-black text-xs mb-4 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
+                    <SvgIcon name="edit" size={16} className="text-blue-500" /> 介面自訂
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 focus-within:border-blue-200 transition-colors">
+                    <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 leading-none tracking-widest">首頁副標題問候語 (支援 {"{name}"} 變數)</label>
+                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                      placeholder="例如：{name}，你好！" value={customSubtitle} onChange={(e) => setCustomSubtitle(e.target.value)} />
+                  </div>
                 </div>
 
                 <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
-                  <h3 className="font-black text-xs mb-6 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
+                  <h3 className="font-black text-xs mb-5 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
                     <SvgIcon name="info" size={16} className="text-blue-500" /> 安全與帳戶管理
                   </h3>
                   <div className="space-y-3">
@@ -1614,7 +1581,6 @@
                   </button>
                 </div>
 
-                {/* 系統更新歷程區塊 (可收折) */}
                 <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
                   <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsLogOpen(!isLogOpen)}>
                     <h3 className="font-black text-xs uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
@@ -1624,23 +1590,25 @@
                   </div>
                   
                   {isLogOpen && (
-                    <div className="mt-5 space-y-4 font-bold text-gray-600 animate-in border-t border-gray-100 pt-4">
+                    <div className="mt-5 space-y-5 font-bold text-gray-600 animate-in border-t border-gray-100 pt-4">
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>支援「花費對象」標籤與統計分析 (V3)</li>
-                          <li>內建三口家庭母子類別清單 (V3)</li>
-                          <li>支援母項目名稱編輯 (V3)</li>
+                          <li>支援分析圖表三階層下鑽 (對象 ➔ 母類 ➔ 子類) (V4)</li>
+                          <li>獨立多筆明細的花費對象標籤並精簡日期欄位 (V4)</li>
+                          <li>新增自訂抬頭問候語功能與點擊背景關閉浮窗 (V4)</li>
+                          <li>內建三口家庭母子類別清單與母項目名稱編輯 (V3)</li>
                           <li>新增發票明細拆分，支援自訂標題與備註 (V2)</li>
-                          <li>歷史清單母項目自動聚合與獨立編輯 (V2)</li>
+                          <li>歷史清單母項目自動聚合與獨立外側編輯 (V2)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>擴充至 11 欄，新增 Beneficiary 欄位 (V3)</li>
+                          <li>擴充至 11 欄，新增 Beneficiary (用在誰身上) 欄位 (V3)</li>
                           <li>新增 UPDATE_GROUP_PARENT 支援母項目更新 (V3)</li>
-                          <li>支援 ParentDesc 與 GroupID 欄位 (V2)</li>
+                          <li>支援 ParentDesc 與 GroupID 虛擬聚合欄位 (V2)</li>
+                          <li>導入 Device Token 設備綁定機制與 PIN 安全防護 (V1)</li>
                         </ul>
                       </div>
                     </div>
@@ -1650,7 +1618,7 @@
             )}
           </main>
 
-          <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20 safe-bottom">
+          <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-40 shadow-2xl border border-white/20 safe-bottom">
             <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="home" /></button>
             <button onClick={() => setActiveTab("history")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="history" /></button>
             <div className="px-1">
