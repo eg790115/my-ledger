@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>家庭記帳</title>
 
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#111827" />
 
   <script>
     const manifestJSON = {
@@ -47,12 +47,12 @@
       overflow-x: hidden;
     }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
-    .animate-in { animation: fadeIn 0.3s ease-out forwards; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    .animate-in { animation: fadeIn 0.25s ease-out forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
+    @keyframes cursor-blink { 0%,100%{opacity:1} 50%{opacity:0} }
     .animate-cursor { animation: cursor-blink 1s step-end infinite; }
     .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-    #root { min-height: 100vh; display: flex; flex-direction: column; }
+    #root { min-height: 100vh; display:flex; flex-direction:column; }
   </style>
 </head>
 
@@ -63,21 +63,22 @@
     const { useEffect, useMemo, useRef, useState } = React;
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
-
-    const APP_VERSION = "2026.02.25.LOCKED";
+    const APP_VERSION = "2026.02.25.LOCKED.V3";
 
     const LS = {
       pending: "pending_sync_v16",
       txCache: "local_tx_cache_v16",
       lastSync: "last_sync_time_v16",
       members: "family_member_config_v16",
-      lastUser: "last_login_user_v16",
 
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
 
       pinHashPrefix: "pin_hash_v16_",
       bioCredPrefix: "bio_cred_",
+
+      bioFailPrefix: "bio_fail_v1_", // bio_fail_v1_爸爸
+      bioLockPrefix: "bio_lock_v1_", // bio_lock_v1_爸爸
     };
 
     const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
@@ -91,6 +92,10 @@
       const v = localStorage.getItem(key);
       if (v === null || v === "null" || v === "undefined") return fallback;
       return v;
+    };
+    const safeNumberLS = (key, fallback=0) => {
+      const v = Number(localStorage.getItem(key));
+      return Number.isFinite(v) ? v : fallback;
     };
 
     const nowStr = () => {
@@ -108,7 +113,7 @@
     }
 
     const getDeviceToken = () => safeStringLS(LS.deviceToken, "");
-    const getDeviceExp = () => Number(safeStringLS(LS.deviceExp, "0"));
+    const getDeviceExp = () => safeNumberLS(LS.deviceExp, 0);
     const deviceValid = () => !!(getDeviceToken() && getDeviceExp() && Date.now() < getDeviceExp());
     const setDeviceToken = (t, exp) => {
       localStorage.setItem(LS.deviceToken, t);
@@ -132,6 +137,15 @@
     const getBioKey = (name) => `${LS.bioCredPrefix}${name}`;
     const isDeviceBioBound = (name) => !!localStorage.getItem(getBioKey(name));
 
+    // bio fail state helpers
+    const getBioFailKey = (name) => `${LS.bioFailPrefix}${name}`;
+    const getBioLockKey = (name) => `${LS.bioLockPrefix}${name}`;
+    const getBioFailCount = (name) => safeNumberLS(getBioFailKey(name), 0);
+    const setBioFailCount = (name, v) => localStorage.setItem(getBioFailKey(name), String(v));
+    const getBioLockedUntil = (name) => safeNumberLS(getBioLockKey(name), 0);
+    const setBioLockedUntil = (name, ts) => localStorage.setItem(getBioLockKey(name), String(ts));
+    const clearBioFail = (name) => { setBioFailCount(name, 0); setBioLockedUntil(name, 0); };
+
     // --- Icons ---
     const SvgIcon = ({ name, size = 24, className = "" }) => {
       const icons = {
@@ -143,11 +157,8 @@
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
         bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
-        key: <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.778-7.778zm0 0L15.5 7.5m0 0l3 3m-3-3l2.5-2.5"/>,
-        user: <React.Fragment><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></React.Fragment>,
         close: <path d="M18 6L6 18M6 6l12 12"/>,
         info: <React.Fragment><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></React.Fragment>,
-        shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>,
         check: <path d="M20 6L9 17l-5-5"/>,
         edit: <React.Fragment><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></React.Fragment>,
         trash: <React.Fragment><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></React.Fragment>
@@ -157,21 +168,25 @@
           viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
           strokeLinecap="round" strokeLinejoin="round"
           className={`shrink-0 aspect-square ${className}`}>
-          {icons[name] || <circle cx="12" cy="12" r="10"/>}
+          {icons[name] || <circle cx="12" cy="12" r="10" />}
         </svg>
       );
     };
 
-    // --- Forms/Modals (Add + Edit) ---
+    // --- Add Form ---
     const AddTransactionForm = ({ categories, loginUser, onSubmit, isLoading }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [formData, setFormData] = useState({
-        amount: '', category: categories[0] || '一般', member: loginUser,
-        type: 'expense', desc: '', date: ''
+        amount: "",
+        category: categories[0] || "一般",
+        member: loginUser,
+        type: "expense",
+        desc: "",
+        date: ""
       });
 
-      const otherMember = loginUser === '爸爸' ? '媽媽' : '爸爸';
+      const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
 
       useEffect(() => {
         setFormData(prev => ({ ...prev, member: loginUser || prev.member }));
@@ -179,24 +194,26 @@
 
       const renderAmount = () => {
         const val = formData.amount;
-        if (isFocused) return (val === '' || val === '0') ? <span className="text-gray-300 animate-cursor">_</span> : val;
-        return (val === '' || val === '0') ? "0" : val;
+        if (isFocused) return (val === "" || val === "0") ? <span className="text-gray-300 animate-cursor">_</span> : val;
+        return (val === "" || val === "0") ? "0" : val;
       };
 
       return (
         <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black">
           <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-8 text-sm text-gray-500">
-            <button onClick={() => setFormData({ ...formData, type: 'expense' })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'expense' ? 'bg-white text-red-500 shadow-sm font-black' : ''}`}>支出</button>
-            <button onClick={() => setFormData({ ...formData, type: 'income' })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'income' ? 'bg-white text-green-500 shadow-sm font-black' : ''}`}>收入</button>
+            <button onClick={() => setFormData({ ...formData, type: "expense" })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
+            <button onClick={() => setFormData({ ...formData, type: "income" })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
           </div>
 
           <div className="relative flex items-center justify-center mb-8 py-2 min-h-[80px] cursor-pointer font-black text-gray-800" onClick={() => inputRef.current?.focus()}>
             <span className="text-2xl font-black text-gray-300 mr-1 mt-2">$</span>
-            <div className={`text-6xl font-black text-center min-w-[1.5rem] tracking-tighter transition-colors ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`}>{renderAmount()}</div>
-            <input ref={inputRef} type="number" inputMode="decimal" className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer font-black"
+            <div className={`text-6xl font-black text-center min-w-[1.5rem] tracking-tighter transition-colors ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}>{renderAmount()}</div>
+            <input ref={inputRef} type="number" inputMode="decimal"
+              className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer font-black"
               value={formData.amount}
               onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })} />
+              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+            />
           </div>
 
           <div className="space-y-4 text-left">
@@ -204,14 +221,16 @@
               <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">日期與時間 (未選則為現在)</label>
               <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800"
                 value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              />
             </div>
 
             <div className="bg-gray-100 p-4 rounded-2xl text-gray-800">
               <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">類別</label>
               <select className="w-full bg-transparent border-none outline-none appearance-none font-black"
                 value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })}>
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              >
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -220,68 +239,75 @@
               <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">備註說明</label>
               <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300"
                 placeholder="輸入內容..." value={formData.desc}
-                onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
+                onChange={(e) => setFormData({ ...formData, desc: e.target.value })}
+              />
             </div>
 
             <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
               <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 text-gray-500">紀錄對象</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })}
-                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === loginUser ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-400'}`}>
-                  自己 {formData.member === loginUser && '✓'}
+                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-blue-600 border-blue-600 text-white shadow-md" : "bg-white border-gray-200 text-gray-400"}`}
+                >
+                  自己 {formData.member === loginUser && "✓"}
                 </button>
                 <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })}
-                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === otherMember ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-400'}`}>
-                  給{otherMember}紀錄 {formData.member === otherMember && '✓'}
+                  className={`flex-1 py-3 rounded-xl text-[11px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-blue-600 border-blue-600 text-white shadow-md" : "bg-white border-gray-200 text-gray-400"}`}
+                >
+                  給{otherMember}紀錄 {formData.member === otherMember && "✓"}
                 </button>
               </div>
             </div>
-
           </div>
 
-          <button disabled={!formData.amount || formData.amount === '0' || isLoading}
+          <button disabled={!formData.amount || formData.amount === "0" || isLoading}
             onClick={() => onSubmit(formData)}
-            className="w-full mt-8 py-5 bg-gray-900 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl disabled:opacity-30">
+            className="w-full mt-8 py-5 bg-gray-900 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl disabled:opacity-30"
+          >
             {isLoading ? "處理中..." : "確認存檔"}
           </button>
         </div>
       );
     };
 
+    // --- Edit Modal（沿用你原本樣式）---
     const EditTransactionModal = ({ tx, categories, loginUser, onSave, onDelete, onCancel, isLoading, title }) => {
       const [formData, setFormData] = useState({ ...tx });
       const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
       useEffect(() => {
-        let formattedDate = '';
+        let formattedDate = "";
         if (tx.date) {
-          formattedDate = String(tx.date).replace(' (已編輯)', '').replace('(已編輯)', '').replace(/\//g, '-').replace(' ', 'T');
+          formattedDate = String(tx.date).replace(" (已編輯)", "").replace("(已編輯)", "").replace(/\//g, "-").replace(" ", "T");
           if (formattedDate.length > 16) formattedDate = formattedDate.slice(0, 16);
         }
         setFormData({ ...tx, date: formattedDate });
       }, [tx]);
 
-      const otherMember = loginUser === '爸爸' ? '媽媽' : '爸爸';
+      const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
 
       return (
         <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black">
           <div className="w-full max-w-sm relative">
-            <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition"><SvgIcon name="close" size={32} /></button>
+            <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition">
+              <SvgIcon name="close" size={32} />
+            </button>
             <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
               <h2 className="text-xl font-black text-center mb-6 text-gray-800 pt-2">{title || "編輯帳目"}</h2>
 
               <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6 text-sm text-gray-500">
-                <button onClick={() => setFormData({ ...formData, type: 'expense' })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'expense' ? 'bg-white text-red-500 shadow-sm font-black' : ''}`}>支出</button>
-                <button onClick={() => setFormData({ ...formData, type: 'income' })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === 'income' ? 'bg-white text-green-500 shadow-sm font-black' : ''}`}>收入</button>
+                <button onClick={() => setFormData({ ...formData, type: "expense" })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
+                <button onClick={() => setFormData({ ...formData, type: "income" })} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
               </div>
 
               <div className="relative flex items-center justify-center mb-6 py-2 border-b border-gray-100 pb-6 text-gray-800">
                 <span className="text-2xl font-black text-gray-300 mr-1 mt-1">$</span>
                 <input type="number" inputMode="decimal"
-                  className={`w-32 text-5xl font-black text-center outline-none bg-transparent ${formData.type === 'expense' ? 'text-red-500' : 'text-green-500'}`}
+                  className={`w-32 text-5xl font-black text-center outline-none bg-transparent ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })} />
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                />
               </div>
 
               <div className="space-y-4 text-left">
@@ -289,7 +315,8 @@
                   <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">時間</label>
                   <input type="datetime-local" className="w-full bg-transparent font-black border-none outline-none text-gray-800 text-sm"
                     value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  />
                 </div>
 
                 <div className="flex gap-3">
@@ -297,7 +324,8 @@
                     <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">類別</label>
                     <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm"
                       value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}>
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    >
                       {categories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
@@ -306,7 +334,8 @@
                     <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">對象</label>
                     <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm"
                       value={formData.member}
-                      onChange={(e) => setFormData({ ...formData, member: e.target.value })}>
+                      onChange={(e) => setFormData({ ...formData, member: e.target.value })}
+                    >
                       <option value={loginUser}>自己</option>
                       <option value={otherMember}>{otherMember}</option>
                     </select>
@@ -316,21 +345,20 @@
                 <div className="bg-gray-100 p-3.5 rounded-2xl">
                   <label className="text-[9px] font-black text-gray-400 uppercase block mb-1">備註</label>
                   <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
-                    placeholder="選填"
-                    value={formData.desc}
-                    onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
+                    placeholder="選填" value={formData.desc}
+                    onChange={(e) => setFormData({ ...formData, desc: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="flex gap-3 mt-8">
                 {!showConfirmDelete ? (
                   <>
-                    <button disabled={isLoading}
-                      onClick={() => setShowConfirmDelete(true)}
+                    <button disabled={isLoading} onClick={() => setShowConfirmDelete(true)}
                       className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
-                    <button disabled={!formData.amount || formData.amount === '0' || isLoading}
+                    <button disabled={!formData.amount || formData.amount === "0" || isLoading}
                       onClick={() => onSave(formData)}
                       className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30">
                       {isLoading ? "處理中..." : "儲存變更"}
@@ -340,11 +368,8 @@
                   <div className="w-full animate-in bg-red-50 p-4 rounded-2xl text-center border border-red-100">
                     <p className="text-red-600 font-black text-xs mb-3">確定永久刪除此紀錄？</p>
                     <div className="flex gap-2">
-                      <button onClick={() => setShowConfirmDelete(false)}
-                        className="flex-1 py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
-                      <button disabled={isLoading}
-                        onClick={() => onDelete(tx.id)}
-                        className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
+                      <button onClick={() => setShowConfirmDelete(false)} className="flex-1 py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
+                      <button disabled={isLoading} onClick={() => onDelete(tx.id)} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
                     </div>
                   </div>
                 )}
@@ -356,10 +381,8 @@
       );
     };
 
-    // --- Main App ---
     function App() {
       const [activeTab, setActiveTab] = useState("dashboard");
-
       const [familyConfig, setFamilyConfig] = useState(() => {
         const saved = safeArrayLS(LS.members);
         return saved.length ? saved : [
@@ -376,7 +399,6 @@
 
       const [isLoading, setIsLoading] = useState(false);
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
-
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
@@ -388,12 +410,9 @@
       const [editingTitle, setEditingTitle] = useState("編輯帳目");
       const [editingIsPending, setEditingIsPending] = useState(false);
 
-      const [isUnlockedLocal, setIsUnlockedLocal] = useState(false);
-
       // Modals
       const [showBootstrapModal, setShowBootstrapModal] = useState(false);
       const [bootstrapSecret, setBootstrapSecret] = useState("");
-      const [bootstrapPin, setBootstrapPin] = useState("");
 
       const [showUnbindModal, setShowUnbindModal] = useState(false);
       const [unbindPin, setUnbindPin] = useState("");
@@ -408,20 +427,19 @@
         setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000);
       };
 
-      // persist
+      // Persist
       useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
       useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
 
-      // 每次回到前景就鎖
+      // 每次回前景就鎖（回到選成員）
       useEffect(() => {
         const onVis = () => {
           if (document.visibilityState === "visible") {
             setCurrentUser(null);
             setSelectingUser(null);
             setPinInput("");
-            setIsUnlockedLocal(false);
             setActiveTab("dashboard");
           }
         };
@@ -429,105 +447,83 @@
         return () => document.removeEventListener("visibilitychange", onVis);
       }, []);
 
-      // init biometric support
+      // 初始化生物辨識可用性
       useEffect(() => {
         if (window.PublicKeyCredential) {
           PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v));
         }
       }, []);
 
-      // load members (public)
+      // 讀 members（公開）
       useEffect(() => {
         (async () => {
           try {
             const res = await fetch(gasUrl);
             const data = await res.json();
             if (data.members && data.members.length) setFamilyConfig(data.members);
-          } catch (e) { }
+          } catch {}
         })();
       }, []);
 
-      // auto sync when online + token valid
+      // ✅ App 一打開：線上且沒有有效憑證 -> 直接要求輸入雲端密碼
+      useEffect(() => {
+        if (navigator.onLine && !deviceValid()) {
+          setShowBootstrapModal(true);
+          setBootstrapSecret("");
+        }
+      }, []);
+
+      // 線上回來自動同步（不做重複 refresh）
       useEffect(() => {
         const onOnline = async () => {
           if (!navigator.onLine) return;
           if (!deviceValid()) return;
-          try {
-            await processQueueToCloud();
-          } catch {}
+          await processQueueToCloud({ doRefreshFirst: true });
         };
         window.addEventListener("online", onOnline);
         return () => window.removeEventListener("online", onOnline);
       }, [syncQueue]);
 
-      // Auto bio prompt when selecting user & bound
-      useEffect(() => {
-        if (!selectingUser) return;
-        if (!biometricAvailable) return;
-        if (!isDeviceBioBound(selectingUser.name)) return;
-
-        (async () => {
-          // 直接跳生物辨識，不先出 loadingCard
-          const ok = await handleBioLoginLocal(selectingUser.name);
-          if (!ok) return;
-
-          const u = familyConfig.find(x => x.name === selectingUser.name) || selectingUser;
-          setCurrentUser(u);
-          localStorage.setItem(LS.lastUser, selectingUser.name);
-          setSelectingUser(null);
-          setPinInput("");
-          setIsUnlockedLocal(true);
-
-          // 線上且 token 可用 → refresh token + 拉雲端（會有 loadingCard）
-          if (navigator.onLine && deviceValid()) {
-            await unlockCloudFlow({ reason: "bio" });
-          } else if (navigator.onLine && !deviceValid()) {
-            // 沒 token/過期 → 需要 bootstrap 才能雲端
-            setShowBootstrapModal(true);
-            setBootstrapPin("");
-            setBootstrapSecret("");
-          }
-        })();
-      }, [selectingUser, biometricAvailable]);
-
       // helpers
       const displayDateClean = (val) => {
-        if (!val) return '';
-        let str = String(val).replace(/上午|下午|AM|PM/gi, '').trim();
-        const isEdited = str.includes('(已編輯)');
-        str = str.replace(' (已編輯)', '').replace('(已編輯)', '');
-        str = str.replace(/-/g, '/').replace('T', ' ');
-        const parts = str.split(' ');
+        if (!val) return "";
+        let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim();
+        const isEdited = str.includes("(已編輯)");
+        str = str.replace(" (已編輯)", "").replace("(已編輯)", "");
+        str = str.replace(/-/g, "/").replace("T", " ");
+        const parts = str.split(" ");
         if (parts.length > 1) {
-          const cleaned = `${parts[0]} ${parts[1].split(':').slice(0, 2).join(':')}`;
-          return isEdited ? cleaned + ' (已編輯)' : cleaned;
+          const cleaned = `${parts[0]} ${parts[1].split(":").slice(0,2).join(":")}`;
+          return isEdited ? cleaned + " (已編輯)" : cleaned;
         }
-        return isEdited ? str + ' (已編輯)' : str;
+        return isEdited ? str + " (已編輯)" : str;
       };
 
-      // ---------- Cloud flows ----------
+      // --- Cloud: bootstrap/refresh/verify/fetch ---
       const refreshDeviceToken = async () => {
         const data = await postGAS({ action: "DEVICE_REFRESH", deviceToken: getDeviceToken() });
-        if (data.result !== "success") throw new Error(data.message || "Device token expired");
+        if (data.result !== "success") throw new Error(data.message || "憑證已過期");
         setDeviceToken(data.deviceToken, data.deviceExp);
         return data;
       };
 
       const bootstrapDevice = async () => {
-        const name = currentUser?.name || selectingUser?.name;
-        if (!name) throw new Error("missing user");
-        if (!bootstrapPin || bootstrapPin.length !== 6) throw new Error("請輸入 6 位 PIN");
-        if (!bootstrapSecret) throw new Error("請輸入 APP_SECRET");
-
-        const data = await postGAS({ action: "DEVICE_BOOTSTRAP", name, pin: bootstrapPin, appSecret: bootstrapSecret });
-        if (data.result !== "success") throw new Error(data.message || "bootstrap failed");
+        if (!bootstrapSecret) throw new Error("請輸入雲端密碼");
+        const data = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: bootstrapSecret });
+        if (data.result !== "success") throw new Error(data.message || "綁定失敗");
         setDeviceToken(data.deviceToken, data.deviceExp);
         return data;
       };
 
+      const verifyPinOnline = async (name, pin) => {
+        const res = await postGAS({ action:"VERIFY_PIN", name, pin, deviceToken: getDeviceToken() });
+        if (res.result !== "success") throw new Error(res.message || "PIN 錯誤");
+        return true;
+      };
+
       const fetchCloudTx = async () => {
-        const data = await postGAS({ action: "GET_TX", deviceToken: getDeviceToken() });
-        if (data.result !== "success") throw new Error(data.message || "GET_TX failed");
+        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
+        if (data.result !== "success") throw new Error(data.message || "抓取失敗");
         const formatted = (data.transactions || []).map((t, i) => ({
           id: t.id || i,
           amount: parseFloat(t["金額"]) || 0,
@@ -545,50 +541,36 @@
         return formatted;
       };
 
-      const processQueueToCloud = async () => {
+      // ✅ 同步：由外層決定要不要 refresh，避免你原本重複 refresh 的卡頓
+      const processQueueToCloud = async ({ doRefreshFirst }) => {
         if (!navigator.onLine) return;
         if (!deviceValid()) return;
-        if (!syncQueue.length) return;
 
-        setLoadingCard({ show: true, text: "正在同步暫存..." });
         try {
-          // token refresh first (keep alive)
-          await refreshDeviceToken();
+          if (doRefreshFirst) await refreshDeviceToken();
 
-          const queue = [...syncQueue];
-          for (const item of queue) {
-            const payload = { ...item, deviceToken: getDeviceToken() };
-            const res = await postGAS(payload);
-            if (res.result !== "success") throw new Error(res.message || "sync failed");
-            setSyncQueue(prev => prev.filter(p => !(p.id === item.id && (p.action||"") === (item.action||""))));
+          if (syncQueue.length > 0) {
+            setLoadingCard({ show:true, text:"正在同步暫存..." });
+            const queue = [...syncQueue];
+            for (const item of queue) {
+              const payload = { ...item, deviceToken: getDeviceToken() };
+              const res = await postGAS(payload);
+              if (res.result !== "success") throw new Error(res.message || "同步失敗");
+              setSyncQueue(prev => prev.filter(p => !(p.id === item.id && (p.action||"") === (item.action||""))));
+            }
           }
+
+          // 背景更新雲端資料（有需要才顯示圖卡）
           await fetchCloudTx();
           showStatus("success", "同步完成");
         } catch (e) {
           showStatus("error", e.message || "同步失敗");
         } finally {
-          setLoadingCard({ show: false, text: "" });
+          setLoadingCard({ show:false, text:"" });
         }
       };
 
-      const unlockCloudFlow = async ({ reason }) => {
-        if (!navigator.onLine) return;
-        if (!deviceValid()) return;
-
-        setLoadingCard({ show: true, text: "正在刷新資料..." });
-        try {
-          await refreshDeviceToken();
-          await processQueueToCloud(); // includes fetch
-        } catch (e) {
-          // token expired -> require bootstrap
-          showStatus("info", "需要重新綁定才能使用雲端");
-          setShowBootstrapModal(true);
-        } finally {
-          setLoadingCard({ show: false, text: "" });
-        }
-      };
-
-      // ---------- Local unlock (PIN hash + bio) ----------
+      // --- Local PIN hash (離線用) ---
       const saveLocalPinHash = async (name, pin) => {
         const h = await sha256Base64(`${name}::${pin}::local`);
         localStorage.setItem(LS.pinHashPrefix + name, h);
@@ -600,14 +582,26 @@
         return h === stored;
       };
 
+      // --- Bio login with attempts + cooldown ---
+      const BIO_MAX_FAIL = 5;
+      const BIO_COOLDOWN_MS = 3000;
+
       const handleBioLoginLocal = async (name) => {
+        const lockedUntil = getBioLockedUntil(name);
+        if (lockedUntil && Date.now() < lockedUntil) {
+          const sec = Math.ceil((lockedUntil - Date.now())/1000);
+          const left = Math.max(0, BIO_MAX_FAIL - getBioFailCount(name));
+          showStatus("error", `請稍候 ${sec}s 再試（剩餘 ${left} 次）`);
+          return false;
+        }
+
         try {
           const base64Id = localStorage.getItem(getBioKey(name));
-          if (!base64Id) return false;
+          if (!base64Id) { showStatus("error","設備未綁定"); return false; }
 
           const idStr = atob(base64Id);
           const idArray = new Uint8Array(idStr.length);
-          for (let i = 0; i < idStr.length; i++) idArray[i] = idStr.charCodeAt(i);
+          for (let i=0;i<idStr.length;i++) idArray[i] = idStr.charCodeAt(i);
 
           const challenge = new Uint8Array(32);
           window.crypto.getRandomValues(challenge);
@@ -615,161 +609,154 @@
           await navigator.credentials.get({
             publicKey: {
               challenge,
-              allowCredentials: [{ type: "public-key", id: idArray }],
+              allowCredentials: [{ type:"public-key", id:idArray }],
               userVerification: "required",
             }
           });
+
+          // success
+          clearBioFail(name);
           return true;
         } catch (e) {
-          showStatus("error", "指紋/臉部驗證失敗");
+          // fail
+          const fail = getBioFailCount(name) + 1;
+          setBioFailCount(name, fail);
+
+          const left = Math.max(0, BIO_MAX_FAIL - fail);
+          if (left <= 0) {
+            // lock longer if exhausted (e.g. 30s)
+            const lockMs = 30000;
+            setBioLockedUntil(name, Date.now() + lockMs);
+            showStatus("error", `驗證失敗，已暫停 30 秒（剩餘 0 次）`);
+          } else {
+            setBioLockedUntil(name, Date.now() + BIO_COOLDOWN_MS);
+            const sec = Math.ceil(BIO_COOLDOWN_MS/1000);
+            showStatus("error", `驗證失敗，剩餘 ${left} 次（${sec}s 後可再試）`);
+          }
           return false;
         }
       };
 
-      // ---------- Bind / Unbind device bio ----------
+      // --- Bind/unbind bio ---
       const bindDeviceBio = async () => {
-        if (!window.PublicKeyCredential) { showStatus("error", "不支援生物辨識"); return; }
+        if (!window.PublicKeyCredential) { showStatus("error","不支援生物辨識"); return; }
         try {
-          setIsLoading(true);
-          setLoadingCard({ show: true, text: "正在綁定設備..." });
+          setLoadingCard({ show:true, text:"正在綁定設備..." });
 
-          const challenge = new Uint8Array(32); window.crypto.getRandomValues(challenge);
-          const userID = new Uint8Array(16); window.crypto.getRandomValues(userID);
+          const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+          const userID = new Uint8Array(16); crypto.getRandomValues(userID);
 
           const cred = await navigator.credentials.create({
             publicKey: {
               challenge,
-              rp: { name: "家庭記帳" },
-              user: { id: userID, name: currentUser.name, displayName: currentUser.name },
-              pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-              authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+              rp: { name:"家庭記帳" },
+              user: { id:userID, name: currentUser.name, displayName: currentUser.name },
+              pubKeyCredParams: [{ type:"public-key", alg:-7 }, { type:"public-key", alg:-257 }],
+              authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required" },
               timeout: 60000
             }
           });
 
           const base64Id = btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(cred.rawId))));
           localStorage.setItem(getBioKey(currentUser.name), base64Id);
-          showStatus("success", "設備已綁定");
-        } catch (e) {
-          showStatus("error", "綁定失敗或已取消");
+          clearBioFail(currentUser.name);
+          showStatus("success","設備已綁定");
+        } catch {
+          showStatus("error","綁定失敗或已取消");
         } finally {
-          setLoadingCard({ show: false, text: "" });
-          setIsLoading(false);
+          setLoadingCard({ show:false, text:"" });
         }
       };
-
-      const openUnbindModal = () => { setUnbindPin(""); setShowUnbindModal(true); };
-      const closeUnbindModal = () => { setUnbindPin(""); setShowUnbindModal(false); };
 
       const unbindDeviceBio = async () => {
-        if (!unbindPin || unbindPin.length !== 6) { showStatus("error", "請輸入 6 位 PIN"); return; }
-        if (!navigator.onLine) { showStatus("error", "需連線驗證 PIN 才能解除"); return; }
-        if (!deviceValid()) { showStatus("error", "裝置憑證過期，請先重新登入"); return; }
-
+        if (unbindPin.length !== 6) { showStatus("error","請輸入 6 位 PIN"); return; }
+        if (!navigator.onLine) { showStatus("error","需連線驗證 PIN 才能解除"); return; }
+        if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
         try {
-          setIsLoading(true);
-          setLoadingCard({ show: true, text: "正在驗證..." });
-
-          const res = await postGAS({ action: "VERIFY_PIN", name: currentUser.name, pin: unbindPin, deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "PIN incorrect");
-
+          setLoadingCard({ show:true, text:"正在驗證..." });
+          await verifyPinOnline(currentUser.name, unbindPin);
           localStorage.removeItem(getBioKey(currentUser.name));
-          closeUnbindModal();
-          showStatus("success", "已解除綁定");
+          clearBioFail(currentUser.name);
+          setShowUnbindModal(false);
+          setUnbindPin("");
+          showStatus("success","已解除綁定");
         } catch (e) {
-          showStatus("error", e.message || "驗證失敗");
+          showStatus("error", e.message || "PIN 錯誤");
         } finally {
-          setLoadingCard({ show: false, text: "" });
-          setIsLoading(false);
+          setLoadingCard({ show:false, text:"" });
         }
       };
 
-      // ---------- Change PIN modal ----------
-      const openChangePinModal = () => {
-        setOldPin(""); setNewPin(""); setNewPin2("");
-        setShowChangePinModal(true);
-      };
-
+      // --- Change PIN ---
       const changePin = async () => {
-        if (!navigator.onLine) { showStatus("error", "需連線才能更換密碼"); return; }
-        if (!deviceValid()) { showStatus("error", "裝置憑證過期，請先重新登入"); return; }
-        if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { showStatus("error", "請輸入 6 位 PIN"); return; }
-        if (newPin !== newPin2) { showStatus("error", "兩次輸入不一致"); return; }
+        if (!navigator.onLine) { showStatus("error","需連線才能更換密碼"); return; }
+        if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
+        if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { showStatus("error","請輸入 6 位 PIN"); return; }
+        if (newPin !== newPin2) { showStatus("error","兩次輸入不一致"); return; }
 
         try {
-          setIsLoading(true);
-          setLoadingCard({ show: true, text: "正在更新密碼..." });
-
-          const res = await postGAS({ action: "UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
+          setLoadingCard({ show:true, text:"正在更新密碼..." });
+          const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
 
-          // 清掉本機 PIN hash（避免舊 hash 離線解鎖）
+          // 成功後登出重登
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name);
-
           setShowChangePinModal(false);
-          showStatus("success", "密碼更新成功，請重新登入");
-
-          // 登出（不跳頁）
+          showStatus("success","密碼更新成功，請重新登入");
           setCurrentUser(null);
           setSelectingUser(null);
           setPinInput("");
-          setIsUnlockedLocal(false);
           setActiveTab("dashboard");
         } catch (e) {
           showStatus("error", e.message || "更新失敗");
         } finally {
-          setLoadingCard({ show: false, text: "" });
-          setIsLoading(false);
+          setLoadingCard({ show:false, text:"" });
         }
       };
 
-      // ---------- Add / Update / Delete ----------
+      // --- Transactions add/update/delete (省掉不必要 refresh；需要時才 refresh) ---
       const handleAdd = async (newTx) => {
-        setIsLoading(true);
-        let finalDateStr = newTx.date ? newTx.date.replace('T',' ').replace(/-/g,'/') : nowStr();
+        const finalDateStr = newTx.date ? newTx.date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const completeTx = { ...newTx, date: finalDateStr, recorder: currentUser.name, id: Date.now() };
 
-        // 先加入暫存隊列（離線永遠可用）
+        // 離線或憑證無效：只暫存
         if (!navigator.onLine || !deviceValid()) {
           setSyncQueue(prev => [...prev, completeTx]);
-          showStatus("info", "已暫存（待同步）");
-          setIsLoading(false);
+          showStatus("info","已暫存（待同步）");
           setActiveTab("dashboard");
           return;
         }
 
         try {
-          setLoadingCard({ show: true, text: "正在寫入..." });
-          await refreshDeviceToken();
+          setLoadingCard({ show:true, text:"正在寫入..." });
+          await refreshDeviceToken(); // 只 refresh 一次
           const res = await postGAS({ ...completeTx, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "寫入失敗");
+
+          // 背景拉最新
           await fetchCloudTx();
-          showStatus("success", "已同步");
+          showStatus("success","已同步");
         } catch (e) {
           setSyncQueue(prev => [...prev, completeTx]);
-          showStatus("info", "已暫存（稍後自動同步）");
+          showStatus("error", e.message || "寫入失敗，已暫存");
         } finally {
-          setLoadingCard({ show: false, text: "" });
-          setIsLoading(false);
+          setLoadingCard({ show:false, text:"" });
           setActiveTab("dashboard");
         }
       };
 
       const handleUpdateTx = async (updatedTx) => {
-        // 暫存編輯：只改本機
         if (editingIsPending) {
           setSyncQueue(prev => prev.map(p => p.id === updatedTx.id ? { ...p, ...updatedTx } : p));
           setEditingTx(null);
           setEditingIsPending(false);
-          showStatus("success", "暫存已更新");
+          showStatus("success","暫存已更新");
           return;
         }
 
-        setIsLoading(true);
+        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能編輯"); return; }
         try {
-          if (!navigator.onLine || !deviceValid()) throw new Error("需連線且憑證有效才能編輯雲端");
-
-          setLoadingCard({ show: true, text: "正在更新..." });
+          setLoadingCard({ show:true, text:"正在更新..." });
           await refreshDeviceToken();
 
           let finalDateStr = updatedTx.date;
@@ -781,56 +768,49 @@
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
 
           await fetchCloudTx();
-          showStatus("success", "已更新");
+          showStatus("success","已更新");
         } catch (e) {
           showStatus("error", e.message || "更新失敗");
         } finally {
-          setLoadingCard({ show: false, text: "" });
-          setIsLoading(false);
+          setLoadingCard({ show:false, text:"" });
           setEditingTx(null);
           setEditingIsPending(false);
         }
       };
 
       const handleDeleteTx = async (id) => {
-        // 暫存刪除
         if (editingIsPending) {
           setSyncQueue(prev => prev.filter(p => p.id !== id));
           setEditingTx(null);
           setEditingIsPending(false);
-          showStatus("success", "暫存已刪除");
+          showStatus("success","暫存已刪除");
           return;
         }
 
-        setIsLoading(true);
+        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能刪除"); return; }
         try {
-          if (!navigator.onLine || !deviceValid()) throw new Error("需連線且憑證有效才能刪除雲端");
-
-          setLoadingCard({ show: true, text: "正在刪除..." });
+          setLoadingCard({ show:true, text:"正在刪除..." });
           await refreshDeviceToken();
 
           const res = await postGAS({ action:"DELETE_TX", id, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "刪除失敗");
 
           await fetchCloudTx();
-          showStatus("success", "已刪除");
+          showStatus("success","已刪除");
         } catch (e) {
           showStatus("error", e.message || "刪除失敗");
         } finally {
-          setLoadingCard({ show: false, text: "" });
-          setIsLoading(false);
+          setLoadingCard({ show:false, text:"" });
           setEditingTx(null);
           setEditingIsPending(false);
         }
       };
 
-      // ---------- Visible data rules ----------
+      // --- visible data ---
       const visibleTransactions = useMemo(() => {
-        // 已解鎖才可看（每次都要解鎖，所以 currentUser 存在就代表解鎖）
         if (!currentUser) return [];
-        // 線上 + token valid：用雲端 transactions（如果尚未拉取，會先顯示快取）
+        // 線上+憑證有效：優先 transactions，沒有就先用快取
         if (navigator.onLine && deviceValid()) return transactions.length ? transactions : txCache;
-        // 離線：顯示快取（需已解鎖）
         return txCache;
       }, [currentUser, transactions, txCache]);
 
@@ -850,7 +830,29 @@
         return { income, expense, balance: income - expense };
       }, [myTransactions]);
 
-      // ---------- Login screen ----------
+      // ✅ 如果選到成員且設備已綁定生物辨識：直接跳生物辨識（不先圖卡）
+      useEffect(() => {
+        if (!selectingUser) return;
+        if (!biometricAvailable) return;
+        if (!isDeviceBioBound(selectingUser.name)) return;
+
+        (async () => {
+          const ok = await handleBioLoginLocal(selectingUser.name);
+          if (!ok) return;
+
+          setCurrentUser(selectingUser);
+          setSelectingUser(null);
+          setPinInput("");
+
+          // 背景同步/抓資料（只在需要等時出圖卡）
+          if (navigator.onLine && deviceValid()) {
+            // 這邊不阻塞進主畫面
+            setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
+          }
+        })();
+      }, [selectingUser, biometricAvailable]);
+
+      // --- UI: Login ---
       if (!currentUser) {
         return (
           <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
@@ -889,12 +891,12 @@
                   <>
                     <div className="flex justify-center gap-4 mb-10">
                       {[...Array(6)].map((_, i) => (
-                        <div key={i} className={`w-3 h-3 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? 'bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]' : 'bg-transparent'}`}></div>
+                        <div key={i} className={`w-3 h-3 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? "bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]" : "bg-transparent"}`}></div>
                       ))}
                     </div>
 
                     <div className="grid grid-cols-3 gap-4 mb-8 text-white">
-                      {[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k => (
+                      {[1,2,3,4,5,6,7,8,9,"C",0,"←"].map(k => (
                         <button key={k}
                           onClick={async () => {
                             if (k === "C") { setPinInput(""); return; }
@@ -902,28 +904,44 @@
                             const n = pinInput + k;
                             if (n.length > 6) return;
                             setPinInput(n);
+
                             if (n.length === 6) {
-                              const u = familyConfig.find(x => x.name === selectingUser.name) || selectingUser;
-                              setCurrentUser(u);
-                              localStorage.setItem(LS.lastUser, selectingUser.name);
-                              setIsUnlockedLocal(true);
+                              try {
+                                // ✅ PIN 一定要驗證：線上用 VERIFY_PIN；離線用本機 hash
+                                if (navigator.onLine) {
+                                  if (!deviceValid()) {
+                                    showStatus("error", "雲端尚未綁定，請先輸入雲端密碼");
+                                    setShowBootstrapModal(true);
+                                    setPinInput("");
+                                    return;
+                                  }
+                                  setLoadingCard({ show:true, text:"正在驗證..." });
+                                  await verifyPinOnline(selectingUser.name, n);
+                                  setLoadingCard({ show:false, text:"" });
+                                  await saveLocalPinHash(selectingUser.name, n);
+                                } else {
+                                  const ok = await unlockWithPinLocal(selectingUser.name, n);
+                                  if (!ok) {
+                                    showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）");
+                                    setPinInput("");
+                                    return;
+                                  }
+                                }
 
-                              // 存 hash 供離線解鎖
-                              await saveLocalPinHash(selectingUser.name, n);
+                                // ✅ 通過才登入
+                                setCurrentUser(selectingUser);
+                                setSelectingUser(null);
+                                setPinInput("");
 
-                              // 線上 & token valid -> refresh+fetch+sync；線上但沒 token -> bootstrap
-                              if (navigator.onLine && deviceValid()) {
-                                await unlockCloudFlow({ reason:"pin" });
-                              } else if (navigator.onLine && !deviceValid()) {
-                                setShowBootstrapModal(true);
-                                setBootstrapPin(n);
-                                setBootstrapSecret("");
-                              } else {
-                                showStatus("success", "離線解鎖成功");
+                                // 背景抓/同步（不阻塞）
+                                if (navigator.onLine && deviceValid()) {
+                                  setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
+                                }
+                              } catch (e) {
+                                setLoadingCard({ show:false, text:"" });
+                                showStatus("error", e.message || "PIN 錯誤");
+                                setPinInput("");
                               }
-
-                              setSelectingUser(null);
-                              setPinInput("");
                             }
                           }}
                           className="bg-white/10 h-16 rounded-3xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white">
@@ -938,7 +956,7 @@
                   <div className="mt-4 p-4 bg-white/5 rounded-2xl border border-white/10 text-left">
                     <div className="text-[11px] text-gray-300 font-black">尚未綁定設備</div>
                     <div className="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                      流程：先用 PIN 解鎖 → 進入「設定」→ 點「綁定設備」
+                      流程：先用 PIN 登入 → 進入「設定」→ 點「綁定設備」
                     </div>
                   </div>
                 )}
@@ -950,6 +968,45 @@
               </div>
             )}
 
+            {/* Bootstrap: App open required */}
+            {showBootstrapModal && (
+              <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
+                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
+                  <button onClick={() => setShowBootstrapModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90">
+                    <SvgIcon name="close" size={24}/>
+                  </button>
+                  <h3 className="font-black text-lg mb-2">首次綁定雲端</h3>
+                  <p className="text-[11px] text-gray-500 mb-5">請輸入雲端密碼（APP_SECRET）。</p>
+
+                  <input value={bootstrapSecret}
+                    onChange={(e)=>setBootstrapSecret(e.target.value)}
+                    placeholder="輸入雲端密碼"
+                    className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        setLoadingCard({ show:true, text:"正在綁定雲端..." });
+                        await bootstrapDevice();
+                        setShowBootstrapModal(false);
+                        setBootstrapSecret("");
+                        showStatus("success","雲端已綁定");
+                      } catch (e) {
+                        showStatus("error", e.message || "雲端密碼錯誤");
+                      } finally {
+                        setLoadingCard({ show:false, text:"" });
+                      }
+                    }}
+                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40"
+                    disabled={isLoading}
+                  >
+                    確認
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Toast */}
             {statusMsg.text && (
               <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[200] pointer-events-none px-4 text-center">
                 <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
@@ -961,50 +1018,7 @@
               </div>
             )}
 
-            {/* Bootstrap Modal */}
-            {showBootstrapModal && (
-              <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
-                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
-                  <button onClick={() => setShowBootstrapModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90">
-                    <SvgIcon name="close" size={24}/>
-                  </button>
-                  <h3 className="font-black text-lg mb-2">首次綁定雲端</h3>
-                  <p className="text-[11px] text-gray-500 mb-5">需要 APP_SECRET 才能發送 7 天憑證（不會存進程式碼）。</p>
-
-                  <input value={bootstrapSecret} onChange={(e)=>setBootstrapSecret(e.target.value)} placeholder="輸入 APP_SECRET"
-                    className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
-
-                  <input value={bootstrapPin} onChange={(e)=>setBootstrapPin(e.target.value.replace(/\D/g,"").slice(0,6))}
-                    inputMode="numeric" placeholder="輸入 6 位 PIN"
-                    className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
-
-                  <button
-                    disabled={isLoading}
-                    onClick={async () => {
-                      try {
-                        setIsLoading(true);
-                        setLoadingCard({ show:true, text:"正在綁定雲端..." });
-                        await bootstrapDevice();
-                        setShowBootstrapModal(false);
-                        setLoadingCard({ show:false, text:"" });
-                        await unlockCloudFlow({ reason:"bootstrap" });
-                        showStatus("success", "雲端已綁定");
-                      } catch (e) {
-                        showStatus("error", e.message || "綁定失敗");
-                      } finally {
-                        setLoadingCard({ show:false, text:"" });
-                        setIsLoading(false);
-                      }
-                    }}
-                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40"
-                  >
-                    {isLoading ? "處理中..." : "確認綁定"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Loading overlay (not shown before bio prompt) */}
+            {/* Loading overlay */}
             {loadingCard?.show && (
               <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
                 <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in">
@@ -1024,15 +1038,16 @@
         );
       }
 
-      // ---------- Main UI ----------
+      // --- Main UI ---
+      const bioBound = isDeviceBioBound(currentUser.name);
+
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
 
-          {/* Edit modal */}
           {editingTx && (
             <EditTransactionModal
               tx={editingTx}
-              categories={['餐飲','交通','購物','居家','水電','醫療','薪資','投資','雜項']}
+              categories={["餐飲","交通","購物","居家","水電","醫療","薪資","投資","雜項"]}
               loginUser={currentUser.name}
               onSave={handleUpdateTx}
               onDelete={handleDeleteTx}
@@ -1046,26 +1061,23 @@
           {showUnbindModal && (
             <div className="fixed inset-0 z-[350] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white">
               <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
-                <button onClick={closeUnbindModal} className="absolute top-6 right-6 text-gray-400 active:scale-90">
+                <button onClick={() => { setShowUnbindModal(false); setUnbindPin(""); }} className="absolute top-6 right-6 text-gray-400 active:scale-90">
                   <SvgIcon name="close" size={24}/>
                 </button>
                 <h3 className="font-black text-lg mb-2">解除綁定</h3>
                 <p className="text-[11px] text-gray-500 mb-5">請輸入 PIN 驗證後才能解除。</p>
 
-                <input
-                  value={unbindPin}
-                  onChange={(e)=>setUnbindPin(e.target.value.replace(/\D/g,'').slice(0,6))}
+                <input value={unbindPin}
+                  onChange={(e)=>setUnbindPin(e.target.value.replace(/\D/g,"").slice(0,6))}
                   inputMode="numeric"
                   placeholder="輸入 6 位 PIN"
                   className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-4"
                 />
 
-                <button
-                  onClick={unbindDeviceBio}
-                  disabled={isLoading}
+                <button onClick={unbindDeviceBio}
                   className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40"
                 >
-                  {isLoading ? "驗證中..." : "確認解除"}
+                  確認解除
                 </button>
               </div>
             </div>
@@ -1082,21 +1094,21 @@
                 <h3 className="font-black text-lg mb-2">更換密碼</h3>
                 <p className="text-[11px] text-gray-500 mb-5">需輸入舊 PIN 驗證，成功後會登出請重新登入。</p>
 
-                <input value={oldPin} onChange={(e)=>setOldPin(e.target.value.replace(/\D/g,'').slice(0,6))}
+                <input value={oldPin} onChange={(e)=>setOldPin(e.target.value.replace(/\D/g,"").slice(0,6))}
                   inputMode="numeric" placeholder="舊 PIN（6 位）"
                   className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
 
-                <input value={newPin} onChange={(e)=>setNewPin(e.target.value.replace(/\D/g,'').slice(0,6))}
+                <input value={newPin} onChange={(e)=>setNewPin(e.target.value.replace(/\D/g,"").slice(0,6))}
                   inputMode="numeric" placeholder="新 PIN（6 位）"
                   className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
 
-                <input value={newPin2} onChange={(e)=>setNewPin2(e.target.value.replace(/\D/g,'').slice(0,6))}
+                <input value={newPin2} onChange={(e)=>setNewPin2(e.target.value.replace(/\D/g,"").slice(0,6))}
                   inputMode="numeric" placeholder="再次輸入新 PIN"
                   className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
 
-                <button onClick={changePin} disabled={isLoading}
+                <button onClick={changePin}
                   className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">
-                  {isLoading ? "更新中..." : "確認更換"}
+                  確認更換
                 </button>
               </div>
             </div>
@@ -1119,7 +1131,6 @@
             </div>
           )}
 
-          {/* Header */}
           <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800">
             <div className="flex items-center gap-3 text-left">
               <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/30`}>
@@ -1132,28 +1143,8 @@
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
-
-              <button
-                onClick={async () => {
-                  if (!navigator.onLine) { showStatus("info","目前離線"); return; }
-                  if (!deviceValid()) { showStatus("info","尚未綁定雲端或憑證過期"); setShowBootstrapModal(true); return; }
-                  await unlockCloudFlow({ reason:"manual-refresh" });
-                }}
-                className={`p-2.5 bg-gray-50 rounded-xl transition-all flex items-center justify-center active:scale-90 text-gray-600 ${isLoading ? 'animate-spin text-blue-500' : ''}`}
-              >
-                <SvgIcon name="refresh" size={20}/>
-              </button>
-
-              <button
-                onClick={() => {
-                  setCurrentUser(null);
-                  setSelectingUser(null);
-                  setPinInput("");
-                  setIsUnlockedLocal(false);
-                  setActiveTab("dashboard");
-                }}
-                className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition-all flex items-center justify-center"
-              >
+              <button onClick={() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }}
+                className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition-all flex items-center justify-center">
                 <SvgIcon name="logout" size={20}/>
               </button>
             </div>
@@ -1184,9 +1175,7 @@
                           <div className="font-bold text-base truncate text-gray-800">{tx.category}</div>
                           <div className="text-[10px] text-gray-400 mt-1 font-medium">{displayDateClean(tx.date)}</div>
                         </div>
-                        <div className={`font-black tabular-nums text-lg shrink-0 ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
-                          ${Number(tx.amount||0).toLocaleString()}
-                        </div>
+                        <div className={`font-black tabular-nums text-lg shrink-0 ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
                       </div>
                     ))}
                   </div>
@@ -1196,77 +1185,18 @@
 
             {activeTab === "add" && (
               <AddTransactionForm
-                categories={['餐飲','交通','購物','居家','水電','醫療','薪資','投資','雜項']}
+                categories={["餐飲","交通","購物","居家","水電","醫療","薪資","投資","雜項"]}
                 loginUser={currentUser.name}
                 onSubmit={handleAdd}
                 isLoading={isLoading}
               />
             )}
 
-            {activeTab === "history" && (
-              <div className="space-y-4 animate-in pb-24">
-                {syncQueue.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="font-black text-blue-800">待同步暫存（{syncQueue.length}）</div>
-                      <button
-                        onClick={processQueueToCloud}
-                        className="px-3 py-2 bg-blue-600 text-white rounded-xl font-black text-xs active:scale-95 disabled:opacity-40"
-                        disabled={!navigator.onLine || !deviceValid() || isLoading}
-                      >
-                        立即同步
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {syncQueue.slice().reverse().slice(0, 10).map(tx => (
-                        <div key={tx.id} className="bg-white p-4 rounded-2xl border border-blue-100 flex justify-between items-center">
-                          <div className="min-w-0">
-                            <div className="font-black text-gray-800 truncate">{tx.category || '一般'} · {tx.type === 'income' ? '收入' : '支出'}</div>
-                            <div className="text-[10px] text-gray-500 mt-1 truncate">{tx.member ? `給${tx.member} · ` : ''}{displayDateClean(tx.date)} {tx.desc ? `· ${tx.desc}` : ''}</div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`font-black tabular-nums text-lg ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>${Number(tx.amount||0).toLocaleString()}</span>
-                            <button onClick={() => { setEditingTx(tx); setEditingTitle("編輯暫存"); setEditingIsPending(true); }}
-                              className="text-gray-400 bg-gray-50 p-2 rounded-xl active:scale-95 transition-all border border-gray-100 hover:text-blue-500 hover:bg-blue-50">
-                              <SvgIcon name="edit" size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  {myTransactions.slice().reverse().slice(0, 50).map(tx => (
-                    <div key={tx.id} className="bg-white p-4 rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm">
-                      <div className="min-w-0">
-                        <div className="font-black text-gray-800 truncate">{tx.category}</div>
-                        <div className="text-[10px] text-gray-500 mt-1 truncate">{displayDateClean(tx.date)} {tx.desc ? `· ${tx.desc}` : ""}</div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className={`font-black tabular-nums text-lg ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
-                          ${Number(tx.amount||0).toLocaleString()}
-                        </div>
-                        <button onClick={() => {
-                          if (!navigator.onLine || !deviceValid()) { showStatus("info","需連線且雲端已綁定才能編輯"); return; }
-                          setEditingTx(tx); setEditingTitle("編輯帳目"); setEditingIsPending(false);
-                        }} className="text-gray-400 bg-gray-50 p-2 rounded-xl active:scale-95 transition-all border border-gray-100 hover:text-blue-500 hover:bg-blue-50">
-                          <SvgIcon name="edit" size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="text-[11px] text-gray-400 text-center py-6">（顯示最近 50 筆）</div>
-                </div>
-              </div>
-            )}
-
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
                 <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
                   <h3 className="font-black text-xs mb-6 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
-                    <SvgIcon name="user" size={16} className="text-blue-500" /> 安全與帳戶管理
+                    <SvgIcon name="info" size={16} className="text-blue-500" /> 安全與帳戶管理
                   </h3>
 
                   <div className="space-y-3">
@@ -1275,7 +1205,8 @@
                         <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none">使用身份</p>
                         <p className="font-black text-gray-800 text-base leading-none mt-1">{currentUser.name}</p>
                       </div>
-                      <button onClick={openChangePinModal} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all">
+                      <button onClick={() => { setOldPin(""); setNewPin(""); setNewPin2(""); setShowChangePinModal(true); }}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all">
                         更換密碼
                       </button>
                     </div>
@@ -1284,24 +1215,18 @@
                       <div>
                         <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none">生物辨識 / 裝置解鎖</p>
                         <p className="font-black text-gray-800 text-sm leading-none mt-1">
-                          {isDeviceBioBound(currentUser.name) ? "設備已綁定" : "設備未綁定"}
+                          {bioBound ? "設備已綁定" : "設備未綁定"}
                         </p>
                       </div>
                       <button
-                        onClick={() => isDeviceBioBound(currentUser.name) ? openUnbindModal() : bindDeviceBio()}
+                        onClick={() => bioBound ? (setUnbindPin(""), setShowUnbindModal(true)) : bindDeviceBio()}
                         className={`px-4 py-2 rounded-xl font-black text-xs active:scale-95 transition-all ${
-                          isDeviceBioBound(currentUser.name) ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-600 text-white shadow-lg'
+                          bioBound ? "bg-red-50 text-red-600 border border-red-100" : "bg-green-600 text-white shadow-lg"
                         }`}
                       >
-                        {isDeviceBioBound(currentUser.name) ? "解除綁定" : "綁定設備"}
+                        {bioBound ? "解除綁定" : "綁定設備"}
                       </button>
                     </div>
-
-                    {!isDeviceBioBound(currentUser.name) && biometricAvailable && (
-                      <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-[11px] text-gray-500 leading-relaxed">
-                        提示：若要使用指紋/臉部解鎖，請點「綁定設備」。之後在登入畫面會自動跳出生物辨識。
-                      </div>
-                    )}
 
                     <div className="flex justify-between p-4 bg-gray-50 rounded-2xl text-[11px] font-bold text-gray-400">
                       <span>雲端憑證</span>
@@ -1313,25 +1238,16 @@
                 </div>
               </div>
             )}
-
           </main>
 
           <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20 safe-bottom">
-            <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}>
-              <SvgIcon name="chart" />
-            </button>
-            <button onClick={() => setActiveTab("history")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}>
-              <SvgIcon name="history" />
-            </button>
-            <button onClick={() => setActiveTab("add")} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}>
-              <SvgIcon name="plus" size={32} />
-            </button>
+            <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="chart" /></button>
+            <button onClick={() => setActiveTab("add")} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={32} /></button>
             <div className="flex-1"></div>
-            <button onClick={() => setActiveTab("settings")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}>
-              <SvgIcon name="settings" />
-            </button>
+            <button onClick={() => setActiveTab("settings")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="settings" /></button>
           </nav>
 
+          {/* Toast */}
           {statusMsg.text && (
             <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[400] pointer-events-none px-4 text-center">
               <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
@@ -1342,7 +1258,6 @@
               </div>
             </div>
           )}
-
         </div>
       );
     }
@@ -1351,7 +1266,6 @@
     root.render(<App />);
   </script>
 
-  <!-- service worker 註冊（你之前已完成可保留） -->
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
