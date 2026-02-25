@@ -64,33 +64,35 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.02.26.PRO.V4";
-    const GAS_TARGET_VERSION = "2026.02.26.PRO.V3";
+    const APP_VERSION = "2026.02.26.PRO.V5";
+    const GAS_TARGET_VERSION = "2026.02.26.PRO.V4";
 
     const LS = {
-      pending: "pending_sync_v21",
-      txCache: "local_tx_cache_v21",
-      lastSync: "last_sync_time_v21",
-      members: "family_member_config_v21",
+      pending: "pending_sync_v22",
+      txCache: "local_tx_cache_v22",
+      lastSync: "last_sync_time_v22",
+      members: "family_member_config_v22",
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
-      pinHashPrefix: "pin_hash_v21_",
+      pinHashPrefix: "pin_hash_v22_",
       bioCredPrefix: "bio_cred_",
       bioFailPrefix: "bio_fail_v1_", 
       bioLockPrefix: "bio_lock_v1_",
-      customGreeting: "custom_greeting_v1"
+      greetingsCache: "greetings_cache_v1" // 存放所有人的自訂問候語
     };
 
+    // --- 三口小家庭 (7歲小孩+自住宅) 專用類別定義 ---
     const CATEGORY_MAP = {
       expense: {
-        "食": ["早餐", "午餐", "晚餐", "買菜", "零食飲料", "外食聚餐", "其他"],
-        "衣": ["爸爸服飾", "媽媽服飾", "小孩服飾", "鞋包配件", "其他"],
-        "住": ["房貸", "管理費", "水費", "電費", "瓦斯費", "網路費", "居家用品", "房屋/地價稅", "維修修繕", "其他"],
-        "行": ["加油", "停車費", "大眾運輸", "汽車保養", "牌照/燃料稅", "eTag/過路費", "其他"],
-        "育": ["學校學費", "安親/才藝班", "玩具/文具", "童書", "兒童醫療", "零用錢", "其他"],
-        "樂": ["國內旅遊", "國外旅遊", "串流訂閱", "運動健身", "聚會活動", "其他"],
-        "理財": ["定期定額", "股票/ETF", "儲蓄險", "基金", "其他"],
-        "其他": ["保險費", "成人醫療", "孝親費", "紅白包", "雜項"]
+        "食": ["早餐", "午餐", "晚餐", "生鮮食材", "零食/飲料", "外食聚餐", "其他"],
+        "衣": ["爸爸服飾", "媽媽服飾", "小孩服飾", "鞋包/配件", "保養/美妝", "其他"],
+        "居家": ["房貸", "管理費", "水費", "電費", "瓦斯費", "網路/電信", "家具/家電", "日用品", "房屋稅/地價稅", "其他"],
+        "行": ["大眾運輸", "計程車/共享", "加油", "停車費", "保養維修", "牌照/燃料稅", "eTag/過路費", "其他"],
+        "教育": ["學校學費", "安親/才藝班", "教材/文具", "童書/玩具", "零用錢", "其他"],
+        "娛樂": ["國內旅遊", "國外旅遊", "串流訂閱", "運動健身", "聚會活動", "電影/展覽", "其他"],
+        "醫療": ["保健食品", "診所門診", "牙醫/眼科", "醫美", "住院", "其他"],
+        "理財": ["股票/ETF", "定期定額", "基金", "儲蓄險", "外匯", "加密貨幣", "其他"],
+        "其他": ["保險費", "孝親費", "紅白包", "捐款/贈與", "雜項"]
       },
       income: {
         "收入": ["爸爸薪資", "媽媽薪資", "獎金", "投資收益", "利息", "其他收入"]
@@ -100,10 +102,11 @@
     const getParentCat = (catStr) => {
       if (!catStr) return "其他";
       if (catStr.includes('/')) return catStr.split('/')[0];
-      const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "居家":"住", "水電":"住", "醫療":"其他", "薪資":"收入", "投資":"理財", "雜項":"其他"};
+      const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪資":"收入", "投資":"理財", "雜項":"其他"};
       return legacyMap[catStr] || "其他";
     };
-    const getChildCat = (catStr) => catStr.includes('/') ? catStr.split('/')[1] : catStr;
+    // 修正: 取得斜線後所有的字串，避免安親/才藝班被截斷
+    const getChildCat = (catStr) => catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
 
     const BEN_OPTIONS = ["爸爸", "媽媽", "兒子", "其他"];
     const formatBen = (benStr, memberName) => {
@@ -115,7 +118,15 @@
       return arr.join("、");
     };
 
-    const safeParse = (raw, fallback) => { try { return JSON.parse(raw); } catch { return fallback; } };
+    const safeParse = (raw, fallback) => {
+      if (raw === null || raw === "null" || raw === "undefined") return fallback;
+      try { 
+        const parsed = JSON.parse(raw); 
+        return parsed !== null ? parsed : fallback; 
+      } catch { 
+        return fallback; 
+      } 
+    };
     const safeArrayLS = (key) => { const raw = localStorage.getItem(key); const v = safeParse(raw, []); return Array.isArray(v) ? v : []; };
     const safeStringLS = (key, fallback="") => { const v = localStorage.getItem(key); return (v === null || v === "null" || v === "undefined") ? fallback : v; };
     const safeNumberLS = (key, fallback=0) => { const v = Number(localStorage.getItem(key)); return Number.isFinite(v) ? v : fallback; };
@@ -146,7 +157,6 @@
 
     const getBioKey = (name) => `${LS.bioCredPrefix}${name}`;
     const isDeviceBioBound = (name) => !!localStorage.getItem(getBioKey(name));
-
     const getBioFailKey = (name) => `${LS.bioFailPrefix}${name}`;
     const getBioLockKey = (name) => `${LS.bioLockPrefix}${name}`;
     const getBioFailCount = (name) => safeNumberLS(getBioFailKey(name), 0);
@@ -189,14 +199,14 @@
 
       return (
         <div className="flex gap-2">
-          <div className="bg-gray-100 p-2.5 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
+          <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
             <label className="text-[8px] font-black text-blue-500 uppercase block mb-0.5 tracking-widest">主類別</label>
             <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"
               value={safeParentCat} onChange={(e) => onChange(e.target.value, CATEGORY_MAP[type][e.target.value][0])}>
               {pCats.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          <div className="bg-gray-100 p-2.5 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
+          <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
             <label className="text-[8px] font-black text-blue-500 uppercase block mb-0.5 tracking-widest">子項目</label>
             <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"
               value={childCat} onChange={(e) => onChange(safeParentCat, e.target.value)}>
@@ -267,7 +277,8 @@
       };
 
       const handleRemoveSubItem = (id) => { if (subItems.length > 1) setSubItems(subItems.filter(s => s.id !== id)); };
-      const updateSubItem = (id, field, value) => { setSubItems(subItems.map(s => s.id === id ? { ...s, [field]: value } : s)); };
+      // 修正: 將單一屬性更新改為支援多屬性物件更新，確保主子類別切換不衝突
+      const updateSubItem = (id, updates) => { setSubItems(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s)); };
 
       const submitForm = () => {
         if (isSplit) {
@@ -310,24 +321,24 @@
           </div>
 
           <div className="space-y-4 text-left">
-            <div className="bg-gray-100 p-4 rounded-2xl flex items-center justify-between">
-              <span className="text-xs font-black text-gray-600">拆分多筆明細 (如單張發票)</span>
+            <div className="bg-gray-100 p-3 rounded-2xl flex items-center justify-between">
+              <span className="text-xs font-black text-gray-600 pl-2">拆分多筆明細 (如單張發票)</span>
               <button onClick={() => setIsSplit(!isSplit)} className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${isSplit ? 'bg-blue-500' : 'bg-gray-300'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isSplit ? 'translate-x-6' : 'translate-x-0'}`}></div>
               </button>
             </div>
 
-            {/* 縮小版的日期輸入 */}
-            <div className="bg-gray-100 py-2.5 px-4 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
+            {/* 精簡版的日期輸入 */}
+            <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm w-[180px] text-right"
+              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
                 value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
             </div>
 
             {/* 單筆模式 */}
             {!isSplit && (
               <>
-                <div className="bg-gray-50 py-2.5 px-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
                   <div className="flex gap-1.5 flex-1 justify-end">
                     {BEN_OPTIONS.map(b => (
@@ -339,7 +350,7 @@
                   </div>
                 </div>
                 <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
-                <div className="bg-gray-100 py-3 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
+                <div className="bg-gray-100 py-2.5 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
                   <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
                     placeholder="輸入說明..." value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
@@ -351,14 +362,14 @@
             {isSplit && (
               <>
                 <div className="flex gap-2">
-                  <div className="bg-gray-100 py-2.5 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
+                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
                     <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目標題</label>
-                    <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                    <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs"
                       placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })} />
                   </div>
-                  <div className="bg-gray-100 py-2.5 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
+                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
                     <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目備註</label>
-                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs"
                       placeholder="選填..." value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })} />
                   </div>
                 </div>
@@ -376,21 +387,21 @@
                         )}
                         <div className="flex gap-2 mb-2">
                           <select className="flex-1 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
-                            value={safeParentCat} onChange={(e) => { const newP = e.target.value; updateSubItem(sub.id, "parentCat", newP); updateSubItem(sub.id, "childCat", CATEGORY_MAP[formData.type][newP][0]); }}>
+                            value={safeParentCat} onChange={(e) => { const newP = e.target.value; updateSubItem(sub.id, {parentCat: newP, childCat: CATEGORY_MAP[formData.type][newP][0]}); }}>
                             {pCats.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                           <select className="flex-1 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
-                            value={sub.childCat} onChange={(e) => updateSubItem(sub.id, "childCat", e.target.value)}>
+                            value={sub.childCat} onChange={(e) => updateSubItem(sub.id, {childCat: e.target.value})}>
                             {cCats.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
                         <div className="flex gap-2 mb-2 items-center">
                           <input type="text" className="flex-[2] bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-3 py-2 rounded-xl"
-                            placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, "desc", e.target.value)} />
+                            placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, {desc: e.target.value})} />
                           <div className="flex-1 relative">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span>
                             <input type="number" inputMode="decimal" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right"
-                              placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, "amount", e.target.value)} />
+                              placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} />
                           </div>
                         </div>
                         {/* 子項目花費對象 */}
@@ -415,7 +426,7 @@
               </>
             )}
 
-            <div className="bg-gray-50 py-3 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
+            <div className="bg-gray-50 py-2.5 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">記錄帳本</label>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>自己</button>
@@ -480,13 +491,13 @@
               </div>
 
               <div className="space-y-4 text-left">
-                <div className="bg-gray-100 py-2.5 px-4 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
+                <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm w-[180px] text-right"
+                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
                     value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
                 </div>
 
-                <div className="bg-gray-50 py-2.5 px-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
                   <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                     {BEN_OPTIONS.map(b => (
@@ -500,7 +511,7 @@
 
                 <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
 
-                <div className="bg-gray-100 py-3 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
+                <div className="bg-gray-100 py-2 px-3 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">帳本</label>
                   <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-right"
                     value={formData.member} onChange={(e) => setFormData({ ...formData, member: e.target.value })}>
@@ -508,7 +519,7 @@
                   </select>
                 </div>
 
-                <div className="bg-gray-100 py-3 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
+                <div className="bg-gray-100 py-2 px-3 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
                   <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm text-right"
                     placeholder="選填" value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
@@ -603,7 +614,13 @@
       const [familyConfig, setFamilyConfig] = useState(() => {
         const saved = safeArrayLS(LS.members); return saved.length ? saved : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }];
       });
-      const [customSubtitle, setCustomSubtitle] = useState(() => safeStringLS(LS.customGreeting, "{name}，你好！"));
+      // 介面自訂問候語，預設 "{name}，你好！"
+      const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
+      const [greetingsCache, setGreetingsCache] = useState(() => {
+        const raw = localStorage.getItem(LS.greetingsCache);
+        if (!raw || raw === "null" || raw === "undefined") return {};
+        try { return JSON.parse(raw) || {}; } catch { return {}; }
+      });
 
       const [currentUser, setCurrentUser] = useState(null);
       const [selectingUser, setSelectingUser] = useState(null);
@@ -630,9 +647,11 @@
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
       
       const [analysisDateFilter, setAnalysisDateFilter] = useState("1m");
+      const [analysisCustomStart, setAnalysisCustomStart] = useState("");
+      const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
       const [analysisType, setAnalysisType] = useState("expense"); 
-      const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); // (Ben) OR (ParentCat)
-      const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); // (ParentCat under Ben)
+      const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); 
+      const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); 
 
       const [showBootstrapModal, setShowBootstrapModal] = useState(false);
       const [bootstrapSecret, setBootstrapSecret] = useState("");
@@ -650,12 +669,21 @@
       useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
-      useEffect(() => localStorage.setItem(LS.customGreeting, customSubtitle), [customSubtitle]);
+      useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
+
+      // 更新當前使用者的個人問候語
+      useEffect(() => {
+        if (currentUser && greetingsCache && greetingsCache[currentUser.name]) {
+           setCustomSubtitle(greetingsCache[currentUser.name]);
+        } else if (currentUser) {
+           setCustomSubtitle("{name}，你好！");
+        }
+      }, [currentUser, greetingsCache]);
 
       useEffect(() => setHistoryVisibleCount(20), [historySearch, historyTypeFilter, historyDateFilter, activeTab]);
       useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
-      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter]); // reset on main filter change
-      useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); // reset level 2 when level 1 changes
+      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
+      useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
 
       useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
@@ -700,7 +728,9 @@
           date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
           desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
         }));
-        setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); return formatted;
+        setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); 
+        if (data.greetings) setGreetingsCache(data.greetings); // 更新所有人的問候語
+        return formatted;
       };
 
       const processQueueToCloud = async ({ doRefreshFirst }) => {
@@ -723,6 +753,17 @@
           const msg = e.message || "同步失敗"; showStatus("error", msg);
           if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
         } finally { setLoadingCard({ show:false, text:"" }); }
+      };
+
+      const handleSaveGreeting = async () => {
+         if (!navigator.onLine || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
+         try {
+            setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken();
+            const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message);
+            setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle}));
+            showStatus("success", "問候語已更新");
+         } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const saveLocalPinHash = async (name, pin) => { const h = await sha256Base64(`${name}::${pin}::local`); localStorage.setItem(LS.pinHashPrefix + name, h); };
@@ -944,10 +985,10 @@
           list = list.filter(item => {
             if (item.isGroup) {
               const groupMatch = String(item.parentTitle || "").toLowerCase().includes(q) || String(item.parentDesc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q);
-              const childMatch = item.children.some(tx => String(getParentCat(tx.category)).toLowerCase().includes(q) || String(getChildCat(tx.category)).toLowerCase().includes(q) || String(tx.desc || "").toLowerCase().includes(q) || String(tx.amount || "").includes(q));
+              const childMatch = item.children.some(tx => String(getParentCat(tx.category)).toLowerCase().includes(q) || String(getChildCat(tx.category)).toLowerCase().includes(q) || String(tx.desc || "").toLowerCase().includes(q) || String(tx.amount || "").includes(q) || String(tx.beneficiary || "").toLowerCase().includes(q));
               return groupMatch || childMatch;
             } else {
-              return String(getParentCat(item.category)).toLowerCase().includes(q) || String(getChildCat(item.category)).toLowerCase().includes(q) || String(item.desc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q);
+              return String(getParentCat(item.category)).toLowerCase().includes(q) || String(getChildCat(item.category)).toLowerCase().includes(q) || String(item.desc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q) || String(item.beneficiary || "").toLowerCase().includes(q);
             }
           });
         }
@@ -956,7 +997,6 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // --- 圖卡渲染 ---
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benTag = formatBen(tx.beneficiary, tx.member);
         const showBenTag = benTag && benTag !== "";
@@ -995,9 +1035,11 @@
               </div>
             </div>
             {allowEdit && (
-              <button onClick={() => setEditingTx(tx)} className="w-12 h-12 shrink-0 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                <SvgIcon name="edit" size={20} />
-              </button>
+              <div className="flex flex-col justify-center shrink-0 pr-1">
+                <button onClick={() => setEditingTx(tx)} className="w-12 h-12 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
+                  <SvgIcon name="edit" size={20} />
+                </button>
+              </div>
             )}
           </div>
         );
@@ -1005,8 +1047,6 @@
 
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
-        
-        // 匯總母項目上的花費對象
         const allBens = new Set();
         group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
         const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
@@ -1084,9 +1124,11 @@
               )}
             </div>
             {allowEdit && (
-              <button onClick={() => setEditingGroup(group)} className="w-12 h-12 shrink-0 bg-gray-800 text-white rounded-2xl flex items-center justify-center active:scale-90 transition-transform shadow-md">
-                <SvgIcon name="edit" size={18} />
-              </button>
+              <div className="flex flex-col justify-center shrink-0 pr-1 mt-1">
+                 <button onClick={() => setEditingGroup(group)} className="w-12 h-12 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
+                   <SvgIcon name="edit" size={20} />
+                 </button>
+              </div>
             )}
           </div>
         );
@@ -1100,9 +1142,8 @@
       const [animTrigger, setAnimTrigger] = useState(false);
       useEffect(() => {
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
-      }, [activeTab, analysisType, analysisDateFilter, selectedAnalysisLevel1, selectedAnalysisLevel2]);
+      }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      // --- 這裡原本遺失的變數補回 ---
       const bioBound = currentUser ? isDeviceBioBound(currentUser.name) : false;
 
       if (!currentUser) {
@@ -1356,15 +1397,27 @@
 
             {activeTab === "analysis" && (
               <div className="space-y-6 animate-in pb-20 text-left">
-                <div className="flex justify-between items-center px-1">
-                  <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
-                  <div className="relative">
-                    <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
-                      <option value="7d">最近 7 日</option><option value="14d">最近 14 日</option><option value="1m">最近 1 個月</option>
-                      <option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option><option value="all">全部時間</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"><span className="text-[8px] text-blue-500">▼</span></div>
+                <div className="flex flex-col gap-3 px-1">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
+                    <div className="relative">
+                      <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
+                        <option value="7d">最近 7 日</option><option value="14d">最近 14 日</option><option value="1m">最近 1 個月</option>
+                        <option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option>
+                        <option value="custom">自訂區間</option>
+                        <option value="all">全部時間</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"><span className="text-[8px] text-blue-500">▼</span></div>
+                    </div>
                   </div>
+                  {/* 自訂區間輸入框 */}
+                  {analysisDateFilter === "custom" && (
+                    <div className="flex gap-2 items-center bg-gray-100 p-2.5 rounded-xl border border-gray-200 animate-in shadow-inner">
+                      <input type="date" value={analysisCustomStart} onChange={e => setAnalysisCustomStart(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
+                      <span className="text-gray-400 font-bold text-xs">~</span>
+                      <input type="date" value={analysisCustomEnd} onChange={e => setAnalysisCustomEnd(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
@@ -1376,14 +1429,23 @@
                 {(() => {
                   let analysisTxs = myTransactions;
                   if (analysisDateFilter !== "all") {
-                    const now = new Date(); const cutoff = new Date();
-                    if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
-                    else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14);
-                    else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
-                    else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
-                    else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
-                    else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
-                    analysisTxs = analysisTxs.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
+                    if (analysisDateFilter === "custom") {
+                      const start = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0;
+                      const end = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity;
+                      analysisTxs = analysisTxs.filter(item => {
+                         const txTime = parseDateForSort(item.date);
+                         return txTime >= start && txTime <= end;
+                      });
+                    } else {
+                      const now = new Date(); const cutoff = new Date();
+                      if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
+                      else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14);
+                      else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
+                      else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
+                      else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
+                      else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
+                      analysisTxs = analysisTxs.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
+                    }
                   }
 
                   if (analysisType === "expense" || analysisType === "income") analysisTxs = analysisTxs.filter(t => t.type === analysisType);
@@ -1551,8 +1613,11 @@
                   </h3>
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 focus-within:border-blue-200 transition-colors">
                     <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 leading-none tracking-widest">首頁副標題問候語 (支援 {"{name}"} 變數)</label>
-                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
-                      placeholder="例如：{name}，你好！" value={customSubtitle} onChange={(e) => setCustomSubtitle(e.target.value)} />
+                    <div className="flex gap-2">
+                      <input type="text" className="flex-1 bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                        placeholder="例如：{name}，你好！" value={customSubtitle} onChange={(e) => setCustomSubtitle(e.target.value)} />
+                      <button onClick={handleSaveGreeting} disabled={isLoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black shadow-sm active:scale-95 disabled:opacity-50">儲存</button>
+                    </div>
                   </div>
                 </div>
 
@@ -1594,9 +1659,12 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修復斜線類別字串截斷異常，優化狀態切換 (V5)</li>
+                          <li>自訂問候語支援同步儲存至 GAS 雲端表單 (V5)</li>
+                          <li>歷史清單母項目編輯按鈕置中並統一樣式 (V5)</li>
+                          <li>分析圖表支援自訂日期範圍篩選 (V5)</li>
+                          <li>獨立多筆明細的花費對象標籤與子項選擇 (V4)</li>
                           <li>支援分析圖表三階層下鑽 (對象 ➔ 母類 ➔ 子類) (V4)</li>
-                          <li>獨立多筆明細的花費對象標籤並精簡日期欄位 (V4)</li>
-                          <li>新增自訂抬頭問候語功能與點擊背景關閉浮窗 (V4)</li>
                           <li>內建三口家庭母子類別清單與母項目名稱編輯 (V3)</li>
                           <li>新增發票明細拆分，支援自訂標題與備註 (V2)</li>
                           <li>歷史清單母項目自動聚合與獨立外側編輯 (V2)</li>
@@ -1605,6 +1673,7 @@
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>新增 UPDATE_GREETING 儲存自訂問候語，並於 GET_TX 派發 (V4)</li>
                           <li>擴充至 11 欄，新增 Beneficiary (用在誰身上) 欄位 (V3)</li>
                           <li>新增 UPDATE_GROUP_PARENT 支援母項目更新 (V3)</li>
                           <li>支援 ParentDesc 與 GroupID 虛擬聚合欄位 (V2)</li>
@@ -1622,7 +1691,7 @@
             <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="home" /></button>
             <button onClick={() => setActiveTab("history")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="history" /></button>
             <div className="px-1">
-              <button onClick={() => setActiveTab("add")} className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={28} /></button>
+              <button onClick={() => setActiveTab(prev => prev === "add" ? "dashboard" : "add")} className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={28} /></button>
             </div>
             <button onClick={() => setActiveTab("analysis")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "analysis" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="pieChart" /></button>
             <button onClick={() => setActiveTab("settings")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="settings" /></button>
