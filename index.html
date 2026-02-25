@@ -64,24 +64,24 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.02.26.PRO.V5";
+    const APP_VERSION = "2026.02.26.PRO.V6";
     const GAS_TARGET_VERSION = "2026.02.26.PRO.V4";
 
     const LS = {
-      pending: "pending_sync_v22",
-      txCache: "local_tx_cache_v22",
-      lastSync: "last_sync_time_v22",
-      members: "family_member_config_v22",
+      pending: "pending_sync_v23",
+      txCache: "local_tx_cache_v23",
+      lastSync: "last_sync_time_v23",
+      members: "family_member_config_v23",
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
-      pinHashPrefix: "pin_hash_v22_",
+      pinHashPrefix: "pin_hash_v23_",
       bioCredPrefix: "bio_cred_",
       bioFailPrefix: "bio_fail_v1_", 
       bioLockPrefix: "bio_lock_v1_",
-      greetingsCache: "greetings_cache_v1" // 存放所有人的自訂問候語
+      greetingsCache: "greetings_cache_v1" 
     };
 
-    // --- 三口小家庭 (7歲小孩+自住宅) 專用類別定義 ---
+    // --- 三口小家庭專用類別定義 ---
     const CATEGORY_MAP = {
       expense: {
         "食": ["早餐", "午餐", "晚餐", "生鮮食材", "零食/飲料", "外食聚餐", "其他"],
@@ -105,7 +105,6 @@
       const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪資":"收入", "投資":"理財", "雜項":"其他"};
       return legacyMap[catStr] || "其他";
     };
-    // 修正: 取得斜線後所有的字串，避免安親/才藝班被截斷
     const getChildCat = (catStr) => catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
 
     const BEN_OPTIONS = ["爸爸", "媽媽", "兒子", "其他"];
@@ -114,18 +113,13 @@
       const arr = benStr.split(",").filter(Boolean);
       if (arr.length === 0) return "";
       if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家共同";
-      if (arr.length === 1 && arr[0] === memberName) return ""; // 沒點選別人(只有自己)就不顯示
+      if (arr.length === 1 && arr[0] === memberName) return ""; 
       return arr.join("、");
     };
 
     const safeParse = (raw, fallback) => {
       if (raw === null || raw === "null" || raw === "undefined") return fallback;
-      try { 
-        const parsed = JSON.parse(raw); 
-        return parsed !== null ? parsed : fallback; 
-      } catch { 
-        return fallback; 
-      } 
+      try { const parsed = JSON.parse(raw); return parsed !== null ? parsed : fallback; } catch { return fallback; } 
     };
     const safeArrayLS = (key) => { const raw = localStorage.getItem(key); const v = safeParse(raw, []); return Array.isArray(v) ? v : []; };
     const safeStringLS = (key, fallback="") => { const v = localStorage.getItem(key); return (v === null || v === "null" || v === "undefined") ? fallback : v; };
@@ -277,7 +271,6 @@
       };
 
       const handleRemoveSubItem = (id) => { if (subItems.length > 1) setSubItems(subItems.filter(s => s.id !== id)); };
-      // 修正: 將單一屬性更新改為支援多屬性物件更新，確保主子類別切換不衝突
       const updateSubItem = (id, updates) => { setSubItems(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s)); };
 
       const submitForm = () => {
@@ -328,14 +321,12 @@
               </button>
             </div>
 
-            {/* 精簡版的日期輸入 */}
             <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
               <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
                 value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
             </div>
 
-            {/* 單筆模式 */}
             {!isSplit && (
               <>
                 <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
@@ -358,7 +349,6 @@
               </>
             )}
 
-            {/* 拆分模式 */}
             {isSplit && (
               <>
                 <div className="flex gap-2">
@@ -404,7 +394,6 @@
                               placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} />
                           </div>
                         </div>
-                        {/* 子項目花費對象 */}
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-[9px] font-bold text-gray-400 uppercase pr-2">對象</span>
                           <div className="flex gap-1.5 flex-1 justify-end">
@@ -614,7 +603,6 @@
       const [familyConfig, setFamilyConfig] = useState(() => {
         const saved = safeArrayLS(LS.members); return saved.length ? saved : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }];
       });
-      // 介面自訂問候語，預設 "{name}，你好！"
       const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
       const [greetingsCache, setGreetingsCache] = useState(() => {
         const raw = localStorage.getItem(LS.greetingsCache);
@@ -625,6 +613,9 @@
       const [currentUser, setCurrentUser] = useState(null);
       const [selectingUser, setSelectingUser] = useState(null);
       const [pinInput, setPinInput] = useState("");
+      
+      // 修復防卡死狀態
+      const [fallbackToPin, setFallbackToPin] = useState(false);
 
       const [biometricAvailable, setBiometricAvailable] = useState(false);
       const [isLoading, setIsLoading] = useState(false);
@@ -671,7 +662,6 @@
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
       useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
 
-      // 更新當前使用者的個人問候語
       useEffect(() => {
         if (currentUser && greetingsCache && greetingsCache[currentUser.name]) {
            setCustomSubtitle(greetingsCache[currentUser.name]);
@@ -729,7 +719,7 @@
           desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
         }));
         setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); 
-        if (data.greetings) setGreetingsCache(data.greetings); // 更新所有人的問候語
+        if (data.greetings) setGreetingsCache(data.greetings); 
         return formatted;
       };
 
@@ -1144,7 +1134,22 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      const bioBound = currentUser ? isDeviceBioBound(currentUser.name) : false;
+      const handleUserClick = async (user) => {
+        setSelectingUser(user);
+        setPinInput("");
+        setFallbackToPin(false);
+        if (biometricAvailable && isDeviceBioBound(user.name)) {
+          const ok = await handleBioLoginLocal(user.name);
+          if (ok) {
+            setCurrentUser(user);
+            setSelectingUser(null);
+            setPinInput("");
+            if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
+          } else {
+            setFallbackToPin(true); // 生物辨識失敗或取消，自動開啟密碼輸入
+          }
+        }
+      };
 
       if (!currentUser) {
         return (
@@ -1166,7 +1171,7 @@
 
                 <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white animate-in">
                   {familyConfig.map(user => (
-                    <button key={user.name} onClick={() => setSelectingUser(user)} className={`${user.color || (user.name==="媽媽"?"bg-pink-600":"bg-blue-600")} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
+                    <button key={user.name} onClick={() => handleUserClick(user)} className={`${user.color || (user.name==="媽媽"?"bg-pink-600":"bg-blue-600")} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
                       {user.name}
                     </button>
                   ))}
@@ -1179,11 +1184,29 @@
                     {selectingUser.name.charAt(0)}
                   </div>
                   <p className="font-black text-3xl mb-1 tracking-tight text-white">{selectingUser.name}</p>
+                  
                   <p className="text-gray-400 text-xs font-bold uppercase tracking-widest opacity-80 mb-8">
-                    {isDeviceBioBound(selectingUser.name) ? "生物辨識解鎖" : "輸入 6 位 PIN 解鎖"}
+                    {isDeviceBioBound(selectingUser.name) && !fallbackToPin ? "請進行生物辨識解鎖" : "輸入 6 位 PIN 解鎖"}
                   </p>
 
-                  {!isDeviceBioBound(selectingUser.name) && (
+                  {isDeviceBioBound(selectingUser.name) && !fallbackToPin ? (
+                    <div className="flex flex-col items-center mb-8 animate-in">
+                      <button onClick={async () => {
+                          const ok = await handleBioLoginLocal(selectingUser.name);
+                          if (ok) {
+                            setCurrentUser(selectingUser); setSelectingUser(null); setPinInput("");
+                            if (navigator.onLine && deviceValid()) setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
+                          } else {
+                            setFallbackToPin(true);
+                          }
+                      }} className="w-20 h-20 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center border-2 border-blue-500/50 mb-6 active:scale-95 transition-transform">
+                         <SvgIcon name="bio" size={36} />
+                      </button>
+                      <button onClick={() => setFallbackToPin(true)} className="text-[11px] text-gray-400 underline underline-offset-4 font-bold active:text-white transition-colors">
+                         無法辨識？改用 PIN 碼登入
+                      </button>
+                    </div>
+                  ) : (
                     <>
                       <div className="flex justify-center gap-3 mb-10">
                         {[...Array(6)].map((_, i) => <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? "bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]" : "bg-transparent"}`}></div>)}
@@ -1204,7 +1227,7 @@
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）"); setPinInput(""); return; }
                                   }
-                                  setCurrentUser(selectingUser); setSelectingUser(null); setPinInput("");
+                                  setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); setFallbackToPin(false);
                                   if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
                                 } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "PIN 錯誤"); setPinInput(""); }
                               }
@@ -1215,13 +1238,8 @@
                       </div>
                     </>
                   )}
-                  {biometricAvailable && !isDeviceBioBound(selectingUser.name) && (
-                    <div className="mt-4 mb-6 p-4 bg-white/5 rounded-2xl border border-white/10 text-left">
-                      <div className="text-[11px] text-gray-300 font-black">尚未綁定設備</div>
-                      <div className="text-[11px] text-gray-400 mt-1 leading-relaxed">流程：先用 PIN 登入 → 進入「設定」→ 點「綁定設備」</div>
-                    </div>
-                  )}
-                  <button onClick={() => { setSelectingUser(null); setPinInput(""); }} className="text-red-400 text-xs font-black uppercase tracking-widest underline underline-offset-4 active:text-red-300 transition-colors">返回成員列表</button>
+                  
+                  <button onClick={() => { setSelectingUser(null); setPinInput(""); setFallbackToPin(false); }} className="text-red-400 text-xs font-black uppercase tracking-widest underline underline-offset-4 active:text-red-300 transition-colors">返回成員列表</button>
                 </div>
               </div>
             )}
@@ -1262,6 +1280,8 @@
           </div>
         );
       }
+
+      const bioBound = currentUser ? isDeviceBioBound(currentUser.name) : false;
 
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
@@ -1659,15 +1679,13 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修復生物辨識彈窗遭瀏覽器攔截卡死的問題，並加入密碼降級機制 (V6)</li>
                           <li>修復斜線類別字串截斷異常，優化狀態切換 (V5)</li>
                           <li>自訂問候語支援同步儲存至 GAS 雲端表單 (V5)</li>
                           <li>歷史清單母項目編輯按鈕置中並統一樣式 (V5)</li>
                           <li>分析圖表支援自訂日期範圍篩選 (V5)</li>
                           <li>獨立多筆明細的花費對象標籤與子項選擇 (V4)</li>
                           <li>支援分析圖表三階層下鑽 (對象 ➔ 母類 ➔ 子類) (V4)</li>
-                          <li>內建三口家庭母子類別清單與母項目名稱編輯 (V3)</li>
-                          <li>新增發票明細拆分，支援自訂標題與備註 (V2)</li>
-                          <li>歷史清單母項目自動聚合與獨立外側編輯 (V2)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
