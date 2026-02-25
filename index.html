@@ -149,6 +149,8 @@
     // --- Icons ---
     const SvgIcon = ({ name, size = 24, className = "" }) => {
       const icons = {
+        home: <React.Fragment><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></React.Fragment>,
+        pieChart: <React.Fragment><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></React.Fragment>,
         wallet: <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4M3 5v14a2 2 0 0 0 2 2h16v-5M18 12a2 2 0 0 0 0 4h4v-4Z"/>,
         plus: <path d="M12 5v14m-7-7h14"/>,
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
@@ -432,20 +434,6 @@
       useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
-
-      // 每次回前景就鎖（回到選成員）
-      useEffect(() => {
-        const onVis = () => {
-          if (document.visibilityState === "visible") {
-            setCurrentUser(null);
-            setSelectingUser(null);
-            setPinInput("");
-            setActiveTab("dashboard");
-          }
-        };
-        document.addEventListener("visibilitychange", onVis);
-        return () => document.removeEventListener("visibilitychange", onVis);
-      }, []);
 
       // 初始化生物辨識可用性
       useEffect(() => {
@@ -819,16 +807,71 @@
         return visibleTransactions.filter(t => t.member === currentUser.name);
       }, [visibleTransactions, currentUser]);
 
-      const recentDisplayTransactions = useMemo(() => {
-        if (!currentUser) return [];
-        return visibleTransactions.filter(t => t.member === currentUser.name || t.recorder === currentUser.name);
-      }, [visibleTransactions, currentUser]);
-
       const stats = useMemo(() => {
         const income = myTransactions.filter(t => t.type === "income").reduce((s,t)=>s+(Number(t.amount)||0),0);
         const expense = myTransactions.filter(t => t.type === "expense").reduce((s,t)=>s+(Number(t.amount)||0),0);
         return { income, expense, balance: income - expense };
       }, [myTransactions]);
+
+      // --- 自動依時間排序 (最新的在最上面) ---
+      const timeSortedTransactions = useMemo(() => {
+        const parseDateForSort = (val) => {
+          if (!val) return 0;
+          let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim();
+          str = str.replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "");
+          str = str.replace(/-/g, "/").replace("T", " ");
+          return new Date(str).getTime() || 0;
+        };
+
+        return [...visibleTransactions].sort((a, b) => {
+          const tA = parseDateForSort(a.date);
+          const tB = parseDateForSort(b.date);
+          if (tB !== tA) return tB - tA; // 時間近的排前面
+          return (Number(b.id) || 0) - (Number(a.id) || 0); // 相同時間則用 ID 判定先後
+        });
+      }, [visibleTransactions]);
+
+      // 統一的帳目圖卡渲染函數 (加入 allowEdit 參數控制是否能點擊)
+      const renderTxCard = (tx, allowEdit = true) => (
+        <div key={tx.id} onClick={() => allowEdit && setEditingTx(tx)} className={`bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm transition-colors ${allowEdit ? 'cursor-pointer active:bg-gray-50' : ''}`}>
+          <div className="relative shrink-0">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+              {tx.type==="income" ? "收入" : "支出"}
+            </div>
+            {/* 只有當帳目屬於對方時，才顯示左上角的成員標籤 */}
+            {tx.member !== currentUser.name && (
+              <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white`}>
+                {tx.member}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex-1 min-w-0 pl-1">
+            <div className="font-bold text-base truncate text-gray-800">{tx.category}</div>
+            <div className="flex items-center gap-2 mt-1.5 w-full overflow-hidden">
+              <span className="text-[10px] text-gray-400 font-medium shrink-0">{displayDateClean(tx.date)}</span>
+              {/* 備註欄加高並微調字體大小 */}
+              {tx.desc && (
+                <span className="text-[11px] text-gray-600 font-bold bg-gray-100 border border-gray-200 px-2 py-1 rounded-md truncate flex-1 min-w-0 flex items-center">
+                  {tx.desc}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex flex-col items-end justify-center shrink-0 pl-2">
+            <div className={`font-black tabular-nums text-lg leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
+              ${Number(tx.amount||0).toLocaleString()}
+            </div>
+            {/* 代記提示移至列表後方，並套用專屬顏色 */}
+            {tx.recorder && tx.recorder !== tx.member && (
+              <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                ✍️ {tx.recorder}代記
+              </div>
+            )}
+          </div>
+        </div>
+      );
 
       // ✅ 如果選到成員且設備已綁定生物辨識：直接跳生物辨識（不先圖卡）
       useEffect(() => {
@@ -856,115 +899,122 @@
       if (!currentUser) {
         return (
           <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
-            <div className="mb-12 text-white">
-              <div className="bg-blue-600 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 text-white">
-                <SvgIcon name="wallet" size={36} />
-              </div>
-              <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
-              <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
-              <div className="mt-4 flex items-center justify-center gap-3 text-[11px]">
-                <span className={`px-2 py-1 rounded-lg ${navigator.onLine ? "bg-green-600/20 text-green-300" : "bg-red-600/20 text-red-300"}`}>
-                  {navigator.onLine ? "線上" : "離線"}
-                </span>
-                <span className="text-white/50">待同步 {syncQueue.length}</span>
-              </div>
-            </div>
-
+            
             {!selectingUser ? (
-              <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white">
-                {familyConfig.map(user => (
-                  <button key={user.name}
-                    onClick={() => setSelectingUser(user)}
-                    className={`${user.color || (user.name==="媽媽"?"bg-pink-600":"bg-blue-600")} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
-                    {user.name}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="w-full max-w-xs animate-in text-white text-center font-black">
-                <p className="font-black text-3xl mb-2 tracking-tight text-white">{selectingUser.name}</p>
-                <p className="text-gray-500 text-xs font-bold uppercase tracking-widest opacity-60 mb-8">
-                  {isDeviceBioBound(selectingUser.name) ? "生物辨識解鎖" : "輸入 6 位 PIN 解鎖"}
-                </p>
-
-                {!isDeviceBioBound(selectingUser.name) && (
-                  <>
-                    <div className="flex justify-center gap-4 mb-10">
-                      {[...Array(6)].map((_, i) => (
-                        <div key={i} className={`w-3 h-3 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? "bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]" : "bg-transparent"}`}></div>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4 mb-8 text-white">
-                      {[1,2,3,4,5,6,7,8,9,"C",0,"←"].map(k => (
-                        <button key={k}
-                          onClick={async () => {
-                            if (k === "C") { setPinInput(""); return; }
-                            if (k === "←") { setPinInput(pinInput.slice(0,-1)); return; }
-                            const n = pinInput + k;
-                            if (n.length > 6) return;
-                            setPinInput(n);
-
-                            if (n.length === 6) {
-                              try {
-                                // ✅ PIN 一定要驗證：線上用 VERIFY_PIN；離線用本機 hash
-                                if (navigator.onLine) {
-                                  if (!deviceValid()) {
-                                    showStatus("error", "雲端尚未綁定，請先輸入雲端密碼");
-                                    setShowBootstrapModal(true);
-                                    setPinInput("");
-                                    return;
-                                  }
-                                  setLoadingCard({ show:true, text:"正在驗證..." });
-                                  await verifyPinOnline(selectingUser.name, n);
-                                  setLoadingCard({ show:false, text:"" });
-                                  await saveLocalPinHash(selectingUser.name, n);
-                                } else {
-                                  const ok = await unlockWithPinLocal(selectingUser.name, n);
-                                  if (!ok) {
-                                    showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）");
-                                    setPinInput("");
-                                    return;
-                                  }
-                                }
-
-                                // ✅ 通過才登入
-                                setCurrentUser(selectingUser);
-                                setSelectingUser(null);
-                                setPinInput("");
-
-                                // 背景抓/同步（不阻塞）
-                                if (navigator.onLine && deviceValid()) {
-                                  setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
-                                }
-                              } catch (e) {
-                                setLoadingCard({ show:false, text:"" });
-                                showStatus("error", e.message || "PIN 錯誤");
-                                setPinInput("");
-                              }
-                            }
-                          }}
-                          className="bg-white/10 h-16 rounded-3xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white">
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-
-                {biometricAvailable && !isDeviceBioBound(selectingUser.name) && (
-                  <div className="mt-4 p-4 bg-white/5 rounded-2xl border border-white/10 text-left">
-                    <div className="text-[11px] text-gray-300 font-black">尚未綁定設備</div>
-                    <div className="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                      流程：先用 PIN 登入 → 進入「設定」→ 點「綁定設備」
-                    </div>
+              <>
+                <div className="mb-12 text-white animate-in">
+                  <div className="bg-blue-600 w-20 h-20 rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-blue-500/30 text-white">
+                    <SvgIcon name="wallet" size={36} />
                   </div>
-                )}
+                  <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
+                  <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
+                  <div className="mt-5 flex items-center justify-center">
+                    <span className={`px-4 py-1.5 text-sm font-bold tracking-widest rounded-xl shadow-sm ${navigator.onLine ? "bg-green-600/20 text-green-300 border border-green-500/20" : "bg-red-600/20 text-red-300 border border-red-500/20"}`}>
+                      {navigator.onLine ? "線上" : "離線"}
+                    </span>
+                  </div>
+                </div>
 
-                <button onClick={() => { setSelectingUser(null); setPinInput(""); }}
-                  className="text-gray-500 text-xs font-black uppercase tracking-widest underline underline-offset-4 active:text-blue-500">
-                  返回成員列表
-                </button>
+                <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white animate-in">
+                  {familyConfig.map(user => (
+                    <button key={user.name}
+                      onClick={() => setSelectingUser(user)}
+                      className={`${user.color || (user.name==="媽媽"?"bg-pink-600":"bg-blue-600")} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
+                      {user.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="w-full max-w-sm animate-in text-white text-center font-black">
+                <div className="bg-gray-800 rounded-[2.5rem] p-8 shadow-2xl border border-white/10 relative">
+                  <div className={`${selectingUser.color || (selectingUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-16 h-16 mx-auto rounded-[1.5rem] flex items-center justify-center text-white font-black text-2xl shadow-lg mb-4`}>
+                    {selectingUser.name.charAt(0)}
+                  </div>
+                  <p className="font-black text-3xl mb-1 tracking-tight text-white">{selectingUser.name}</p>
+                  <p className="text-gray-400 text-xs font-bold uppercase tracking-widest opacity-80 mb-8">
+                    {isDeviceBioBound(selectingUser.name) ? "生物辨識解鎖" : "輸入 6 位 PIN 解鎖"}
+                  </p>
+
+                  {!isDeviceBioBound(selectingUser.name) && (
+                    <>
+                      <div className="flex justify-center gap-3 mb-10">
+                        {[...Array(6)].map((_, i) => (
+                          <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-blue-500 transition-all duration-200 ${pinInput.length > i ? "bg-blue-500 scale-125 shadow-[0_0_12px_#3b82f6]" : "bg-transparent"}`}></div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 mb-8 text-white">
+                        {[1,2,3,4,5,6,7,8,9,"C",0,"←"].map(k => (
+                          <button key={k}
+                            onClick={async () => {
+                              if (k === "C") { setPinInput(""); return; }
+                              if (k === "←") { setPinInput(pinInput.slice(0,-1)); return; }
+                              const n = pinInput + k;
+                              if (n.length > 6) return;
+                              setPinInput(n);
+
+                              if (n.length === 6) {
+                                try {
+                                  // ✅ PIN 一定要驗證：線上用 VERIFY_PIN；離線用本機 hash
+                                  if (navigator.onLine) {
+                                    if (!deviceValid()) {
+                                      showStatus("error", "雲端尚未綁定，請先輸入雲端密碼");
+                                      setShowBootstrapModal(true);
+                                      setPinInput("");
+                                      return;
+                                    }
+                                    setLoadingCard({ show:true, text:"正在驗證..." });
+                                    await verifyPinOnline(selectingUser.name, n);
+                                    setLoadingCard({ show:false, text:"" });
+                                    await saveLocalPinHash(selectingUser.name, n);
+                                  } else {
+                                    const ok = await unlockWithPinLocal(selectingUser.name, n);
+                                    if (!ok) {
+                                      showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）");
+                                      setPinInput("");
+                                      return;
+                                    }
+                                  }
+
+                                  // ✅ 通過才登入
+                                  setCurrentUser(selectingUser);
+                                  setSelectingUser(null);
+                                  setPinInput("");
+
+                                  // 背景抓/同步（不阻塞）
+                                  if (navigator.onLine && deviceValid()) {
+                                    setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
+                                  }
+                                } catch (e) {
+                                  setLoadingCard({ show:false, text:"" });
+                                  showStatus("error", e.message || "PIN 錯誤");
+                                  setPinInput("");
+                                }
+                              }
+                            }}
+                            className="bg-white/5 h-16 rounded-2xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white shadow-sm hover:bg-white/10">
+                            {k}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {biometricAvailable && !isDeviceBioBound(selectingUser.name) && (
+                    <div className="mt-4 mb-6 p-4 bg-white/5 rounded-2xl border border-white/10 text-left">
+                      <div className="text-[11px] text-gray-300 font-black">尚未綁定設備</div>
+                      <div className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                        流程：先用 PIN 登入 → 進入「設定」→ 點「綁定設備」
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={() => { setSelectingUser(null); setPinInput(""); }}
+                    className="text-red-400 text-xs font-black uppercase tracking-widest underline underline-offset-4 active:text-red-300 transition-colors">
+                    返回成員列表
+                  </button>
+                </div>
               </div>
             )}
 
@@ -972,15 +1022,12 @@
             {showBootstrapModal && (
               <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
                 <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
-                  <button onClick={() => setShowBootstrapModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90">
-                    <SvgIcon name="close" size={24}/>
-                  </button>
                   <h3 className="font-black text-lg mb-2">首次綁定雲端</h3>
-                  <p className="text-[11px] text-gray-500 mb-5">請輸入雲端密碼（APP_SECRET）。</p>
+                  <p className="text-[11px] text-gray-500 mb-5">請輸入雲端密碼（爸爸手機號碼）。</p>
 
                   <input value={bootstrapSecret}
                     onChange={(e)=>setBootstrapSecret(e.target.value)}
-                    placeholder="輸入雲端密碼"
+                    placeholder="輸入爸爸手機號碼"
                     className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
 
                   <button
@@ -1008,7 +1055,7 @@
 
             {/* Toast */}
             {statusMsg.text && (
-              <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[200] pointer-events-none px-4 text-center">
+              <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
                 <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
                   statusMsg.type === "success" ? "bg-green-600 text-white" :
                   statusMsg.type === "error" ? "bg-red-600 text-white" : "bg-blue-600 text-white"
@@ -1133,19 +1180,29 @@
 
           <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800">
             <div className="flex items-center gap-3 text-left">
-              <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-10 h-10 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/30`}>
+              <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-11 h-11 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/30`}>
                 {currentUser.name.charAt(0)}
               </div>
-              <h1 className="text-2xl font-black tracking-tighter italic">家庭記帳</h1>
+              <div className="flex flex-col justify-center">
+                <h1 className="text-xl font-black tracking-tighter italic leading-none mb-1">家庭記帳</h1>
+                <p className="text-[10px] text-gray-400 font-bold tracking-widest leading-none">{currentUser.name}，你好！</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right leading-none">
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
-              <button onClick={() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }}
-                className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-90 transition-all flex items-center justify-center">
-                <SvgIcon name="logout" size={20}/>
+              <button 
+                onClick={() => processQueueToCloud({ doRefreshFirst: true })}
+                className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center"
+              >
+                <SvgIcon name="refresh" size={20}/>
+                {syncQueue.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">
+                    {syncQueue.length}
+                  </span>
+                )}
               </button>
             </div>
           </header>
@@ -1164,22 +1221,79 @@
                 </div>
 
                 <div className="space-y-4 text-left">
-                  <h3 className="font-black text-lg px-1">最近動態</h3>
+                  <h3 className="font-black text-lg px-1">最新動態</h3>
                   <div className="space-y-3">
-                    {recentDisplayTransactions.slice(-5).reverse().map(tx => (
-                      <div key={tx.id} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-4 shadow-sm active:bg-gray-50 transition-colors">
-                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] shrink-0 leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
-                          {tx.type==="income" ? "收入" : "支出"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-base truncate text-gray-800">{tx.category}</div>
-                          <div className="text-[10px] text-gray-400 mt-1 font-medium">{displayDateClean(tx.date)}</div>
-                        </div>
-                        <div className={`font-black tabular-nums text-lg shrink-0 ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
-                      </div>
-                    ))}
+                    {timeSortedTransactions.slice(0, 5).map(tx => renderTxCard(tx, false))}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === "history" && (
+              <div className="space-y-4 animate-in pb-20 text-left">
+                <h3 className="font-black text-xl px-1 text-gray-800 mb-2">歷史清單</h3>
+                <div className="space-y-3">
+                  {timeSortedTransactions.filter(tx => tx.member === currentUser.name).map(tx => renderTxCard(tx, true))}
+                  {timeSortedTransactions.filter(tx => tx.member === currentUser.name).length === 0 && (
+                    <div className="text-center text-gray-400 py-10 text-sm font-bold">尚無紀錄</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "analysis" && (
+              <div className="space-y-6 animate-in pb-20 text-left">
+                <h3 className="font-black text-xl px-1 text-gray-800">支出分析</h3>
+                {(() => {
+                  const expenses = myTransactions.filter(t => t.type === "expense");
+                  if (expenses.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold">尚無支出紀錄</div>;
+                  
+                  const categoryTotals = {};
+                  let totalExpense = 0;
+                  expenses.forEach(t => {
+                    const amt = Number(t.amount) || 0;
+                    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + amt;
+                    totalExpense += amt;
+                  });
+                  
+                  const sortedCategories = Object.entries(categoryTotals).sort((a,b) => b[1] - a[1]);
+                  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef"];
+                  
+                  let conicStr = "";
+                  let currentPct = 0;
+                  sortedCategories.forEach(([cat, amt], idx) => {
+                    const pct = (amt / totalExpense) * 100;
+                    const color = colors[idx % colors.length];
+                    conicStr += `${color} ${currentPct}% ${currentPct + pct}%, `;
+                    currentPct += pct;
+                  });
+                  conicStr = conicStr.slice(0, -2);
+
+                  return (
+                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
+                      <div className="relative w-48 h-48 mx-auto mb-8 rounded-full" style={{ background: `conic-gradient(${conicStr})` }}>
+                        <div className="absolute inset-0 m-auto w-32 h-32 bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
+                          <span className="text-[10px] text-gray-400 font-black uppercase mb-1">總支出</span>
+                          <span className="text-xl font-black text-gray-800">${totalExpense.toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {sortedCategories.map(([cat, amt], idx) => (
+                          <div key={cat} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[idx % colors.length] }}></div>
+                              <span className="font-bold text-gray-700 text-sm">{cat}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-gray-400 font-bold w-10 text-right">{((amt/totalExpense)*100).toFixed(1)}%</span>
+                              <span className="font-black text-gray-800 w-16 text-right">${amt.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1238,18 +1352,59 @@
                 </div>
               </div>
             )}
+
+            {/* Bootstrap: App open required */}
+            {showBootstrapModal && (
+              <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
+                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
+                  <h3 className="font-black text-lg mb-2">首次綁定雲端</h3>
+                  <p className="text-[11px] text-gray-500 mb-5">請輸入雲端密碼（爸爸手機號碼）。</p>
+
+                  <input value={bootstrapSecret}
+                    onChange={(e)=>setBootstrapSecret(e.target.value)}
+                    placeholder="輸入爸爸手機號碼"
+                    className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
+
+                  <button
+                    onClick={async () => {
+                      try {
+                        setLoadingCard({ show:true, text:"正在綁定雲端..." });
+                        await bootstrapDevice();
+                        setShowBootstrapModal(false);
+                        setBootstrapSecret("");
+                        showStatus("success","雲端已綁定");
+                      } catch (e) {
+                        showStatus("error", e.message || "雲端密碼錯誤");
+                      } finally {
+                        setLoadingCard({ show:false, text:"" });
+                      }
+                    }}
+                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40"
+                    disabled={isLoading}
+                  >
+                    確認
+                  </button>
+                </div>
+              </div>
+            )}
+
           </main>
 
           <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-50 shadow-2xl border border-white/20 safe-bottom">
-            <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="chart" /></button>
-            <button onClick={() => setActiveTab("add")} className={`w-16 h-16 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={32} /></button>
-            <div className="flex-1"></div>
+            <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="home" /></button>
+            <button onClick={() => setActiveTab("history")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="history" /></button>
+            
+            <div className="px-1">
+              <button onClick={() => setActiveTab("add")} className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={28} /></button>
+            </div>
+            
+            <button onClick={() => setActiveTab("analysis")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "analysis" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="pieChart" /></button>
             <button onClick={() => setActiveTab("settings")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="settings" /></button>
           </nav>
 
           {/* Toast */}
           {statusMsg.text && (
-            <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[400] pointer-events-none px-4 text-center">
+            <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
               <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${
                 statusMsg.type === "success" ? "bg-green-600 text-white" :
                 statusMsg.type === "error" ? "bg-red-600 text-white" : "bg-blue-600 text-white"
