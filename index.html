@@ -64,8 +64,8 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本升級至 V20：無縫背景同步消除空窗期、歷史清單待同步顯示、子項目刪除墓碑標記
-    const APP_VERSION = "2026.02.28.PRO.V20";
+    // 版本升級至 V21：完美解決同步後白屏問題 (資料格式安全轉換)
+    const APP_VERSION = "2026.02.28.PRO.V21";
     const GAS_TARGET_VERSION = "2026.02.28.PRO.V7";
 
     const LS = {
@@ -100,13 +100,18 @@
       }
     };
 
+    // 極致安全的字串提取函數，防止 Cannot read properties of undefined 報錯
     const getParentCat = (catStr) => {
-      if (!catStr) return "其他";
+      if (!catStr || typeof catStr !== 'string') return "其他";
       if (catStr.includes('/')) return catStr.split('/')[0];
       const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪資":"收入", "投資":"理財", "雜項":"其他"};
       return legacyMap[catStr] || "其他";
     };
-    const getChildCat = (catStr) => catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
+    
+    const getChildCat = (catStr) => {
+      if (!catStr || typeof catStr !== 'string') return "其他";
+      return catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
+    };
 
     const BEN_OPTIONS = ["爸爸", "媽媽", "兒子", "其他"];
     
@@ -126,6 +131,30 @@
     const safeArrayLS = (key) => { const raw = localStorage.getItem(key); const v = safeParse(raw, []); return Array.isArray(v) ? v : []; };
     const safeStringLS = (key, fallback="") => { const v = localStorage.getItem(key); return (v === null || v === "null" || v === "undefined") ? fallback : v; };
     const safeNumberLS = (key, fallback=0) => { const v = Number(localStorage.getItem(key)); return Number.isFinite(v) ? v : fallback; };
+
+    // 核心資料翻譯機：將 GAS 的中文 Header 快照轉為 Frontend 的英文變數，消滅白屏
+    const normalizeSnapshot = (snapStr) => {
+      if (!snapStr) return {};
+      let obj = {};
+      try { obj = JSON.parse(snapStr); } catch(e) { return {}; }
+      
+      if (obj['類別']) {
+        return {
+          date: obj['日期時間'] || obj['日期'] || "",
+          category: obj['類別'] || "其他",
+          amount: parseFloat(obj['金額']) || 0,
+          member: obj['成員'] || "未知",
+          desc: obj['備註'] || "",
+          type: obj['類型'] || "expense",
+          recorder: obj['記錄者'] || "系統",
+          id: obj['ID'] || "",
+          groupId: obj['GroupID'] || "",
+          parentDesc: obj['ParentDesc'] || "",
+          beneficiary: obj['Beneficiary'] || ""
+        };
+      }
+      return obj; // 如果已經是英文結構就直接回傳
+    };
 
     const parseDateForSort = (val) => {
       if (!val) return 0;
@@ -217,7 +246,7 @@
       const history = tx.editHistory || [];
       return (
         <div className="fixed inset-0 z-[700] bg-gray-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-in font-black text-left" onClick={(e) => { if(e.target === e.currentTarget) onClose(); }}>
-          <div className="w-full max-w-sm bg-white rounded-[2.5rem] p-6 relative max-h-[80vh] overflow-y-auto shadow-2xl">
+          <div className="w-full max-w-sm bg-white rounded-[2.5rem] p-6 relative max-h-[80vh] overflow-y-auto shadow-2xl scrollbar-hide">
             <button onClick={onClose} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24} /></button>
             <h2 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-2"><SvgIcon name="clock" size={20} className="text-blue-600"/> 編輯紀錄</h2>
             
@@ -237,23 +266,26 @@
                 </div>
               </div>
 
-              {history.map((h, i) => (
-                <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-gray-100 text-gray-400 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
-                    <span className="text-[10px]">V{history.length - i}</span>
-                  </div>
-                  <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-gray-100 shadow-sm bg-white">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[9px] font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">{displayDateClean(h.timestamp)}</span>
+              {history.map((h, i) => {
+                const snap = normalizeSnapshot(h.snapshot);
+                return (
+                  <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-gray-100 text-gray-400 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
+                      <span className="text-[10px]">V{history.length - i}</span>
                     </div>
-                    <div className="font-bold text-sm text-gray-600 opacity-70">{getParentCat(h.category)} - {getChildCat(h.category)}</div>
-                    <div className="text-[10px] text-gray-400 my-1">對象: {formatBen(h.beneficiary, h.member)}</div>
-                    <div className="font-black text-lg text-gray-500">${Number(h.amount).toLocaleString()}</div>
-                    {h.desc && <div className="text-[10px] text-gray-400 mt-1">{h.desc}</div>}
-                    <div className="text-[9px] text-gray-400 mt-2 border-t border-gray-100 pt-2 text-right">由 {h.editor} {h.action === 'DELETE' ? '刪除' : '修改'}</div>
+                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-gray-100 shadow-sm bg-white">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[9px] font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">{displayDateClean(h.timestamp)}</span>
+                      </div>
+                      <div className="font-bold text-sm text-gray-600 opacity-70">{getParentCat(snap.category)} - {getChildCat(snap.category)}</div>
+                      <div className="text-[10px] text-gray-400 my-1">對象: {formatBen(snap.beneficiary, snap.member)}</div>
+                      <div className="font-black text-lg text-gray-500">${Number(snap.amount || 0).toLocaleString()}</div>
+                      {snap.desc && <div className="text-[10px] text-gray-400 mt-1">{snap.desc}</div>}
+                      <div className="text-[9px] text-gray-400 mt-2 border-t border-gray-100 pt-2 text-right">由 {h.editor} {h.action === 'DELETE' ? '刪除' : '修改'}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
@@ -285,7 +317,7 @@
       );
     };
 
-    const AddTransactionForm = ({ loginUser, onSubmit }) => {
+    const AddTransactionForm = ({ loginUser, onSubmit, isLoading }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
@@ -499,10 +531,11 @@
             </div>
           </div>
 
-          <button disabled={isSubmitDisabled} onClick={submitForm}
+          <button disabled={isSubmitDisabled || isLoading} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            確認存檔
+            {isLoading ? <SvgIcon name="refresh" size={20} className="animate-spin" /> : null}
+            {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
           </button>
         </div>
       );
@@ -597,7 +630,7 @@
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
                     <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
-                      儲存變更
+                      {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
                     </button>
                   </>
                 ) : (
@@ -664,7 +697,7 @@
 
               <div className="mt-8">
                 <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
-                  批次更新所有子項目
+                  {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
                 </button>
               </div>
             </div>
@@ -1177,7 +1210,11 @@
            groupId: updatedTx.groupId || "",
            action: 'UPDATE',
            editor: currentUser.name,
-           snapshot: JSON.stringify(oldTx)
+           snapshot: JSON.stringify({
+              '日期時間': oldTx.date, '類別': oldTx.category, '金額': oldTx.amount, '成員': oldTx.member, 
+              '備註': oldTx.desc, '類型': oldTx.type, '記錄者': oldTx.recorder, 'ID': oldTx.id, 
+              'GroupID': oldTx.groupId, 'ParentDesc': oldTx.parentDesc, 'Beneficiary': oldTx.beneficiary
+           })
         };
         
         setHistoryCache(prev => [historyEntry, ...prev]);
@@ -1209,7 +1246,11 @@
           groupId: oldTx.groupId,
           action: 'UPDATE_GROUP',
           editor: currentUser.name,
-          snapshot: JSON.stringify(oldTx)
+          snapshot: JSON.stringify({
+              '日期時間': oldTx.date, '類別': oldTx.category, '金額': oldTx.amount, '成員': oldTx.member, 
+              '備註': oldTx.desc, '類型': oldTx.type, '記錄者': oldTx.recorder, 'ID': oldTx.id, 
+              'GroupID': oldTx.groupId, 'ParentDesc': oldTx.parentDesc, 'Beneficiary': oldTx.beneficiary
+           })
         }));
         setHistoryCache(prev => [...histRecs, ...prev]);
 
@@ -1239,7 +1280,11 @@
             groupId: oldTx.groupId || "",
             action: 'DELETE',
             editor: currentUser.name,
-            snapshot: JSON.stringify(oldTx)
+            snapshot: JSON.stringify({
+              '日期時間': oldTx.date, '類別': oldTx.category, '金額': oldTx.amount, '成員': oldTx.member, 
+              '備註': oldTx.desc, '類型': oldTx.type, '記錄者': oldTx.recorder, 'ID': oldTx.id, 
+              'GroupID': oldTx.groupId, 'ParentDesc': oldTx.parentDesc, 'Beneficiary': oldTx.beneficiary
+            })
           };
           setHistoryCache(prev => [histRec, ...prev]);
         }
@@ -1263,7 +1308,6 @@
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         const baseList = transactions.length ? transactions : txCache;
-        const baseIds = new Set(baseList.map(t => t.id));
         
         const deleteIds = new Set(syncQueue.filter(q => q._action === 'DELETE').map(q => q.id));
         const activeBaseList = baseList.filter(t => !deleteIds.has(t.id));
@@ -1291,10 +1335,10 @@
 
       const groupTransactions = (list) => {
         const grouped = []; const groupMap = {};
-        for (const tx of list) {
-          const txHist = historyCache.filter(h => String(h.txId) === String(tx.id) && h.action !== 'DELETE')
+        for (const rawTx of list) {
+          const txHist = historyCache.filter(h => String(h.txId) === String(rawTx.id) && h.action !== 'DELETE')
                                      .sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp));
-          tx.editHistory = txHist;
+          const tx = { ...rawTx, editHistory: txHist };
 
           if (tx.groupId) {
             if (!groupMap[tx.groupId]) {
@@ -1319,8 +1363,7 @@
         for (const dr of deletedRecords) {
           if (dr.groupId && groupMap[dr.groupId]) {
             if (!groupMap[dr.groupId].children.some(c => String(c.id) === String(dr.txId))) {
-               let parsed = {};
-               try { parsed = JSON.parse(dr.snapshot); } catch (e) {}
+               let parsed = normalizeSnapshot(dr.snapshot);
                groupMap[dr.groupId].children.push({
                  ...parsed,
                  id: dr.txId,
@@ -1967,6 +2010,7 @@
                 <div className="flex items-center justify-between px-1 mb-4 gap-2">
                   <h3 className="font-black text-xl text-gray-800 shrink-0">歷史清單</h3>
                   
+                  {/* 縮小並排的搜尋列與篩選按鈕 */}
                   <div className="flex-1 flex items-center justify-end gap-1.5">
                     <div className="relative w-full max-w-[150px]">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none"><SvgIcon name="search" size={14} className="text-gray-400" /></div>
@@ -1977,6 +2021,7 @@
                       <SvgIcon name="filter" size={16} />
                     </button>
 
+                    {/* 預設回全部按鈕 */}
                     {isHistoryFiltered && (
                       <button onClick={() => { setHistorySearch(""); setHistoryFilter({dateType: 'all', customStart: '', customEnd: '', types: ['expense', 'income'], catConditions: [], minAmount: '', maxAmount: ''}); }} className="px-2.5 py-2 bg-red-50 text-red-600 rounded-xl font-black text-[10px] whitespace-nowrap shadow-sm active:scale-95 transition-all">
                         回全部
@@ -1985,6 +2030,7 @@
                   </div>
                 </div>
 
+                {/* 篩選結果總計 */}
                 {isHistoryFiltered && (
                   <div className="flex justify-between items-center bg-gray-800 p-4 rounded-[1.5rem] shadow-sm text-white mb-2 animate-in">
                     <div className="text-[10px] font-black uppercase tracking-widest text-gray-400">當前條件總計</div>
@@ -1995,6 +2041,7 @@
                   </div>
                 )}
                 
+                {/* 顯示目前的篩選條件標籤 */}
                 {isHistoryFiltered && (
                   <div className="flex flex-wrap gap-2 px-1 mb-2">
                      {historyFilter.dateType !== 'all' && <span className="px-2 py-1 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-bold">指定時間</span>}
@@ -2045,6 +2092,7 @@
 
                   if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄，請調整過濾條件</div>;
                   
+                  // 三組不同情境的獨立色系
                   const EXPENSE_COLORS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#14b8a6", "#ec4899", "#f43f5e", "#be123c"];
                   const INCOME_COLORS = ["#10b981", "#059669", "#047857", "#14b8a6", "#0d9488", "#0f766e", "#3b82f6", "#2563eb", "#1d4ed8"];
                   const BEN_COLORS = ["#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#0ea5e9", "#0284c7", "#4338ca", "#6d28d9", "#3b82f6"];
@@ -2057,6 +2105,7 @@
                     if (t.isDeleted) return; 
                     const amt = Number(t.amount) || 0; grandTotal += amt;
                     if (analysisType === "beneficiary") {
+                       // 直接使用合併後的名稱作為獨立類別，不再平分拆解
                        const b = formatBen(t.beneficiary, t.member) || t.member;
                        level1Totals[b] = (level1Totals[b] || 0) + amt;
                     } else {
@@ -2267,9 +2316,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>[V21] 完美解決同步後白屏問題 (資料格式安全轉換與拷貝保護)</li>
                           <li>[V20] 修正 Race Condition，無縫背景同步消除空窗期，待同步項目永駐所有頁面</li>
                           <li>[V19] 首頁與歷史篩選完全脫鉤，新增子項目刪除墓碑標記，並支援完整編輯歷史溯源</li>
-                          <li>[V18.4] 重構清除損壞的重複代碼，恢復所有核心功能，解決所有白屏報錯</li>
+                          <li>[V18] 樂觀更新(秒新增)、背景自動同步與未同步視覺標示(黃色標籤)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
