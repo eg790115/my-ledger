@@ -64,8 +64,8 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本升級至 V19：編輯/刪除樂觀更新、編輯歷史版本控制(獨立分頁)、動態總計隱藏、刪除紀錄變墓碑
-    const APP_VERSION = "2026.02.28.PRO.V19";
+    // 版本升級至 V20：無縫背景同步消除空窗期、歷史清單待同步顯示、子項目刪除墓碑標記
+    const APP_VERSION = "2026.02.28.PRO.V20";
     const GAS_TARGET_VERSION = "2026.02.28.PRO.V7";
 
     const LS = {
@@ -213,7 +213,6 @@
       );
     };
 
-    // --- 編輯歷史追蹤元件 ---
     const ViewEditHistoryModal = ({ tx, onClose }) => {
       const history = tx.editHistory || [];
       return (
@@ -286,7 +285,7 @@
       );
     };
 
-    const AddTransactionForm = ({ loginUser, onSubmit, isLoading }) => {
+    const AddTransactionForm = ({ loginUser, onSubmit }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
@@ -301,7 +300,6 @@
       ]);
 
       const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
-
       const dynamicBenOptions = [loginUser, ...BEN_OPTIONS.filter(b => b !== loginUser)];
 
       useEffect(() => { 
@@ -501,11 +499,10 @@
             </div>
           </div>
 
-          <button disabled={isSubmitDisabled || isLoading} onClick={submitForm}
+          <button disabled={isSubmitDisabled} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            {isLoading ? <SvgIcon name="refresh" size={20} className="animate-spin" /> : null}
-            {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
+            確認存檔
           </button>
         </div>
       );
@@ -528,7 +525,6 @@
       }, [tx]);
 
       const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
-      
       const dynamicBenOptions = [loginUser, ...BEN_OPTIONS.filter(b => b !== loginUser)];
 
       const toggleBeneficiary = (b) => {
@@ -601,7 +597,7 @@
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
                     <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
-                      {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
+                      儲存變更
                     </button>
                   </>
                 ) : (
@@ -668,7 +664,7 @@
 
               <div className="mt-8">
                 <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
-                  {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
+                  批次更新所有子項目
                 </button>
               </div>
             </div>
@@ -1015,8 +1011,8 @@
             if (res.result !== "success") throw new Error(res.message || "群組更新同步失敗");
           }
           
+          await fetchCloudTx(); 
           setSyncQueue(prev => prev.filter(p => !currentQueue.some(q => q.id === p.id && q._action === p._action)));
-          await fetchCloudTx();
           if (isManual) showStatus("success", "同步完成");
         } catch (e) {
           if (isManual) {
@@ -1065,7 +1061,8 @@
         const formattedTxs = (data.transactions || []).map((t, i) => ({
           id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
           date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
-          desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
+          desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || "",
+          editHistory: safeParse(t["EditHistory"], [])
         }));
         
         const formattedHistory = data.history || [];
@@ -1185,7 +1182,7 @@
         
         setHistoryCache(prev => [historyEntry, ...prev]);
         
-        const finalTx = { ...updatedTx, date: updatedTx.date }; // 保留原始日期
+        const finalTx = { ...updatedTx, date: updatedTx.date }; 
         
         setTransactions(prev => prev.map(t => t.id === finalTx.id ? finalTx : t));
         setTxCache(prev => prev.map(t => t.id === finalTx.id ? finalTx : t));
@@ -1266,17 +1263,17 @@
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         const baseList = transactions.length ? transactions : txCache;
+        const baseIds = new Set(baseList.map(t => t.id));
         
-        // 過濾掉本地已經標記為 DELETE 的項目
         const deleteIds = new Set(syncQueue.filter(q => q._action === 'DELETE').map(q => q.id));
         const activeBaseList = baseList.filter(t => !deleteIds.has(t.id));
         
-        // 替換已經被本地 UPDATE 的項目
         const updateMap = new Map(syncQueue.filter(q => q._action === 'UPDATE').map(q => [q.id, q]));
         const mergedList = activeBaseList.map(t => updateMap.has(t.id) ? { ...updateMap.get(t.id), isPending: true } : t);
 
-        // 加入本地新增的 ADD 項目
-        const pendingAdds = syncQueue.filter(q => !q._action || q._action === 'ADD').map(t => ({ ...t, isPending: true }));
+        const pendingAdds = syncQueue
+          .filter(q => (!q._action || q._action === 'ADD') && !baseIds.has(q.id))
+          .map(t => ({ ...t, isPending: true }));
         
         return [...pendingAdds, ...mergedList];
       }, [currentUser, transactions, txCache, syncQueue]);
@@ -1295,7 +1292,6 @@
       const groupTransactions = (list) => {
         const grouped = []; const groupMap = {};
         for (const tx of list) {
-          // 掛載編輯歷史
           const txHist = historyCache.filter(h => String(h.txId) === String(tx.id) && h.action !== 'DELETE')
                                      .sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp));
           tx.editHistory = txHist;
@@ -1319,11 +1315,10 @@
           }
         }
         
-        // 從歷史紀錄中找出已刪除的子項目並掛載為墓碑
         const deletedRecords = historyCache.filter(h => h.action === 'DELETE');
         for (const dr of deletedRecords) {
           if (dr.groupId && groupMap[dr.groupId]) {
-            if (!groupMap[dr.groupId].children.some(c => c.id === dr.txId)) {
+            if (!groupMap[dr.groupId].children.some(c => String(c.id) === String(dr.txId))) {
                let parsed = {};
                try { parsed = JSON.parse(dr.snapshot); } catch (e) {}
                groupMap[dr.groupId].children.push({
@@ -1332,13 +1327,12 @@
                  isDeleted: true,
                  deleteEditor: dr.editor,
                  deleteTime: dr.timestamp,
-                 editHistory: historyCache.filter(h => h.txId === dr.txId && h.action !== 'DELETE').sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp))
+                 editHistory: historyCache.filter(h => String(h.txId) === String(dr.txId) && h.action !== 'DELETE').sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp))
                });
             }
           }
         }
 
-        // 套用母項目的 Optimistic Update
         const groupUpdates = syncQueue.filter(q => q._action === 'UPDATE_GROUP');
         groupUpdates.forEach(gu => {
            const grp = groupMap[gu.groupId];
@@ -1351,7 +1345,6 @@
            }
         });
 
-        // 排序子項目
         for (const key in groupMap) {
            groupMap[key].children.sort((a, b) => Number(a.id) - Number(b.id));
         }
@@ -1359,19 +1352,15 @@
         return grouped;
       };
 
-      const allGroupedAndSorted = useMemo(() => {
-        let list = visibleTransactions;
-        if (historyFilter.minAmount) list = list.filter(t => Number(t.amount) >= Number(historyFilter.minAmount));
-        if (historyFilter.maxAmount) list = list.filter(t => Number(t.amount) <= Number(historyFilter.maxAmount));
-
-        const grouped = groupTransactions(list);
+      const myGroupedAndSorted = useMemo(() => {
+        const grouped = groupTransactions(myTransactions);
         return grouped.sort((a, b) => {
-          const tA = parseDateForSort(a.date); const tB = parseDateForSort(b.date);
-          if (tB !== tA) return tB - tA;
-          const idA = a.isGroup ? a.children[0].id : a.id; const idB = b.isGroup ? b.children[0].id : b.id;
-          return (Number(idB) || 0) - (Number(idA) || 0);
+           const tA = parseDateForSort(a.date); const tB = parseDateForSort(b.date);
+           if (tB !== tA) return tB - tA;
+           const idA = a.isGroup ? a.children[0].id : a.id; const idB = b.isGroup ? b.children[0].id : b.id;
+           return (Number(idB) || 0) - (Number(idA) || 0);
         });
-      }, [visibleTransactions, historyFilter.minAmount, historyFilter.maxAmount, syncQueue, historyCache]);
+      }, [myTransactions, syncQueue, historyCache]);
 
       const checkCatMatch = (tx, filterObj) => {
         const pCat = getParentCat(tx.category);
@@ -1400,7 +1389,7 @@
 
       const filteredHistoryGroups = useMemo(() => {
         if (!currentUser) return [];
-        let list = allGroupedAndSorted.filter(item => item.member === currentUser.name);
+        let list = myGroupedAndSorted;
 
         const cutoff = new Date();
         let useDateFilter = true;
@@ -1415,6 +1404,8 @@
         let customEndTs = historyFilter.customEnd ? new Date(`${historyFilter.customEnd}T23:59:59`).getTime() : Infinity;
 
         let filteredList = [];
+        const q = historySearch.trim().toLowerCase();
+
         for (let item of list) {
           const txTime = parseDateForSort(item.date);
           if (historyFilter.dateType === "custom") {
@@ -1424,7 +1415,6 @@
           }
           if (!historyFilter.types.includes(item.type)) continue;
 
-          const q = historySearch.trim().toLowerCase();
           const matchesSearch = (tx) => {
             if (!q) return true;
             return String(getParentCat(tx.category)).toLowerCase().includes(q) || 
@@ -1436,7 +1426,11 @@
           };
 
           if (item.isGroup) {
-            const validChildren = item.children.filter(c => checkCatMatch(c, historyFilter) && matchesSearch(c));
+            const validChildren = item.children.filter(c => {
+               if (historyFilter.minAmount && Number(c.amount) < Number(historyFilter.minAmount)) return false;
+               if (historyFilter.maxAmount && Number(c.amount) > Number(historyFilter.maxAmount)) return false;
+               return checkCatMatch(c, historyFilter) && matchesSearch(c);
+            });
             const groupMatchesSearch = !q || String(item.parentTitle || "").toLowerCase().includes(q) || String(item.parentDesc || "").toLowerCase().includes(q);
             const finalChildren = groupMatchesSearch ? item.children.filter(c => checkCatMatch(c, historyFilter)) : validChildren;
 
@@ -1448,11 +1442,13 @@
               });
             }
           } else {
+            if (historyFilter.minAmount && Number(item.amount) < Number(historyFilter.minAmount)) continue;
+            if (historyFilter.maxAmount && Number(item.amount) > Number(historyFilter.maxAmount)) continue;
             if (checkCatMatch(item, historyFilter) && matchesSearch(item)) filteredList.push(item);
           }
         }
         return filteredList;
-      }, [allGroupedAndSorted, currentUser, historyFilter, historySearch]);
+      }, [myGroupedAndSorted, currentUser, historyFilter, historySearch]);
 
       const isHistoryFiltered = useMemo(() => {
         return historySearch.trim() !== "" || 
@@ -1713,6 +1709,11 @@
         );
       };
 
+      const [animTrigger, setAnimTrigger] = useState(false);
+      useEffect(() => {
+        if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
+      }, [activeTab, analysisType, analysisFilter.dateType, selectedAnalysisLevel1, selectedAnalysisLevel2]);
+
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1868,6 +1869,7 @@
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
           
+          {/* 歷史頁面的獨立過濾器 */}
           <AdvancedFilterModal 
             isOpen={showHistoryFilter} 
             onClose={() => setShowHistoryFilter(false)} 
@@ -1876,6 +1878,7 @@
             transactions={myTransactions} 
           />
 
+          {/* 分析頁面的獨立過濾器 */}
           <AdvancedFilterModal 
             isOpen={showAnalysisFilter} 
             onClose={() => setShowAnalysisFilter(false)} 
@@ -1953,7 +1956,7 @@
                     最新動態
                   </h3>
                   <div className="space-y-3">
-                    {allGroupedAndSorted.slice(0, 5).map(item => renderItemOrGroup(item, false))}
+                    {myGroupedAndSorted.slice(0, 5).map(item => renderItemOrGroup(item, false))}
                   </div>
                 </div>
               </div>
@@ -2051,7 +2054,7 @@
                   let level1Totals = {}; let grandTotal = 0;
 
                   analysisTxs.forEach(t => {
-                    if (t.isDeleted) return; // 確保圖表不計算已被刪除的歷史紀錄
+                    if (t.isDeleted) return; 
                     const amt = Number(t.amount) || 0; grandTotal += amt;
                     if (analysisType === "beneficiary") {
                        const b = formatBen(t.beneficiary, t.member) || t.member;
@@ -2264,14 +2267,16 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V19] 編輯與刪除支援瞬間樂觀更新，新增編輯歷程紀錄 (保留前次數值)</li>
+                          <li>[V20] 修正 Race Condition，無縫背景同步消除空窗期，待同步項目永駐所有頁面</li>
+                          <li>[V19] 首頁與歷史篩選完全脫鉤，新增子項目刪除墓碑標記，並支援完整編輯歷史溯源</li>
                           <li>[V18.4] 重構清除損壞的重複代碼，恢復所有核心功能，解決所有白屏報錯</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V7] 資料表擴充第 12 欄 (EditHistory) 以支援版本控制紀錄</li>
+                          <li>[V7] 資料表擴充，新增獨立的歷史編輯表 (EditHistory) 支援完整快照備份</li>
+                          <li>[V6] 導入 CacheService 與 TextFinder，實現毫秒級讀取與光速搜尋</li>
                         </ul>
                       </div>
                     </div>
