@@ -47,7 +47,7 @@
       overflow-x: hidden;
     }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
-    .animate-in { animation: fadeIn 0.25s ease-out forwards; }
+    .animate-in { animation: fadeIn 0.2s ease-out forwards; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
     @keyframes cursor-blink { 0%,100%{opacity:1} 50%{opacity:0} }
     .animate-cursor { animation: cursor-blink 1s step-end infinite; }
@@ -64,25 +64,25 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本升級至 V12：導入 IndexedDB 解除容量限制
-    const APP_VERSION = "2026.02.27.PRO.V12";
-    const GAS_TARGET_VERSION = "2026.02.27.PRO.V6";
+    // 版本升級至 V19：編輯/刪除樂觀更新、編輯歷史版本控制(獨立分頁)、動態總計隱藏、刪除紀錄變墓碑
+    const APP_VERSION = "2026.02.28.PRO.V19";
+    const GAS_TARGET_VERSION = "2026.02.28.PRO.V7";
 
     const LS = {
-      pending: "pending_sync_v23",
-      txCache: "local_tx_cache_v23",
-      lastSync: "last_sync_time_v23",
-      members: "family_member_config_v23",
+      pending: "pending_sync_v25",
+      txCache: "local_tx_cache_v25",
+      historyCache: "local_history_cache_v25",
+      lastSync: "last_sync_time_v25",
+      members: "family_member_config_v25",
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
-      pinHashPrefix: "pin_hash_v23_",
+      pinHashPrefix: "pin_hash_v25_",
       bioCredPrefix: "bio_cred_",
       bioFailPrefix: "bio_fail_v1_", 
       bioLockPrefix: "bio_lock_v1_",
       greetingsCache: "greetings_cache_v1" 
     };
 
-    // --- 三口小家庭專用類別定義 ---
     const CATEGORY_MAP = {
       expense: {
         "食": ["早餐", "午餐", "晚餐", "生鮮食材", "零食/飲料", "外食聚餐", "其他"],
@@ -109,22 +109,36 @@
     const getChildCat = (catStr) => catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
 
     const BEN_OPTIONS = ["爸爸", "媽媽", "兒子", "其他"];
+    
     const formatBen = (benStr, memberName) => {
-      if (!benStr) return "";
+      if (!benStr) return memberName || "";
       const arr = benStr.split(",").filter(Boolean);
-      if (arr.length === 0) return "";
+      if (arr.length === 0) return memberName || "";
       if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家共同";
-      if (arr.length === 1 && arr[0] === memberName) return ""; 
+      if (arr.length === 1 && arr[0] === memberName) return memberName; 
       return arr.join("、");
     };
 
     const safeParse = (raw, fallback) => {
-      if (raw === null || raw === "null" || raw === "undefined") return fallback;
+      if (raw === null || raw === "null" || raw === "undefined" || raw === "") return fallback;
       try { const parsed = JSON.parse(raw); return parsed !== null ? parsed : fallback; } catch { return fallback; } 
     };
     const safeArrayLS = (key) => { const raw = localStorage.getItem(key); const v = safeParse(raw, []); return Array.isArray(v) ? v : []; };
     const safeStringLS = (key, fallback="") => { const v = localStorage.getItem(key); return (v === null || v === "null" || v === "undefined") ? fallback : v; };
     const safeNumberLS = (key, fallback=0) => { const v = Number(localStorage.getItem(key)); return Number.isFinite(v) ? v : fallback; };
+
+    const parseDateForSort = (val) => {
+      if (!val) return 0;
+      let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
+      return new Date(str).getTime() || 0;
+    };
+
+    const displayDateClean = (val) => {
+      if (!val) return "";
+      let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
+      const parts = str.split(" ");
+      return parts.length > 1 ? `${parts[0]} ${parts[1].split(":").slice(0,2).join(":")}` : str;
+    };
 
     const nowStr = () => {
       const d = new Date();
@@ -160,9 +174,8 @@
     const setBioLockedUntil = (name, ts) => localStorage.setItem(getBioLockKey(name), String(ts));
     const clearBioFail = (name) => { setBioFailCount(name, 0); setBioLockedUntil(name, 0); };
 
-    // 新增：IndexedDB (大倉庫) 初始化與封裝，徹底解除 5MB 容量限制
     const idbInit = () => new Promise((res, rej) => {
-      const req = indexedDB.open("FamilyAppDB", 1);
+      const req = indexedDB.open("FamilyAppDB", 3);
       req.onupgradeneeded = e => e.target.result.createObjectStore("store");
       req.onsuccess = () => res(req.result);
       req.onerror = () => rej(req.error);
@@ -179,7 +192,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
         bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
@@ -188,13 +201,64 @@
         check: <path d="M20 6L9 17l-5-5"/>,
         edit: <React.Fragment><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></React.Fragment>,
         trash: <React.Fragment><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></React.Fragment>,
-        layers: <React.Fragment><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></React.Fragment>
+        layers: <React.Fragment><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></React.Fragment>,
+        filter: <React.Fragment><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></React.Fragment>,
+        cloud: <React.Fragment><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></React.Fragment>,
+        clock: <React.Fragment><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></React.Fragment>
       };
       return (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 aspect-square ${className}`}>
           {icons[name] || <circle cx="12" cy="12" r="10" />}
         </svg>
       );
+    };
+
+    // --- 編輯歷史追蹤元件 ---
+    const ViewEditHistoryModal = ({ tx, onClose }) => {
+      const history = tx.editHistory || [];
+      return (
+        <div className="fixed inset-0 z-[700] bg-gray-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-in font-black text-left" onClick={(e) => { if(e.target === e.currentTarget) onClose(); }}>
+          <div className="w-full max-w-sm bg-white rounded-[2.5rem] p-6 relative max-h-[80vh] overflow-y-auto shadow-2xl">
+            <button onClick={onClose} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24} /></button>
+            <h2 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-2"><SvgIcon name="clock" size={20} className="text-blue-600"/> 編輯紀錄</h2>
+            
+            <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 before:to-transparent">
+              <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-blue-100 text-blue-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
+                  <span className="text-[10px]">目前</span>
+                </div>
+                <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-blue-200 shadow-sm bg-blue-50/50">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[9px] font-black text-blue-600 bg-blue-100 px-2 py-0.5 rounded-md">最新狀態</span>
+                  </div>
+                  <div className="font-bold text-sm text-gray-800">{getParentCat(tx.category)} - {getChildCat(tx.category)}</div>
+                  <div className="text-[10px] text-gray-500 my-1">對象: {formatBen(tx.beneficiary, tx.member)}</div>
+                  <div className="font-black text-lg text-blue-600">${Number(tx.amount).toLocaleString()}</div>
+                  {tx.desc && <div className="text-[10px] text-gray-500 mt-1">{tx.desc}</div>}
+                </div>
+              </div>
+
+              {history.map((h, i) => (
+                <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-gray-100 text-gray-400 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 relative z-10">
+                    <span className="text-[10px]">V{history.length - i}</span>
+                  </div>
+                  <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-gray-100 shadow-sm bg-white">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[9px] font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">{displayDateClean(h.timestamp)}</span>
+                    </div>
+                    <div className="font-bold text-sm text-gray-600 opacity-70">{getParentCat(h.category)} - {getChildCat(h.category)}</div>
+                    <div className="text-[10px] text-gray-400 my-1">對象: {formatBen(h.beneficiary, h.member)}</div>
+                    <div className="font-black text-lg text-gray-500">${Number(h.amount).toLocaleString()}</div>
+                    {h.desc && <div className="text-[10px] text-gray-400 mt-1">{h.desc}</div>}
+                    <div className="text-[9px] text-gray-400 mt-2 border-t border-gray-100 pt-2 text-right">由 {h.editor} {h.action === 'DELETE' ? '刪除' : '修改'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )
     };
 
     const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
@@ -237,6 +301,8 @@
       ]);
 
       const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
+
+      const dynamicBenOptions = [loginUser, ...BEN_OPTIONS.filter(b => b !== loginUser)];
 
       useEffect(() => { 
         setFormData(prev => ({ ...prev, member: loginUser || prev.member, beneficiary: [loginUser || prev.member] })); 
@@ -300,7 +366,7 @@
         }
       };
 
-      const isSubmitDisabled = isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
+      const isSubmitDisabled = (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
       return (
         <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black pb-8">
@@ -341,12 +407,12 @@
             {!isSplit && (
               <>
                 <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">對象</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">對象</label>
                   <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
-                    {BEN_OPTIONS.map(b => (
+                    {dynamicBenOptions.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
                         className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
-                        {b}
+                        {b === loginUser ? "自己" : b}
                       </button>
                     ))}
                   </div>
@@ -408,10 +474,10 @@
                         <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
                           <span className="text-[9px] font-bold text-gray-400 uppercase shrink-0">對象</span>
                           <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
-                            {BEN_OPTIONS.map(b => (
+                            {dynamicBenOptions.map(b => (
                               <button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)}
                                 className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-400"}`}>
-                                {b}
+                                {b === loginUser ? "自己" : b}
                               </button>
                             ))}
                           </div>
@@ -435,7 +501,7 @@
             </div>
           </div>
 
-          <button disabled={isSubmitDisabled} onClick={submitForm}
+          <button disabled={isSubmitDisabled || isLoading} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
             {isLoading ? <SvgIcon name="refresh" size={20} className="animate-spin" /> : null}
@@ -462,6 +528,8 @@
       }, [tx]);
 
       const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
+      
+      const dynamicBenOptions = [loginUser, ...BEN_OPTIONS.filter(b => b !== loginUser)];
 
       const toggleBeneficiary = (b) => {
         if (formData.beneficiary.includes(b)) {
@@ -500,10 +568,10 @@
                 <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex flex-wrap items-center justify-between gap-2">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">對象</label>
                   <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
-                    {BEN_OPTIONS.map(b => (
+                    {dynamicBenOptions.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
                         className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
-                        {b}
+                        {b === loginUser ? "自己" : b}
                       </button>
                     ))}
                   </div>
@@ -609,6 +677,194 @@
       );
     };
 
+    const AdvancedFilterModal = ({ isOpen, onClose, filterState, setFilterState, transactions }) => {
+      const [tempFilter, setTempFilter] = useState({ ...filterState });
+      const [newCondType, setNewCondType] = useState('include'); 
+      const [newCondLevel, setNewCondLevel] = useState('parent'); 
+      const [newCondVal, setNewCondVal] = useState('');
+
+      useEffect(() => { setTempFilter({ ...filterState }); }, [isOpen, filterState]);
+
+      const availableTxs = useMemo(() => {
+         const cutoff = new Date();
+         let useDate = true;
+         if (tempFilter.dateType === "7d") cutoff.setDate(cutoff.getDate() - 7);
+         else if (tempFilter.dateType === "1m") cutoff.setMonth(cutoff.getMonth() - 1);
+         else if (tempFilter.dateType === "3m") cutoff.setMonth(cutoff.getMonth() - 3);
+         else if (tempFilter.dateType === "6m") cutoff.setMonth(cutoff.getMonth() - 6);
+         else if (tempFilter.dateType === "1y") cutoff.setFullYear(cutoff.getFullYear() - 1);
+         else useDate = false;
+
+         let startTs = tempFilter.customStart ? new Date(`${tempFilter.customStart}T00:00:00`).getTime() : 0;
+         let endTs = tempFilter.customEnd ? new Date(`${tempFilter.customEnd}T23:59:59`).getTime() : Infinity;
+
+         return transactions.filter(t => {
+            const txTime = parseDateForSort(t.date);
+            if (tempFilter.dateType === "custom") {
+               if (txTime < startTs || txTime > endTs) return false;
+            } else if (useDate && txTime < cutoff.getTime()) {
+               return false;
+            }
+            if (!tempFilter.types.includes(t.type)) return false;
+            return true;
+         });
+      }, [transactions, tempFilter.dateType, tempFilter.customStart, tempFilter.customEnd, tempFilter.types]);
+
+      const { dynamicParents, dynamicChildren, dynamicBens } = useMemo(() => {
+         const pMap = {}; const cMap = {}; const bMap = {};
+         availableTxs.forEach(t => {
+            const p = getParentCat(t.category);
+            const c = getChildCat(t.category);
+            const b = formatBen(t.beneficiary, t.member) || "未知";
+            pMap[p] = (pMap[p] || 0) + 1;
+            cMap[c] = (cMap[c] || 0) + 1;
+            bMap[b] = (bMap[b] || 0) + 1;
+         });
+         return {
+            dynamicParents: Object.entries(pMap).sort((a,b)=>b[1]-a[1]).map(e => ({name: e[0], count: e[1]})),
+            dynamicChildren: Object.entries(cMap).sort((a,b)=>b[1]-a[1]).map(e => ({name: e[0], count: e[1]})),
+            dynamicBens: Object.entries(bMap).sort((a,b)=>b[1]-a[1]).map(e => ({name: e[0], count: e[1]}))
+         };
+      }, [availableTxs]);
+
+      useEffect(() => {
+        const options = newCondLevel === 'parent' ? dynamicParents : newCondLevel === 'child' ? dynamicChildren : dynamicBens;
+        if (!options.some(o => o.name === newCondVal) && options.length > 0) {
+           setNewCondVal(options[0].name);
+        } else if (options.length === 0) {
+           setNewCondVal('');
+        }
+      }, [newCondLevel, dynamicParents, dynamicChildren, dynamicBens]);
+
+      if (!isOpen) return null;
+
+      const handleAddCondition = () => {
+        if (!newCondVal) return;
+        if (tempFilter.catConditions.some(c => c.mode === newCondType && c.level === newCondLevel && c.val === newCondVal)) return;
+        setTempFilter({ ...tempFilter, catConditions: [...tempFilter.catConditions, { mode: newCondType, level: newCondLevel, val: newCondVal, id: Date.now() }] });
+      };
+
+      const handleRemoveCondition = (id) => {
+        setTempFilter({ ...tempFilter, catConditions: tempFilter.catConditions.filter(c => c.id !== id) });
+      };
+
+      const handleApply = () => { setFilterState(tempFilter); onClose(); };
+      const handleReset = () => { 
+        setTempFilter({ dateType: 'all', customStart: '', customEnd: '', types: ['expense', 'income'], catConditions: [], minAmount: '', maxAmount: '' }); 
+      };
+
+      return (
+        <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-sm flex flex-col items-center justify-end sm:justify-center animate-in font-black">
+          <div className="w-full max-w-md bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 relative max-h-[85vh] overflow-y-auto scrollbar-hide pb-10 shadow-2xl">
+            <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6 sm:hidden"></div>
+            <button onClick={onClose} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24} /></button>
+            <h2 className="text-xl font-black text-gray-800 mb-6 flex items-center gap-2"><SvgIcon name="filter" size={20} className="text-blue-600"/> 進階過濾</h2>
+
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-xs text-gray-400 uppercase tracking-widest mb-3">日期區間 (必選)</h3>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {['all', '7d', '1m', '3m', 'custom'].map(type => {
+                    const labels = { all: "全部", "7d": "近7天", "1m": "近1個月", "3m": "近3個月", custom: "自訂區間" };
+                    return (
+                      <button key={type} onClick={() => setTempFilter({...tempFilter, dateType: type})} 
+                        className={`px-4 py-2 rounded-xl text-xs transition-colors border ${tempFilter.dateType === type ? "bg-blue-600 text-white border-blue-600 shadow-sm" : "bg-white text-gray-600 border-gray-200"}`}>
+                        {labels[type]}
+                      </button>
+                    )
+                  })}
+                </div>
+                {tempFilter.dateType === 'custom' && (
+                  <div className="flex gap-2 items-center bg-gray-50 p-3 rounded-xl border border-gray-100 animate-in">
+                    <input type="date" value={tempFilter.customStart} onChange={e => setTempFilter({...tempFilter, customStart: e.target.value})} className="flex-1 bg-transparent font-black text-xs text-gray-700 outline-none" />
+                    <span className="text-gray-400 font-bold">~</span>
+                    <input type="date" value={tempFilter.customEnd} onChange={e => setTempFilter({...tempFilter, customEnd: e.target.value})} className="flex-1 bg-transparent font-black text-xs text-gray-700 outline-none" />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-xs text-gray-400 uppercase tracking-widest mb-3">收支類型</h3>
+                <div className="flex gap-2">
+                  {['expense', 'income'].map(type => {
+                    const isSelected = tempFilter.types.includes(type);
+                    return (
+                      <button key={type} onClick={() => {
+                        let newTypes = [...tempFilter.types];
+                        if (isSelected) newTypes = newTypes.filter(t => t !== type);
+                        else newTypes.push(type);
+                        if (newTypes.length === 0) newTypes = ['expense'];
+                        setTempFilter({...tempFilter, types: newTypes});
+                      }} className={`flex-1 py-3 rounded-xl text-sm transition-colors border-2 ${isSelected ? "bg-gray-800 text-white border-gray-800" : "bg-white text-gray-400 border-gray-200"}`}>
+                        {type === 'expense' ? '支出' : '收入'}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs text-gray-400 uppercase tracking-widest mb-3">金額範圍 (選填)</h3>
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1 relative bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                    <input type="number" placeholder="最小金額" value={tempFilter.minAmount} onChange={e => setTempFilter({...tempFilter, minAmount: e.target.value})} className="w-full bg-transparent pl-5 pr-2 outline-none text-sm font-black text-gray-800" />
+                  </div>
+                  <span className="text-gray-400 font-bold">~</span>
+                  <div className="flex-1 relative bg-gray-50 p-2.5 rounded-xl border border-gray-100">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                    <input type="number" placeholder="最大金額" value={tempFilter.maxAmount} onChange={e => setTempFilter({...tempFilter, maxAmount: e.target.value})} className="w-full bg-transparent pl-5 pr-2 outline-none text-sm font-black text-gray-800" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-4">
+                <h3 className="text-xs text-gray-400 uppercase tracking-widest mb-3 flex items-center justify-between">
+                  <span>分類排除與綁定 (選填)</span>
+                </h3>
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
+                  <div className="flex gap-2">
+                    <select value={newCondType} onChange={e => setNewCondType(e.target.value)} className="flex-1 bg-white border border-gray-200 rounded-lg text-xs font-black px-2 py-2 outline-none appearance-none">
+                      <option value="include">✅ 包含 (只要看這項)</option>
+                      <option value="exclude">❌ 排除 (不要算這項)</option>
+                    </select>
+                    <select value={newCondLevel} onChange={e => setNewCondLevel(e.target.value)} className="w-24 bg-white border border-gray-200 rounded-lg text-xs font-black px-2 py-2 outline-none appearance-none">
+                      <option value="parent">主類別</option>
+                      <option value="child">子項目</option>
+                      <option value="beneficiary">對象</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <select value={newCondVal} onChange={e => setNewCondVal(e.target.value)} className="flex-1 bg-white border border-gray-200 rounded-lg text-sm font-black px-3 py-2 outline-none appearance-none" disabled={!newCondVal}>
+                      {(newCondLevel === 'parent' ? dynamicParents : newCondLevel === 'child' ? dynamicChildren : dynamicBens).map(c => <option key={c.name} value={c.name}>{c.name} ({c.count}筆)</option>)}
+                      {!newCondVal && <option value="">無符合資料</option>}
+                    </select>
+                    <button onClick={handleAddCondition} disabled={!newCondVal} className="bg-gray-800 text-white px-4 rounded-lg text-xs active:scale-95 shadow-sm disabled:opacity-30">加入</button>
+                  </div>
+                </div>
+                
+                {tempFilter.catConditions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3 p-3 bg-white rounded-xl border border-gray-100 shadow-inner">
+                    {tempFilter.catConditions.map(c => (
+                      <div key={c.id} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-black border ${c.mode === 'include' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-red-50 text-red-600 border-red-200 line-through'}`}>
+                        <span>{c.val}</span>
+                        <button onClick={() => handleRemoveCondition(c.id)} className="ml-1 opacity-60 hover:opacity-100 bg-white/50 rounded-full p-0.5"><SvgIcon name="close" size={10} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button onClick={handleReset} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl active:scale-95 font-black text-sm">清空條件</button>
+              <button onClick={handleApply} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl active:scale-95 shadow-lg shadow-blue-500/30 font-black text-lg">套用過濾</button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     function App() {
       const [activeTab, setActiveTab] = useState("dashboard");
       const [familyConfig, setFamilyConfig] = useState(() => {
@@ -627,30 +883,41 @@
       const [fallbackToPin, setFallbackToPin] = useState(false);
 
       const [biometricAvailable, setBiometricAvailable] = useState(false);
-      const [isLoading, setIsLoading] = useState(false);
+      const [isSyncing, setIsSyncing] = useState(false);
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
+      const isLoading = loadingCard.show || isSyncing;
+
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
-      // 變更：改為非同步載入，初始為空陣列
       const [txCache, setTxCache] = useState([]);
+      const [historyCache, setHistoryCache] = useState([]);
       const [transactions, setTransactions] = useState([]);
       const [syncQueue, setSyncQueue] = useState([]);
 
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
-      const [editingIsPending, setEditingIsPending] = useState(false);
+      const [viewingHistory, setViewingHistory] = useState(null);
 
       const [expandedGroups, setExpandedGroups] = useState({});
       const [historySearch, setHistorySearch] = useState("");
-      const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
-      const [historyDateFilter, setHistoryDateFilter] = useState("all");
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
       
-      const [analysisDateFilter, setAnalysisDateFilter] = useState("1m");
-      const [analysisCustomStart, setAnalysisCustomStart] = useState("");
-      const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
+      const [showHistoryFilter, setShowHistoryFilter] = useState(false);
+      const [historyFilter, setHistoryFilter] = useState({
+        dateType: 'all', customStart: '', customEnd: '',
+        types: ['expense', 'income'], catConditions: [],
+        minAmount: '', maxAmount: ''
+      });
+
+      const [showAnalysisFilter, setShowAnalysisFilter] = useState(false);
+      const [analysisFilter, setAnalysisFilter] = useState({
+        dateType: '1m', customStart: '', customEnd: '',
+        types: ['expense', 'income'], catConditions: [],
+        minAmount: '', maxAmount: ''
+      });
+
       const [analysisType, setAnalysisType] = useState("expense"); 
       const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); 
       const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); 
@@ -667,17 +934,16 @@
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
-      // 新增：組件載入時，從 IndexedDB 大倉庫非同步提取歷史資料與暫存
       useEffect(() => {
         idbGet(LS.txCache).then(d => { if(Array.isArray(d) && d.length > 0) { setTxCache(d); setTransactions(d); } });
+        idbGet(LS.historyCache).then(d => { if(Array.isArray(d)) setHistoryCache(d); });
         idbGet(LS.pending).then(d => { if(Array.isArray(d) && d.length > 0) setSyncQueue(d); });
       }, []);
 
-      // 修改：巨量資料 (歷史與待同步) 改存入 IndexedDB
       useEffect(() => { idbSet(LS.pending, syncQueue); }, [syncQueue]);
       useEffect(() => { idbSet(LS.txCache, txCache); }, [txCache]);
+      useEffect(() => { idbSet(LS.historyCache, historyCache); }, [historyCache]);
       
-      // 維持：輕量設定資料繼續放在 LocalStorage 即可
       useEffect(() => { localStorage.setItem(LS.members, JSON.stringify(familyConfig)); }, [familyConfig]);
       useEffect(() => { localStorage.setItem(LS.lastSync, lastSyncText); }, [lastSyncText]);
       useEffect(() => { localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})); }, [greetingsCache]);
@@ -690,25 +956,84 @@
         }
       }, [currentUser, greetingsCache]);
 
-      useEffect(() => setHistoryVisibleCount(20), [historySearch, historyTypeFilter, historyDateFilter, activeTab]);
+      useEffect(() => setHistoryVisibleCount(20), [historySearch, historyFilter, activeTab]);
       useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
-      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
+      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisFilter]); 
       useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
 
       useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
       useEffect(() => { if (navigator.onLine && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, []);
-      useEffect(() => {
-        const onOnline = async () => { if (!navigator.onLine || !deviceValid()) return; await processQueueToCloud({ doRefreshFirst: true }); };
-        window.addEventListener("online", onOnline); return () => window.removeEventListener("online", onOnline);
-      }, [syncQueue]);
+      
+      const syncDataToCloud = async (isManual = false) => {
+        if (isSyncing || !navigator.onLine) return;
+        if (!deviceValid()) { 
+           if (isManual) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); }
+           return; 
+        }
+        
+        const currentQueue = [...syncQueue];
+        if (currentQueue.length === 0) {
+          if (isManual) {
+            setIsSyncing(true);
+            try { await fetchCloudTx(); showStatus("success", "同步完成"); } 
+            catch(e) { showStatus("error", "同步失敗"); } 
+            finally { setIsSyncing(false); }
+          }
+          return;
+        }
 
-      const displayDateClean = (val) => {
-        if (!val) return "";
-        let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(" (已編輯)", "").replace("(已編輯)", "").replace(/-/g, "/").replace("T", " ");
-        const parts = str.split(" ");
-        return parts.length > 1 ? `${parts[0]} ${parts[1].split(":").slice(0,2).join(":")}` : str;
+        setIsSyncing(true);
+        if (isManual) setLoadingCard({ show:true, text:`同步 ${currentQueue.length} 筆中...` });
+
+        try {
+          if (isManual) await refreshDeviceToken();
+          
+          const adds = currentQueue.filter(q => !q._action || q._action === 'ADD').map(q => ({...q, editHistory: JSON.stringify(q.editHistory || [])}));
+          const updates = currentQueue.filter(q => q._action === 'UPDATE');
+          const deletes = currentQueue.filter(q => q._action === 'DELETE');
+          const groupUpdates = currentQueue.filter(q => q._action === 'UPDATE_GROUP');
+          
+          if (adds.length > 0) {
+            const res = await postGAS({ action: "BATCH_ADD", transactions: adds, deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message || "新增同步失敗");
+          }
+
+          for (const u of updates) {
+            const payload = { ...u, editHistory: JSON.stringify(u.editHistory || []) };
+            const res = await postGAS({ ...payload, action:"UPDATE_TX", deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message || "更新同步失敗");
+          }
+
+          for (const d of deletes) {
+            const res = await postGAS({ action:"DELETE_TX", id: d.id, editor: d.editor, deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message || "刪除同步失敗");
+          }
+
+          for (const gu of groupUpdates) {
+            const res = await postGAS({ action:"UPDATE_GROUP_PARENT", groupId: gu.groupId, parentDesc: gu.parentDesc, date: gu.date, editor: gu.editor, deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message || "群組更新同步失敗");
+          }
+          
+          setSyncQueue(prev => prev.filter(p => !currentQueue.some(q => q.id === p.id && q._action === p._action)));
+          await fetchCloudTx();
+          if (isManual) showStatus("success", "同步完成");
+        } catch (e) {
+          if (isManual) {
+            const msg = e.message || "同步失敗"; showStatus("error", msg);
+            if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
+          }
+        } finally {
+          setIsSyncing(false);
+          if (isManual) setLoadingCard({ show:false, text:"" });
+        }
       };
+
+      useEffect(() => {
+        if (syncQueue.length > 0 && navigator.onLine && deviceValid() && !isSyncing) {
+          syncDataToCloud(false);
+        }
+      }, [syncQueue, navigator.onLine]);
 
       const forceReloginForToken = () => { setTimeout(() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setBootstrapSecret(""); setShowBootstrapModal(true); }, 2000); };
 
@@ -725,12 +1050,8 @@
         setDeviceToken(data.deviceToken, data.deviceExp); return data;
       };
 
-      // 新增：產生送到雲端專用的 Hash (與本地端隔離解鎖機制)
-      const getCloudPinHash = async (name, pin) => {
-        return await sha256Base64(`${name}::${pin}::cloud`);
-      };
+      const getCloudPinHash = async (name, pin) => { return await sha256Base64(`${name}::${pin}::cloud`); };
 
-      // 修改：送出加密後的 PIN
       const verifyPinOnline = async (name, pin) => {
         const hashedPin = await getCloudPinHash(name, pin);
         const res = await postGAS({ action:"VERIFY_PIN", name, pin: hashedPin, deviceToken: getDeviceToken() });
@@ -740,37 +1061,19 @@
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
-        const formatted = (data.transactions || []).map((t, i) => ({
+        
+        const formattedTxs = (data.transactions || []).map((t, i) => ({
           id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
           date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
           desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
         }));
-        setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); 
+        
+        const formattedHistory = data.history || [];
+        setHistoryCache(formattedHistory);
+        
+        setTransactions(formattedTxs); setTxCache(formattedTxs); setLastSyncText(nowStr()); 
         if (data.greetings) setGreetingsCache(data.greetings); 
-        return formatted;
-      };
-
-      // --- [核心修改點 1] 改為 BATCH_ADD 一次打包處理同步暫存 ---
-      const processQueueToCloud = async ({ doRefreshFirst }) => {
-        if (!navigator.onLine) return;
-        if (!deviceValid()) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); return; }
-        try {
-          if (doRefreshFirst) await refreshDeviceToken();
-          if (syncQueue.length > 0) {
-            setLoadingCard({ show:true, text:`正在批量同步 ${syncQueue.length} 筆暫存...` });
-            const res = await postGAS({ 
-              action: "BATCH_ADD", 
-              transactions: syncQueue, 
-              deviceToken: getDeviceToken() 
-            });
-            if (res.result !== "success") throw new Error(res.message || "同步失敗");
-            setSyncQueue([]);
-          }
-          await fetchCloudTx(); showStatus("success", "同步完成");
-        } catch (e) {
-          const msg = e.message || "同步失敗"; showStatus("error", msg);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { setLoadingCard({ show:false, text:"" }); }
+        return formattedTxs;
       };
 
       const handleSaveGreeting = async () => {
@@ -826,7 +1129,6 @@
         } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // 修改：將舊密碼與新密碼都加密後再送出
       const changePin = async () => {
         if (!navigator.onLine) { showStatus("error","需連線才能更換密碼"); return; }
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
@@ -843,87 +1145,141 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      const handleAdd = async (newTxs) => {
+      const handleAdd = (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
-        const baseId = Date.now(); const isMulti = newTxs.length > 1;
-        const groupId = isMulti ? `G${baseId}` : ""; const parentDesc = isMulti ? newTxs[0].parentDesc : "";
-        const completeTxs = newTxs.map((tx, idx) => ({ ...tx, date: baseDate, recorder: currentUser.name, id: String(baseId + idx), groupId, parentDesc }));
+        const baseId = Date.now(); 
+        const isMulti = newTxs.length > 1;
+        const groupId = isMulti ? `G${baseId}` : ""; 
+        const parentDesc = isMulti ? newTxs[0].parentDesc : "";
+        
+        const completeTxs = newTxs.map((tx, idx) => ({ 
+          ...tx, 
+          date: baseDate, 
+          recorder: currentUser.name, 
+          id: String(baseId + idx), 
+          groupId, 
+          parentDesc,
+          editHistory: [] 
+        }));
 
-        if (!navigator.onLine || !deviceValid()) {
-          setSyncQueue(prev => [...prev, ...completeTxs]); showStatus("info", `已暫存 ${completeTxs.length} 筆（待同步）`);
-          setActiveTab("dashboard"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return;
+        setSyncQueue(prev => [...prev, ...completeTxs.map(t => ({...t, _action: 'ADD'}))]);
+        setActiveTab("dashboard");
+        
+        if (navigator.onLine && deviceValid()) {
+          showStatus("success", "已儲存，背景同步中");
+        } else {
+          showStatus("info", "無網路，已暫存於設備");
         }
-
-        try {
-          setLoadingCard({ show:true, text: isMulti ? `正在一次性批量寫入 ${completeTxs.length} 筆...` : "正在寫入..." }); 
-          await refreshDeviceToken();
-          const res = await postGAS({ action: "BATCH_ADD", transactions: completeTxs, deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "寫入失敗");
-          
-          await fetchCloudTx(); showStatus("success", isMulti ? `已同步 ${completeTxs.length} 筆紀錄` : "已同步");
-        } catch (e) {
-          const msg = e.message || "寫入失敗"; setSyncQueue(prev => [...prev, ...completeTxs]);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) { showStatus("error", "憑證已過期，紀錄已暫存"); forceReloginForToken();
-          } else { showStatus("error", msg + "，已暫存"); }
-        } finally { setLoadingCard({ show:false, text:"" }); setActiveTab("dashboard"); }
       };
 
-      const handleUpdateTx = async (updatedTx) => {
-        if (editingIsPending) {
-          setSyncQueue(prev => prev.map(p => p.id === updatedTx.id ? { ...p, ...updatedTx } : p));
-          setEditingTx(null); setEditingIsPending(false); showStatus("success","暫存已更新"); return;
+      const handleUpdateTx = (updatedTx) => {
+        const oldTx = visibleTransactions.find(t => t.id === updatedTx.id) || {};
+        const historyEntry = {
+           timestamp: nowStr(),
+           txId: updatedTx.id,
+           groupId: updatedTx.groupId || "",
+           action: 'UPDATE',
+           editor: currentUser.name,
+           snapshot: JSON.stringify(oldTx)
+        };
+        
+        setHistoryCache(prev => [historyEntry, ...prev]);
+        
+        const finalTx = { ...updatedTx, date: updatedTx.date }; // 保留原始日期
+        
+        setTransactions(prev => prev.map(t => t.id === finalTx.id ? finalTx : t));
+        setTxCache(prev => prev.map(t => t.id === finalTx.id ? finalTx : t));
+
+        const isPendingAdd = syncQueue.some(q => q.id === finalTx.id && (!q._action || q._action === 'ADD'));
+        if (isPendingAdd) {
+           setSyncQueue(prev => prev.map(q => q.id === finalTx.id ? { ...finalTx, _action: 'ADD' } : q));
+        } else {
+           setSyncQueue(prev => {
+              const filtered = prev.filter(q => !(q.id === finalTx.id && q._action === 'UPDATE'));
+              return [...filtered, { ...finalTx, _action: 'UPDATE', editor: currentUser.name }];
+           });
         }
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能編輯"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return; }
-        try {
-          setLoadingCard({ show:true, text:"正在更新..." }); await refreshDeviceToken();
-          let finalDateStr = updatedTx.date;
-          if (finalDateStr && finalDateStr.includes("T")) finalDateStr = finalDateStr.replace("T"," ").replace(/-/g,"/");
-          if (!String(finalDateStr).includes("(已編輯)")) finalDateStr += " (已編輯)";
-          const res = await postGAS({ ...updatedTx, date: finalDateStr, action:"UPDATE_TX", deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "更新失敗");
-          await fetchCloudTx(); showStatus("success","已更新");
-        } catch (e) {
-          const msg = e.message || "更新失敗"; showStatus("error", msg);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { setLoadingCard({ show:false, text:"" }); setEditingTx(null); setEditingIsPending(false); }
+
+        setEditingTx(null);
+        showStatus("success", "已暫存修改，背景同步中");
       };
 
-      const handleUpdateGroupParent = async (groupData) => {
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能編輯母項目"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return; }
-        try {
-          setLoadingCard({ show:true, text:"正在更新母項目..." }); await refreshDeviceToken();
-          let finalDateStr = groupData.date;
-          if (finalDateStr && finalDateStr.includes("T")) finalDateStr = finalDateStr.replace("T"," ").replace(/-/g,"/");
-          if (!String(finalDateStr).includes("(已編輯)")) finalDateStr += " (已編輯)";
-          const res = await postGAS({ action:"UPDATE_GROUP_PARENT", groupId: groupData.groupId, parentDesc: groupData.parentDesc, date: finalDateStr, deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "更新失敗");
-          await fetchCloudTx(); showStatus("success","母項目已更新");
-        } catch (e) {
-          const msg = e.message || "更新失敗"; showStatus("error", msg);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { setLoadingCard({ show:false, text:"" }); setEditingGroup(null); }
+      const handleUpdateGroupParent = (groupData) => {
+        const children = visibleTransactions.filter(t => t.groupId === groupData.groupId);
+        const histRecs = children.map(oldTx => ({
+          timestamp: nowStr(),
+          txId: oldTx.id,
+          groupId: oldTx.groupId,
+          action: 'UPDATE_GROUP',
+          editor: currentUser.name,
+          snapshot: JSON.stringify(oldTx)
+        }));
+        setHistoryCache(prev => [...histRecs, ...prev]);
+
+        const updateFn = t => t.groupId === groupData.groupId ? { ...t, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : t;
+        setTransactions(prev => prev.map(updateFn));
+        setTxCache(prev => prev.map(updateFn));
+
+        const isPendingGroup = syncQueue.some(p => p.groupId === groupData.groupId && (!p._action || p._action === 'ADD'));
+        if (isPendingGroup) {
+          setSyncQueue(prev => prev.map(p => p.groupId === groupData.groupId ? { ...p, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : p));
+        } else {
+          setSyncQueue(prev => {
+            const filtered = prev.filter(q => !(q.groupId === groupData.groupId && q._action === 'UPDATE_GROUP'));
+            return [...filtered, { ...groupData, _action: 'UPDATE_GROUP', editor: currentUser.name }];
+          });
+        }
+        setEditingGroup(null);
+        showStatus("success", "已暫存母項目修改");
       };
 
-      const handleDeleteTx = async (id) => {
-        if (editingIsPending) {
-          setSyncQueue(prev => prev.filter(p => p.id !== id)); setEditingTx(null); setEditingIsPending(false); showStatus("success","暫存已刪除"); return;
+      const handleDeleteTx = (id) => {
+        const oldTx = visibleTransactions.find(t => t.id === id);
+        if (oldTx) {
+          const histRec = {
+            timestamp: nowStr(),
+            txId: id,
+            groupId: oldTx.groupId || "",
+            action: 'DELETE',
+            editor: currentUser.name,
+            snapshot: JSON.stringify(oldTx)
+          };
+          setHistoryCache(prev => [histRec, ...prev]);
         }
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能刪除"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return; }
-        try {
-          setLoadingCard({ show:true, text:"正在刪除..." }); await refreshDeviceToken();
-          const res = await postGAS({ action:"DELETE_TX", id, deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "刪除失敗");
-          await fetchCloudTx(); showStatus("success","已刪除");
-        } catch (e) {
-          const msg = e.message || "刪除失敗"; showStatus("error", msg);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { setLoadingCard({ show:false, text:"" }); setEditingTx(null); setEditingIsPending(false); }
+
+        setTransactions(prev => prev.filter(t => t.id !== id));
+        setTxCache(prev => prev.filter(t => t.id !== id));
+        
+        const isPendingAdd = syncQueue.some(q => q.id === id && (!q._action || q._action === 'ADD'));
+        if (isPendingAdd) {
+           setSyncQueue(prev => prev.filter(q => q.id !== id));
+        } else {
+           setSyncQueue(prev => {
+              const filtered = prev.filter(q => q.id !== id);
+              return [...filtered, { id: id, _action: 'DELETE', editor: currentUser.name }];
+           });
+        }
+        setEditingTx(null);
+        showStatus("success", "已刪除，背景同步中");
       };
 
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        return transactions.length ? transactions : txCache;
-      }, [currentUser, transactions, txCache]);
+        const baseList = transactions.length ? transactions : txCache;
+        
+        // 過濾掉本地已經標記為 DELETE 的項目
+        const deleteIds = new Set(syncQueue.filter(q => q._action === 'DELETE').map(q => q.id));
+        const activeBaseList = baseList.filter(t => !deleteIds.has(t.id));
+        
+        // 替換已經被本地 UPDATE 的項目
+        const updateMap = new Map(syncQueue.filter(q => q._action === 'UPDATE').map(q => [q.id, q]));
+        const mergedList = activeBaseList.map(t => updateMap.has(t.id) ? { ...updateMap.get(t.id), isPending: true } : t);
+
+        // 加入本地新增的 ADD 項目
+        const pendingAdds = syncQueue.filter(q => !q._action || q._action === 'ADD').map(t => ({ ...t, isPending: true }));
+        
+        return [...pendingAdds, ...mergedList];
+      }, [currentUser, transactions, txCache, syncQueue]);
 
       const myTransactions = useMemo(() => {
         if (!currentUser) return [];
@@ -939,6 +1295,11 @@
       const groupTransactions = (list) => {
         const grouped = []; const groupMap = {};
         for (const tx of list) {
+          // 掛載編輯歷史
+          const txHist = historyCache.filter(h => String(h.txId) === String(tx.id) && h.action !== 'DELETE')
+                                     .sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp));
+          tx.editHistory = txHist;
+
           if (tx.groupId) {
             if (!groupMap[tx.groupId]) {
               const parts = String(tx.parentDesc || "").split("|||");
@@ -946,83 +1307,274 @@
               const pDesc = parts.length > 1 ? parts[1] : "";
               groupMap[tx.groupId] = {
                 isGroup: true, groupId: tx.groupId, parentTitle: pTitle, parentDesc: pDesc, date: tx.date,
-                member: tx.member, recorder: tx.recorder, type: tx.type, amount: 0, children: []
+                member: tx.member, recorder: tx.recorder, type: tx.type, amount: 0, children: [], isPending: false
               };
               grouped.push(groupMap[tx.groupId]);
             }
             groupMap[tx.groupId].children.push(tx);
             groupMap[tx.groupId].amount += Number(tx.amount || 0);
+            if (tx.isPending) groupMap[tx.groupId].isPending = true;
           } else {
             grouped.push({ ...tx, isGroup: false });
           }
         }
+        
+        // 從歷史紀錄中找出已刪除的子項目並掛載為墓碑
+        const deletedRecords = historyCache.filter(h => h.action === 'DELETE');
+        for (const dr of deletedRecords) {
+          if (dr.groupId && groupMap[dr.groupId]) {
+            if (!groupMap[dr.groupId].children.some(c => c.id === dr.txId)) {
+               let parsed = {};
+               try { parsed = JSON.parse(dr.snapshot); } catch (e) {}
+               groupMap[dr.groupId].children.push({
+                 ...parsed,
+                 id: dr.txId,
+                 isDeleted: true,
+                 deleteEditor: dr.editor,
+                 deleteTime: dr.timestamp,
+                 editHistory: historyCache.filter(h => h.txId === dr.txId && h.action !== 'DELETE').sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp))
+               });
+            }
+          }
+        }
+
+        // 套用母項目的 Optimistic Update
+        const groupUpdates = syncQueue.filter(q => q._action === 'UPDATE_GROUP');
+        groupUpdates.forEach(gu => {
+           const grp = groupMap[gu.groupId];
+           if (grp) {
+               const parts = String(gu.parentDesc || "").split("|||");
+               grp.parentTitle = parts[0] || "拆分紀錄";
+               grp.parentDesc = parts[1] || "";
+               grp.date = gu.date;
+               grp.isPending = true;
+           }
+        });
+
+        // 排序子項目
+        for (const key in groupMap) {
+           groupMap[key].children.sort((a, b) => Number(a.id) - Number(b.id));
+        }
+        
         return grouped;
       };
 
-      const parseDateForSort = (val) => {
-        if (!val) return 0;
-        let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
-        return new Date(str).getTime() || 0;
-      };
-
       const allGroupedAndSorted = useMemo(() => {
-        const grouped = groupTransactions(visibleTransactions);
+        let list = visibleTransactions;
+        if (historyFilter.minAmount) list = list.filter(t => Number(t.amount) >= Number(historyFilter.minAmount));
+        if (historyFilter.maxAmount) list = list.filter(t => Number(t.amount) <= Number(historyFilter.maxAmount));
+
+        const grouped = groupTransactions(list);
         return grouped.sort((a, b) => {
           const tA = parseDateForSort(a.date); const tB = parseDateForSort(b.date);
           if (tB !== tA) return tB - tA;
           const idA = a.isGroup ? a.children[0].id : a.id; const idB = b.isGroup ? b.children[0].id : b.id;
           return (Number(idB) || 0) - (Number(idA) || 0);
         });
-      }, [visibleTransactions]);
+      }, [visibleTransactions, historyFilter.minAmount, historyFilter.maxAmount, syncQueue, historyCache]);
+
+      const checkCatMatch = (tx, filterObj) => {
+        const pCat = getParentCat(tx.category);
+        const cCat = getChildCat(tx.category);
+        const bCat = formatBen(tx.beneficiary, tx.member) || "未知";
+        const includes = filterObj.catConditions.filter(c => c.mode === 'include');
+        const excludes = filterObj.catConditions.filter(c => c.mode === 'exclude');
+
+        for (let ex of excludes) {
+          if (ex.level === 'parent' && pCat === ex.val) return false;
+          if (ex.level === 'child' && cCat === ex.val) return false;
+          if (ex.level === 'beneficiary' && bCat === ex.val) return false;
+        }
+        
+        if (includes.length > 0) {
+          const incParent = includes.filter(c => c.level === 'parent');
+          const incChild = includes.filter(c => c.level === 'child');
+          const incBen = includes.filter(c => c.level === 'beneficiary');
+
+          if (incParent.length > 0 && !incParent.some(c => c.val === pCat)) return false;
+          if (incChild.length > 0 && !incChild.some(c => c.val === cCat)) return false;
+          if (incBen.length > 0 && !incBen.some(c => c.val === bCat)) return false;
+        }
+        return true;
+      };
 
       const filteredHistoryGroups = useMemo(() => {
         if (!currentUser) return [];
         let list = allGroupedAndSorted.filter(item => item.member === currentUser.name);
-        if (historyTypeFilter !== "all") list = list.filter(item => item.type === historyTypeFilter);
-        if (historyDateFilter !== "all") {
-          const now = new Date(); const cutoff = new Date();
-          if (historyDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
-          else if (historyDateFilter === "14d") cutoff.setDate(now.getDate() - 14);
-          else if (historyDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
-          else if (historyDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
-          else if (historyDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
-          else if (historyDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
-          list = list.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
-        }
 
-        const searchTxt = historySearch.trim();
-        const dateRangeRegex = /^(\d{4}\/\d{1,2}\/\d{1,2})\s*-\s*(\d{4}\/\d{1,2}\/\d{1,2})$/;
-        const match = searchTxt.match(dateRangeRegex);
+        const cutoff = new Date();
+        let useDateFilter = true;
+        if (historyFilter.dateType === "7d") cutoff.setDate(cutoff.getDate() - 7);
+        else if (historyFilter.dateType === "1m") cutoff.setMonth(cutoff.getMonth() - 1);
+        else if (historyFilter.dateType === "3m") cutoff.setMonth(cutoff.getMonth() - 3);
+        else if (historyFilter.dateType === "6m") cutoff.setMonth(cutoff.getMonth() - 6);
+        else if (historyFilter.dateType === "1y") cutoff.setFullYear(cutoff.getFullYear() - 1);
+        else useDateFilter = false;
 
-        if (match) {
-          const startTimestamp = new Date(`${match[1]} 00:00:00`).getTime();
-          const endTimestamp = new Date(`${match[2]} 23:59:59`).getTime();
-          if (!isNaN(startTimestamp) && !isNaN(endTimestamp)) {
-            list = list.filter(item => { const txTime = parseDateForSort(item.date); return txTime >= startTimestamp && txTime <= endTimestamp; });
+        let customStartTs = historyFilter.customStart ? new Date(`${historyFilter.customStart}T00:00:00`).getTime() : 0;
+        let customEndTs = historyFilter.customEnd ? new Date(`${historyFilter.customEnd}T23:59:59`).getTime() : Infinity;
+
+        let filteredList = [];
+        for (let item of list) {
+          const txTime = parseDateForSort(item.date);
+          if (historyFilter.dateType === "custom") {
+            if (txTime < customStartTs || txTime > customEndTs) continue;
+          } else if (useDateFilter && txTime < cutoff.getTime()) {
+            continue;
           }
-        } else if (searchTxt) {
-          const q = searchTxt.toLowerCase();
-          list = list.filter(item => {
-            if (item.isGroup) {
-              const groupMatch = String(item.parentTitle || "").toLowerCase().includes(q) || String(item.parentDesc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q);
-              const childMatch = item.children.some(tx => String(getParentCat(tx.category)).toLowerCase().includes(q) || String(getChildCat(tx.category)).toLowerCase().includes(q) || String(tx.desc || "").toLowerCase().includes(q) || String(tx.amount || "").includes(q) || String(tx.beneficiary || "").toLowerCase().includes(q));
-              return groupMatch || childMatch;
-            } else {
-              return String(getParentCat(item.category)).toLowerCase().includes(q) || String(getChildCat(item.category)).toLowerCase().includes(q) || String(item.desc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q) || String(item.beneficiary || "").toLowerCase().includes(q);
+          if (!historyFilter.types.includes(item.type)) continue;
+
+          const q = historySearch.trim().toLowerCase();
+          const matchesSearch = (tx) => {
+            if (!q) return true;
+            return String(getParentCat(tx.category)).toLowerCase().includes(q) || 
+                   String(getChildCat(tx.category)).toLowerCase().includes(q) || 
+                   String(tx.desc || "").toLowerCase().includes(q) || 
+                   String(tx.amount || "").includes(q) || 
+                   String(tx.date || "").includes(q) || 
+                   String(tx.beneficiary || "").toLowerCase().includes(q);
+          };
+
+          if (item.isGroup) {
+            const validChildren = item.children.filter(c => checkCatMatch(c, historyFilter) && matchesSearch(c));
+            const groupMatchesSearch = !q || String(item.parentTitle || "").toLowerCase().includes(q) || String(item.parentDesc || "").toLowerCase().includes(q);
+            const finalChildren = groupMatchesSearch ? item.children.filter(c => checkCatMatch(c, historyFilter)) : validChildren;
+
+            if (finalChildren.length > 0) {
+              filteredList.push({
+                ...item,
+                children: finalChildren,
+                amount: finalChildren.filter(c => !c.isDeleted).reduce((s, c) => s + (Number(c.amount)||0), 0)
+              });
             }
-          });
+          } else {
+            if (checkCatMatch(item, historyFilter) && matchesSearch(item)) filteredList.push(item);
+          }
         }
-        return list;
-      }, [allGroupedAndSorted, currentUser, historyTypeFilter, historyDateFilter, historySearch]);
+        return filteredList;
+      }, [allGroupedAndSorted, currentUser, historyFilter, historySearch]);
+
+      const isHistoryFiltered = useMemo(() => {
+        return historySearch.trim() !== "" || 
+               historyFilter.dateType !== 'all' || 
+               historyFilter.types.length < 2 || 
+               historyFilter.catConditions.length > 0 || 
+               historyFilter.minAmount !== '' || 
+               historyFilter.maxAmount !== '';
+      }, [historySearch, historyFilter]);
+
+      const historyTotals = useMemo(() => {
+        let exp = 0, inc = 0;
+        filteredHistoryGroups.forEach(item => {
+           if (item.isGroup) {
+              item.children.forEach(c => {
+                 if (c.isDeleted) return;
+                 if (c.type === 'expense') exp += (Number(c.amount)||0);
+                 else inc += (Number(c.amount)||0);
+              });
+           } else {
+              if (item.isDeleted) return;
+              if (item.type === 'expense') exp += (Number(item.amount)||0);
+              else inc += (Number(item.amount)||0);
+           }
+        });
+        return { exp, inc };
+      }, [filteredHistoryGroups]);
+
+      const filteredAnalysisTxs = useMemo(() => {
+        if (!currentUser) return [];
+        const cutoff = new Date();
+        let useDateFilter = true;
+        if (analysisFilter.dateType === "7d") cutoff.setDate(cutoff.getDate() - 7);
+        else if (analysisFilter.dateType === "1m") cutoff.setMonth(cutoff.getMonth() - 1);
+        else if (analysisFilter.dateType === "3m") cutoff.setMonth(cutoff.getMonth() - 3);
+        else if (analysisFilter.dateType === "6m") cutoff.setMonth(cutoff.getMonth() - 6);
+        else if (analysisFilter.dateType === "1y") cutoff.setFullYear(cutoff.getFullYear() - 1);
+        else useDateFilter = false;
+
+        let customStartTs = analysisFilter.customStart ? new Date(`${analysisFilter.customStart}T00:00:00`).getTime() : 0;
+        let customEndTs = analysisFilter.customEnd ? new Date(`${analysisFilter.customEnd}T23:59:59`).getTime() : Infinity;
+
+        return visibleTransactions.filter(t => {
+          if (t.member !== currentUser.name || t.isDeleted) return false;
+          if (analysisFilter.minAmount && Number(t.amount) < Number(analysisFilter.minAmount)) return false;
+          if (analysisFilter.maxAmount && Number(t.amount) > Number(analysisFilter.maxAmount)) return false;
+
+          const txTime = parseDateForSort(t.date);
+          if (analysisFilter.dateType === "custom") {
+            if (txTime < customStartTs || txTime > customEndTs) return false;
+          } else if (useDateFilter && txTime < cutoff.getTime()) {
+            return false;
+          }
+
+          if (analysisType === "expense" || analysisType === "income") {
+            if (t.type !== analysisType) return false;
+          } else if (analysisType === "beneficiary") {
+            if (t.type !== "expense") return false;
+          }
+
+          if (!checkCatMatch(t, analysisFilter)) return false;
+          return true;
+        });
+      }, [visibleTransactions, analysisFilter, analysisType, currentUser]);
+
+      const analysisData = useMemo(() => {
+        let level1Data = {};
+        filteredAnalysisTxs.forEach(t => {
+          const benGroup = formatBen(t.beneficiary, t.member) || t.member;
+          const amt = Number(t.amount) || 0;
+          const p = getParentCat(t.category);
+          const c = getChildCat(t.category);
+
+          const b = benGroup;
+          if (!level1Data[b]) level1Data[b] = { total: 0, parents: {} };
+          level1Data[b].total += amt;
+
+          if (!level1Data[b].parents[p]) level1Data[b].parents[p] = { total: 0, children: {} };
+          level1Data[b].parents[p].total += amt;
+
+          if (!level1Data[b].parents[p].children[c]) level1Data[b].parents[p].children[c] = 0;
+          level1Data[b].parents[p].children[c] += amt;
+        });
+        return level1Data;
+      }, [filteredAnalysisTxs]);
+
+      const totalAnalysisAmount = useMemo(() => Object.values(analysisData).reduce((s,v) => s + v.total, 0), [analysisData]);
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
+      const jumpToHistoryFromChart = (childCat, benCat = null, parentCat = null) => {
+        const newConds = [{ mode: 'include', level: 'child', val: childCat, id: Date.now() }];
+        if (parentCat) newConds.push({ mode: 'include', level: 'parent', val: parentCat, id: Date.now() + 1 });
+        if (benCat) newConds.push({ mode: 'include', level: 'beneficiary', val: benCat, id: Date.now() + 2 });
+
+        setHistoryFilter({
+          dateType: analysisFilter.dateType,
+          customStart: analysisFilter.customStart,
+          customEnd: analysisFilter.customEnd,
+          types: [analysisType === 'beneficiary' ? 'expense' : analysisType],
+          catConditions: newConds,
+          minAmount: analysisFilter.minAmount, 
+          maxAmount: analysisFilter.maxAmount
+        });
+        setHistorySearch("");
+        setActiveTab("history");
+      };
+
       const renderStandaloneCard = (tx, allowEdit = true) => {
-        const benTag = formatBen(tx.beneficiary, tx.member);
-        const showBenTag = benTag && benTag !== "";
+        const rawBen = formatBen(tx.beneficiary, tx.member);
+        const benTag = rawBen === currentUser.name ? "" : rawBen;
+        const showBenTag = benTag !== "";
+        const hasHistory = tx.editHistory && tx.editHistory.length > 0;
+
         return (
-          <div key={tx.id} className="flex gap-2 items-center mb-3">
-            <div className="flex-1 bg-white p-3 sm:p-4 rounded-3xl border border-gray-100 flex items-center gap-2 sm:gap-3 shadow-sm relative overflow-hidden">
+          <div key={tx.id} className="bg-white rounded-3xl border border-gray-100 flex items-center gap-2 sm:gap-3 shadow-sm relative overflow-hidden mb-3 pr-2 sm:pr-3">
+            {tx.isPending && (
+              <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[9px] font-black px-2 py-1 rounded-bl-xl shadow-sm z-10 flex items-center gap-1">
+                <SvgIcon name="refresh" size={10} className="animate-spin opacity-70" /> 未同步
+              </div>
+            )}
+            <div className="flex-1 p-3 sm:p-4 flex items-center gap-2 sm:gap-3 pr-0 mt-1">
               <div className="relative shrink-0">
                 <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
@@ -1037,6 +1589,11 @@
                 <div className="font-bold text-[14px] sm:text-[15px] truncate text-gray-800 flex items-center gap-1.5 flex-wrap">
                   {getParentCat(tx.category)} - {getChildCat(tx.category)}
                   {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200 break-keep">{benTag}</span>}
+                  {hasHistory && (
+                    <span onClick={(e) => { e.stopPropagation(); setViewingHistory(tx); }} className="bg-blue-50 text-blue-500 text-[9px] px-1.5 py-0.5 rounded-md border border-blue-100 cursor-pointer flex items-center gap-0.5 active:bg-blue-100">
+                      📝 已編輯({tx.editHistory.length})
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-col gap-1 mt-1.5 w-full">
                   <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(tx.date)}</span>
@@ -1054,12 +1611,10 @@
                 )}
               </div>
             </div>
-            {allowEdit && (
-              <div className="flex flex-col justify-center shrink-0 pr-1">
-                <button onClick={() => setEditingTx(tx)} className="w-9 h-9 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100 shadow-sm">
-                  <SvgIcon name="edit" size={16} />
-                </button>
-              </div>
+            {allowEdit && !tx.isDeleted && (
+              <button onClick={(e) => { e.stopPropagation(); setEditingTx(tx); }} className="w-8 h-8 shrink-0 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform shadow-sm mt-1">
+                <SvgIcon name="edit" size={14} />
+              </button>
             )}
           </div>
         );
@@ -1069,23 +1624,25 @@
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
         group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
-        const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
+        const rawParentBen = formatBen(Array.from(allBens).join(","), group.member);
+        const parentBenTag = rawParentBen === currentUser.name ? "" : rawParentBen;
 
         return (
-          <div key={group.groupId} className="flex gap-2 items-start mb-3">
-            <div className="flex-1 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-              <div onClick={() => toggleGroup(group.groupId)} className="p-3 sm:p-4 flex items-center gap-2 sm:gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
+          <div key={group.groupId} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden mb-3 transition-all duration-300 relative">
+            {group.isPending && (
+              <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[9px] font-black px-2 py-1 rounded-bl-xl shadow-sm z-20 flex items-center gap-1">
+                <SvgIcon name="refresh" size={10} className="animate-spin opacity-70" /> 未同步
+              </div>
+            )}
+            <div className="flex items-center pr-2 sm:pr-3 cursor-pointer active:bg-gray-50 transition-colors relative mt-1" onClick={() => toggleGroup(group.groupId)}>
+              <div className="flex-1 p-3 sm:p-4 flex items-center gap-2 sm:gap-3 pr-0">
                 <div className="relative shrink-0">
                   <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                     {group.type==="income" ? "收入" : "支出"}
                   </div>
-                  <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">
-                    多筆
-                  </div>
+                  <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
                   {group.member !== currentUser.name && (
-                    <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
-                      {group.member}
-                    </div>
+                    <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div>
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
@@ -1104,59 +1661,56 @@
                     ${Number(group.amount||0).toLocaleString()}
                   </div>
                   {group.recorder && group.recorder !== group.member && (
-                    <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
-                      ✍️ {group.recorder}代記
-                    </div>
+                    <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>✍️ {group.recorder}代記</div>
                   )}
                 </div>
               </div>
-
-              {isExp && (
-                <div className="bg-gray-50/80 p-2 sm:p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
-                  {group.children.map((child, idx) => {
-                    const childBen = formatBen(child.beneficiary, group.member);
-                    return (
-                      <div key={child.id} className="flex gap-2 items-center">
-                        <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-white p-2 sm:p-3 rounded-2xl shadow-sm border border-gray-200">
-                          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[9px] sm:text-[10px] font-black flex items-center justify-center shrink-0">
-                            {idx + 1}
-                          </div>
-                          <div className="flex-1 min-w-0 pr-1 sm:pr-2 border-r border-gray-100">
-                            <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1 sm:gap-2 flex-wrap">
-                              {getParentCat(child.category)} - {getChildCat(child.category)}
-                              {childBen && <span className="bg-gray-100 text-gray-500 text-[8px] px-1 py-0.5 rounded-md border border-gray-200 break-keep">{childBen}</span>}
-                            </div>
-                            {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
-                          </div>
-                          <div className={`font-black tabular-nums text-xs sm:text-sm shrink-0 w-14 sm:w-16 text-right ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
-                            ${Number(child.amount||0).toLocaleString()}
-                          </div>
-                        </div>
-                        {allowEdit && (
-                          <button onClick={() => setEditingTx(child)} className="w-8 h-8 shrink-0 bg-blue-50/80 text-blue-600 rounded-lg flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
-                            <SvgIcon name="edit" size={14} />
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+              {allowEdit && (
+                <button onClick={(e) => { e.stopPropagation(); setEditingGroup(group); }} className="w-8 h-8 shrink-0 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform shadow-sm">
+                  <SvgIcon name="edit" size={14} />
+                </button>
               )}
             </div>
-            {allowEdit && (
-              <div className="flex flex-col justify-center shrink-0 pr-1 mt-1">
-                 <button onClick={() => setEditingGroup(group)} className="w-9 h-9 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100 shadow-sm">
-                   <SvgIcon name="edit" size={16} />
-                 </button>
+
+            {isExp && (
+              <div className="bg-gray-50/80 p-2 sm:p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner relative">
+                {group.children.map((child, idx) => {
+                  const rawChildBen = formatBen(child.beneficiary, group.member);
+                  const childBenTag = rawChildBen === currentUser.name ? "" : rawChildBen;
+                  const hasHistory = child.editHistory && child.editHistory.length > 0;
+                  return (
+                    <div key={child.id} className="flex items-center gap-2 pr-1 relative">
+                      <div className={`flex-1 flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-2xl shadow-sm border border-gray-200 pr-3 ${child.isDeleted ? 'opacity-60 bg-gray-100' : 'bg-white'}`}>
+                        <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[9px] sm:text-[10px] font-black flex items-center justify-center shrink-0">{idx + 1}</div>
+                        <div className="flex-1 min-w-0 pr-1 sm:pr-2 border-r border-gray-100">
+                          <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1 sm:gap-2 flex-wrap">
+                            <span className={child.isDeleted ? 'line-through text-gray-400' : ''}>{getParentCat(child.category)} - {getChildCat(child.category)}</span>
+                            {childBenTag && <span className="bg-gray-100 text-gray-500 text-[8px] px-1 py-0.5 rounded-md border border-gray-200 break-keep">{childBenTag}</span>}
+                            {hasHistory && !child.isDeleted && (
+                              <span onClick={(e) => { e.stopPropagation(); setViewingHistory(child); }} className="bg-blue-50 text-blue-500 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-100 cursor-pointer flex items-center gap-0.5 active:bg-blue-100">
+                                📝({child.editHistory.length})
+                              </span>
+                            )}
+                          </div>
+                          {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
+                          {child.isDeleted && <div className="text-[9px] text-red-500 mt-0.5 font-bold">由 {child.deleteEditor} 刪除於 {displayDateClean(child.deleteTime)}</div>}
+                        </div>
+                        <div className={`font-black tabular-nums text-xs sm:text-sm shrink-0 w-14 sm:w-16 text-right ${child.isDeleted ? 'line-through text-gray-400' : child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
+                          ${Number(child.amount||0).toLocaleString()}
+                        </div>
+                      </div>
+                      {allowEdit && !child.isDeleted && (
+                        <button onClick={(e) => { e.stopPropagation(); setEditingTx(child); }} className="w-7 h-7 shrink-0 bg-blue-50/80 text-blue-600 rounded-lg flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
+                          <SvgIcon name="edit" size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
         );
-      };
-
-      const renderItemOrGroup = (item, allowEdit) => {
-        if (item.isGroup) return renderGroupCard(item, allowEdit);
-        return renderStandaloneCard(item, allowEdit);
       };
 
       const handleUserClick = async (user) => {
@@ -1169,7 +1723,7 @@
             setCurrentUser(user);
             setSelectingUser(null);
             setPinInput("");
-            if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
+            if (navigator.onLine && deviceValid()) { setTimeout(() => syncDataToCloud(true), 50); }
           } else {
             setFallbackToPin(true);
           }
@@ -1220,7 +1774,7 @@
                           const ok = await handleBioLoginLocal(selectingUser.name);
                           if (ok) {
                             setCurrentUser(selectingUser); setSelectingUser(null); setPinInput("");
-                            if (navigator.onLine && deviceValid()) setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
+                            if (navigator.onLine && deviceValid()) setTimeout(() => syncDataToCloud(true), 50);
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1253,7 +1807,7 @@
                                     if (!ok) { showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）"); setPinInput(""); return; }
                                   }
                                   setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); setFallbackToPin(false);
-                                  if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
+                                  if (navigator.onLine && deviceValid()) { setTimeout(() => syncDataToCloud(true), 50); }
                                 } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "PIN 錯誤"); setPinInput(""); }
                               }
                             }} className="bg-white/5 h-16 rounded-2xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white shadow-sm hover:bg-white/10">
@@ -1310,8 +1864,25 @@
 
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
+          {viewingHistory && <ViewEditHistoryModal tx={viewingHistory} onClose={() => setViewingHistory(null)} />}
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
+          
+          <AdvancedFilterModal 
+            isOpen={showHistoryFilter} 
+            onClose={() => setShowHistoryFilter(false)} 
+            filterState={historyFilter} 
+            setFilterState={setHistoryFilter} 
+            transactions={myTransactions} 
+          />
+
+          <AdvancedFilterModal 
+            isOpen={showAnalysisFilter} 
+            onClose={() => setShowAnalysisFilter(false)} 
+            filterState={analysisFilter} 
+            setFilterState={setAnalysisFilter} 
+            transactions={myTransactions} 
+          />
           
           {showUnbindModal && (
             <div className="fixed inset-0 z-[350] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) {setShowUnbindModal(false); setUnbindPin("");} }}>
@@ -1320,7 +1891,7 @@
                 <h3 className="font-black text-lg mb-2">解除綁定</h3>
                 <p className="text-[11px] text-gray-500 mb-5">請輸入 PIN 驗證後才能解除。</p>
                 <input value={unbindPin} onChange={(e)=>setUnbindPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="輸入 6 位 PIN" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-4" />
-                <button onClick={unbindDeviceBio} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">確認解除</button>
+                <button onClick={unbindDeviceBio} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isLoading}>確認解除</button>
               </div>
             </div>
           )}
@@ -1334,7 +1905,7 @@
                 <input value={oldPin} onChange={(e)=>setOldPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="舊 PIN（6 位）" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
                 <input value={newPin} onChange={(e)=>setNewPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="新 PIN（6 位）" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
                 <input value={newPin2} onChange={(e)=>setNewPin2(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="再次輸入新 PIN" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
-                <button onClick={changePin} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">確認更換</button>
+                <button onClick={changePin} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isLoading}>確認更換</button>
               </div>
             </div>
           )}
@@ -1349,14 +1920,17 @@
                 <p className="text-[10px] text-gray-400 font-bold tracking-widest leading-none">{customSubtitle.replace(/{name}/g, currentUser.name)}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right leading-none hidden sm:block">
+            <div className="flex items-center gap-2">
+              <div className="text-right leading-none hidden sm:block mr-1">
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
-              <button onClick={() => processQueueToCloud({ doRefreshFirst: true })} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
-                <SvgIcon name="refresh" size={20}/>
-                {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
+              <button onClick={() => syncDataToCloud(true)} disabled={isLoading} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex flex-col items-center justify-center border border-blue-100 disabled:opacity-50">
+                <SvgIcon name="cloud" size={18} className={isSyncing ? "animate-pulse text-blue-400" : ""}/>
+                <span className={`text-[8px] font-black mt-0.5 ${isSyncing ? "text-blue-500" : navigator.onLine ? "text-green-500" : "text-gray-400"}`}>
+                  {isSyncing ? "同步中" : navigator.onLine ? "線上" : "離線"}
+                </span>
+                {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
               </button>
             </div>
           </header>
@@ -1375,7 +1949,9 @@
                 </div>
 
                 <div className="space-y-4 text-left">
-                  <h3 className="font-black text-lg px-1 text-gray-800">最新動態</h3>
+                  <h3 className="font-black text-lg px-1 text-gray-800 flex items-center gap-2">
+                    最新動態
+                  </h3>
                   <div className="space-y-3">
                     {allGroupedAndSorted.slice(0, 5).map(item => renderItemOrGroup(item, false))}
                   </div>
@@ -1385,40 +1961,49 @@
 
             {activeTab === "history" && (
               <div className="space-y-4 animate-in pb-20 text-left">
-                <h3 className="font-black text-xl px-1 text-gray-800 mb-2">歷史清單</h3>
-                
-                <div className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 space-y-3">
-                  <div>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><SvgIcon name="search" size={16} className="text-gray-400" /></div>
-                      <input type="text" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="搜尋備註、類別或日期..." className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-2xl font-black text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-gray-800 placeholder:text-gray-400" />
+                <div className="flex items-center justify-between px-1 mb-4 gap-2">
+                  <h3 className="font-black text-xl text-gray-800 shrink-0">歷史清單</h3>
+                  
+                  <div className="flex-1 flex items-center justify-end gap-1.5">
+                    <div className="relative w-full max-w-[150px]">
+                      <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none"><SvgIcon name="search" size={14} className="text-gray-400" /></div>
+                      <input type="text" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="搜尋..." className="w-full pl-8 pr-3 py-2 bg-white border border-gray-200 rounded-xl font-black text-xs outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-gray-800 placeholder:text-gray-400 shadow-sm" />
                     </div>
-                    {!historySearch && (
-                      <div className="text-[10px] text-gray-400 px-2 mt-2 font-bold leading-relaxed">
-                        💡 搜尋範例：輸入「水費」、「晚餐」<br/>
-                        📅 區間搜尋範例：輸入「2026/02/24-2026/02/28」可尋找該區間紀錄
-                      </div>
-                    )}
-                  </div>
+                    
+                    <button onClick={() => setShowHistoryFilter(true)} className={`p-2 flex items-center justify-center rounded-xl transition-colors shadow-sm ${isHistoryFiltered ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      <SvgIcon name="filter" size={16} />
+                    </button>
 
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="flex-1 relative">
-                      <select value={historyTypeFilter} onChange={(e) => setHistoryTypeFilter(e.target.value)} className="w-full appearance-none bg-gray-50 py-2.5 pl-4 pr-8 rounded-xl font-black text-xs text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20">
-                        <option value="all">全部收支</option><option value="expense">支出</option><option value="income">收入</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none"><span className="text-[10px] text-gray-400">▼</span></div>
-                    </div>
-                    <div className="flex-1 relative">
-                      <select value={historyDateFilter} onChange={(e) => setHistoryDateFilter(e.target.value)} className="w-full appearance-none bg-gray-50 py-2.5 pl-4 pr-8 rounded-xl font-black text-xs text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20">
-                        <option value="all">全部時間</option><option value="7d">最近 7 日</option><option value="14d">最近 14 日</option>
-                        <option value="1m">最近 1 個月</option><option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none"><span className="text-[10px] text-gray-400">▼</span></div>
-                    </div>
+                    {isHistoryFiltered && (
+                      <button onClick={() => { setHistorySearch(""); setHistoryFilter({dateType: 'all', customStart: '', customEnd: '', types: ['expense', 'income'], catConditions: [], minAmount: '', maxAmount: ''}); }} className="px-2.5 py-2 bg-red-50 text-red-600 rounded-xl font-black text-[10px] whitespace-nowrap shadow-sm active:scale-95 transition-all">
+                        回全部
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="space-y-3 mt-4">
+                {isHistoryFiltered && (
+                  <div className="flex justify-between items-center bg-gray-800 p-4 rounded-[1.5rem] shadow-sm text-white mb-2 animate-in">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-gray-400">當前條件總計</div>
+                    <div className="flex gap-4 text-xs font-black">
+                      <span className="text-red-400">支 ${historyTotals.exp.toLocaleString()}</span>
+                      <span className="text-green-400">收 ${historyTotals.inc.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+                
+                {isHistoryFiltered && (
+                  <div className="flex flex-wrap gap-2 px-1 mb-2">
+                     {historyFilter.dateType !== 'all' && <span className="px-2 py-1 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-bold">指定時間</span>}
+                     {historyFilter.types.length === 1 && <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${historyFilter.types[0] === 'expense' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>僅{historyFilter.types[0] === 'expense' ? '支出' : '收入'}</span>}
+                     {(historyFilter.minAmount || historyFilter.maxAmount) && <span className="px-2 py-1 bg-gray-200 text-gray-600 rounded-lg text-[10px] font-bold">指定金額</span>}
+                     {historyFilter.catConditions.map(c => (
+                       <span key={c.id} className={`px-2 py-1 rounded-lg text-[10px] font-bold ${c.mode === 'include' ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-600 line-through'}`}>{c.val}</span>
+                     ))}
+                  </div>
+                )}
+
+                <div className="space-y-3">
                   {filteredHistoryGroups.slice(0, historyVisibleCount).map(item => renderItemOrGroup(item, true))}
                   {historyVisibleCount < filteredHistoryGroups.length && (
                     <button onClick={() => setHistoryVisibleCount(prev => prev + 20)} className="w-full py-4 bg-white border border-gray-200 text-blue-600 rounded-2xl font-black text-xs active:bg-gray-50 transition-colors shadow-sm mt-4 flex justify-center items-center gap-2">
@@ -1432,27 +2017,18 @@
 
             {activeTab === "analysis" && (
               <div className="space-y-6 animate-in pb-20 text-left">
-                <div className="flex flex-col gap-3 px-1">
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
-                    <div className="relative">
-                      <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
-                        <option value="7d">最近 7 日</option><option value="14d">最近 14 日</option><option value="1m">最近 1 個月</option>
-                        <option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option>
-                        <option value="custom">自訂區間</option>
-                        <option value="all">全部時間</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"><span className="text-[8px] text-blue-500">▼</span></div>
-                    </div>
+                <div className="flex justify-between items-center px-1 mb-2">
+                  <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => setShowAnalysisFilter(true)} className={`px-3 py-1.5 flex items-center gap-1.5 text-xs font-black rounded-xl transition-colors shadow-sm ${analysisFilter.catConditions.length > 0 || analysisFilter.dateType !== '1m' || analysisFilter.minAmount || analysisFilter.maxAmount || analysisFilter.types.length < 2 ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+                      <SvgIcon name="filter" size={14} /> 篩選條件
+                    </button>
+                    {(analysisFilter.catConditions.length > 0 || analysisFilter.dateType !== '1m' || analysisFilter.types.length < 2 || analysisFilter.minAmount || analysisFilter.maxAmount) && (
+                      <button onClick={() => { setAnalysisFilter({dateType: '1m', customStart: '', customEnd: '', types: ['expense', 'income'], catConditions: [], minAmount: '', maxAmount: ''}); }} className="px-2.5 py-1.5 bg-red-50 text-red-600 rounded-xl font-black text-[10px] whitespace-nowrap shadow-sm active:scale-95 transition-all">
+                        回全部
+                      </button>
+                    )}
                   </div>
-                  {/* 自訂區間輸入框 */}
-                  {analysisDateFilter === "custom" && (
-                    <div className="flex gap-2 items-center bg-gray-100 p-2.5 rounded-xl border border-gray-200 animate-in shadow-inner">
-                      <input type="date" value={analysisCustomStart} onChange={e => setAnalysisCustomStart(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
-                      <span className="text-gray-400 font-bold text-xs">~</span>
-                      <input type="date" value={analysisCustomEnd} onChange={e => setAnalysisCustomEnd(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
-                    </div>
-                  )}
                 </div>
                 
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
@@ -1462,41 +2038,24 @@
                 </div>
 
                 {(() => {
-                  let analysisTxs = myTransactions;
-                  if (analysisDateFilter !== "all") {
-                    if (analysisDateFilter === "custom") {
-                      const start = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0;
-                      const end = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity;
-                      analysisTxs = analysisTxs.filter(item => {
-                         const txTime = parseDateForSort(item.date);
-                         return txTime >= start && txTime <= end;
-                      });
-                    } else {
-                      const now = new Date(); const cutoff = new Date();
-                      if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
-                      else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14);
-                      else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
-                      else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
-                      else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
-                      else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
-                      analysisTxs = analysisTxs.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
-                    }
-                  }
+                  let analysisTxs = filteredAnalysisTxs;
 
-                  if (analysisType === "expense" || analysisType === "income") analysisTxs = analysisTxs.filter(t => t.type === analysisType);
-                  else if (analysisType === "beneficiary") analysisTxs = analysisTxs.filter(t => t.type === "expense");
-
-                  if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄</div>;
+                  if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄，請調整過濾條件</div>;
                   
-                  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef"];
+                  const EXPENSE_COLORS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#14b8a6", "#ec4899", "#f43f5e", "#be123c"];
+                  const INCOME_COLORS = ["#10b981", "#059669", "#047857", "#14b8a6", "#0d9488", "#0f766e", "#3b82f6", "#2563eb", "#1d4ed8"];
+                  const BEN_COLORS = ["#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#0ea5e9", "#0284c7", "#4338ca", "#6d28d9", "#3b82f6"];
+                  
+                  const colors = analysisType === "expense" ? EXPENSE_COLORS : analysisType === "income" ? INCOME_COLORS : BEN_COLORS;
+
                   let level1Totals = {}; let grandTotal = 0;
 
                   analysisTxs.forEach(t => {
+                    if (t.isDeleted) return; // 確保圖表不計算已被刪除的歷史紀錄
                     const amt = Number(t.amount) || 0; grandTotal += amt;
                     if (analysisType === "beneficiary") {
-                       const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
-                       const splitAmt = bens.length ? amt / bens.length : amt;
-                       (bens.length ? bens : ["未知"]).forEach(b => { level1Totals[b] = (level1Totals[b] || 0) + splitAmt; });
+                       const b = formatBen(t.beneficiary, t.member) || t.member;
+                       level1Totals[b] = (level1Totals[b] || 0) + amt;
                     } else {
                        const pCat = getParentCat(t.category);
                        level1Totals[pCat] = (level1Totals[pCat] || 0) + amt;
@@ -1514,9 +2073,10 @@
                   if (selectedAnalysisLevel1) {
                     if (analysisType === "beneficiary") {
                       analysisTxs.forEach(t => {
-                        const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
-                        if (bens.includes(selectedAnalysisLevel1)) {
-                          const amt = (Number(t.amount) || 0) / bens.length;
+                        if (t.isDeleted) return;
+                        const bName = formatBen(t.beneficiary, t.member) || t.member;
+                        if (bName === selectedAnalysisLevel1) {
+                          const amt = Number(t.amount) || 0;
                           level1SelectedTotal += amt;
                           const pCat = getParentCat(t.category);
                           level2Totals[pCat] = (level2Totals[pCat] || 0) + amt;
@@ -1524,6 +2084,7 @@
                       });
                     } else {
                       analysisTxs.forEach(t => {
+                        if (t.isDeleted) return;
                         if (getParentCat(t.category) === selectedAnalysisLevel1) {
                           const cCat = getChildCat(t.category);
                           const amt = Number(t.amount) || 0;
@@ -1538,9 +2099,10 @@
                   let level3Totals = {}; let level2SelectedTotal = 0;
                   if (analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2) {
                     analysisTxs.forEach(t => {
-                      const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
-                      if (bens.includes(selectedAnalysisLevel1) && getParentCat(t.category) === selectedAnalysisLevel2) {
-                        const amt = (Number(t.amount) || 0) / bens.length;
+                      if (t.isDeleted) return;
+                      const bName = formatBen(t.beneficiary, t.member) || t.member;
+                      if (bName === selectedAnalysisLevel1 && getParentCat(t.category) === selectedAnalysisLevel2) {
+                        const amt = Number(t.amount) || 0;
                         level2SelectedTotal += amt;
                         const cCat = getChildCat(t.category);
                         level3Totals[cCat] = (level3Totals[cCat] || 0) + amt;
@@ -1569,7 +2131,7 @@
                                 <div className="flex items-center gap-3">
                                   <div className="w-3 h-3 rounded-full shadow-sm" style={{ background: colors[idx % colors.length] }}></div>
                                   <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
-                                    {analysisType === "beneficiary" ? `👦 ${cat}` : cat}
+                                    {cat}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-3">
@@ -1584,7 +2146,7 @@
 
                       {selectedAnalysisLevel1 && (
                         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 animate-in relative overflow-hidden">
-                          <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500"></div>
+                          <div className={`absolute top-0 left-0 w-full h-1.5 ${analysisType === 'expense' ? 'bg-red-500' : analysisType === 'income' ? 'bg-green-500' : 'bg-indigo-500'}`}></div>
                           <h4 className="font-black text-gray-800 mb-5 flex items-center gap-2 text-sm pt-2">
                             「{selectedAnalysisLevel1}」{analysisType === "beneficiary" ? "母項目花費分析" : "子項目明細"}
                           </h4>
@@ -1592,14 +2154,20 @@
                             {sortedLevel2.map(([cat, amt]) => {
                                const pct = (amt / level1SelectedTotal) * 100;
                                const isL2Selected = selectedAnalysisLevel2 === cat;
+                               
+                               const isClickable = analysisType === "beneficiary";
+                               
                                return (
-                                 <div key={cat} className={analysisType === "beneficiary" ? "cursor-pointer" : ""} onClick={() => analysisType === "beneficiary" && setSelectedAnalysisLevel2(isL2Selected ? null : cat)}>
+                                 <div key={cat} className="cursor-pointer group" onClick={() => isClickable ? setSelectedAnalysisLevel2(isL2Selected ? null : cat) : jumpToHistoryFromChart(cat, null, selectedAnalysisLevel1)}>
                                     <div className="flex justify-between text-xs font-bold mb-1.5">
-                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-700'}`}>{cat} {analysisType === "beneficiary" && <span className="text-[9px] text-gray-400 ml-1">▼</span>}</span>
+                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-700 group-hover:text-blue-500 transition-colors'}`}>
+                                          {cat} 
+                                          {isClickable ? <span className="text-[9px] text-gray-400 ml-1">▼</span> : <span className="text-[9px] text-blue-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">點擊看明細</span>}
+                                       </span>
                                        <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
-                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: `${pct}%` }}></div>
+                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : analysisType === 'expense' ? 'bg-red-400' : analysisType === 'income' ? 'bg-green-400' : 'bg-indigo-400'}`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
                                     </div>
                                  </div>
                                )
@@ -1610,7 +2178,7 @@
 
                       {analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2 && (
                         <div className="bg-gray-800 p-6 rounded-[2.5rem] shadow-lg animate-in relative overflow-hidden">
-                          <div className="absolute top-0 left-0 w-full h-1.5 bg-pink-500"></div>
+                          <div className="absolute top-0 left-0 w-full h-1.5 bg-fuchsia-500"></div>
                           <h4 className="font-black text-white mb-5 flex items-center gap-2 text-sm pt-2">
                             「{selectedAnalysisLevel2}」子項目明細
                           </h4>
@@ -1618,13 +2186,15 @@
                             {sortedLevel3.map(([cCat, amt]) => {
                                const pct = (amt / level2SelectedTotal) * 100;
                                return (
-                                 <div key={cCat}>
+                                 <div key={cCat} className="cursor-pointer group" onClick={() => jumpToHistoryFromChart(cCat, selectedAnalysisLevel1, selectedAnalysisLevel2)}>
                                     <div className="flex justify-between text-xs font-bold mb-1.5 text-white">
-                                       <span>{cCat}</span>
-                                       <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
+                                       <span className="group-hover:text-fuchsia-300 transition-colors">
+                                         {cCat} <span className="text-[9px] text-fuchsia-400 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">點擊看明細</span>
+                                       </span>
+                                       <span className="tabular-nums opacity-80 group-hover:opacity-100 transition-opacity">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                                       <div className="h-full bg-pink-500 rounded-full transition-all duration-1000 ease-out" style={{ width: `${pct}%` }}></div>
+                                       <div className="h-full bg-fuchsia-500 rounded-full transition-all duration-1000 ease-out" style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
                                     </div>
                                  </div>
                                )
@@ -1638,7 +2208,7 @@
               </div>
             )}
 
-            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} isLoading={isLoading} />}
+            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
 
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
@@ -1666,7 +2236,7 @@
                         <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none">使用身份</p>
                         <p className="font-black text-gray-800 text-base leading-none mt-1">{currentUser.name}</p>
                       </div>
-                      <button onClick={() => { setOldPin(""); setNewPin(""); setNewPin2(""); setShowChangePinModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all">更換密碼</button>
+                      <button onClick={() => { setOldPin(""); setNewPin(""); setNewPin2(""); setShowChangePinModal(true); }} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all">更換密碼</button>
                     </div>
                     <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
                       <div>
@@ -1694,26 +2264,14 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V12] 升級 IndexedDB 大倉庫儲存 (徹底解除 5MB 暫存崩潰危機)</li>
-                          <li>[V11] BATCH_ADD 打包傳輸優化 (解決多筆拆分連線超慢的問題)</li>
-                          <li>修復生物辨識彈窗遭瀏覽器攔截卡死的問題，並加入密碼降級機制 (V6)</li>
-                          <li>修復斜線類別字串截斷異常，優化狀態切換 (V5)</li>
-                          <li>自訂問候語支援同步儲存至 GAS 雲端表單 (V5)</li>
-                          <li>歷史清單母項目編輯按鈕置中並統一樣式 (V5)</li>
-                          <li>分析圖表支援自訂日期範圍篩選 (V5)</li>
-                          <li>獨立多筆明細的花費對象標籤與子項選擇 (V4)</li>
-                          <li>支援分析圖表三階層下鑽 (對象 ➔ 母類 ➔ 子類) (V4)</li>
+                          <li>[V19] 編輯與刪除支援瞬間樂觀更新，新增編輯歷程紀錄 (保留前次數值)</li>
+                          <li>[V18.4] 重構清除損壞的重複代碼，恢復所有核心功能，解決所有白屏報錯</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V6] 導入 CacheService 與 TextFinder，實現毫秒級讀取與光速搜尋</li>
-                          <li>新增 UPDATE_GREETING 儲存自訂問候語，並於 GET_TX 派發 (V4)</li>
-                          <li>擴充至 11 欄，新增 Beneficiary (用在誰身上) 欄位 (V3)</li>
-                          <li>新增 UPDATE_GROUP_PARENT 支援母項目更新 (V3)</li>
-                          <li>支援 ParentDesc 與 GroupID 虛擬聚合欄位 (V2)</li>
-                          <li>導入 Device Token 設備綁定機制與 PIN 安全防護 (V1)</li>
+                          <li>[V7] 資料表擴充第 12 欄 (EditHistory) 以支援版本控制紀錄</li>
                         </ul>
                       </div>
                     </div>
