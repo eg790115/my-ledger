@@ -64,8 +64,9 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.02.26.PRO.V6";
-    const GAS_TARGET_VERSION = "2026.02.26.PRO.V4";
+    // 版本升級至 V12：導入 IndexedDB 解除容量限制
+    const APP_VERSION = "2026.02.27.PRO.V12";
+    const GAS_TARGET_VERSION = "2026.02.27.PRO.V6";
 
     const LS = {
       pending: "pending_sync_v23",
@@ -158,6 +159,16 @@
     const getBioLockedUntil = (name) => safeNumberLS(getBioLockKey(name), 0);
     const setBioLockedUntil = (name, ts) => localStorage.setItem(getBioLockKey(name), String(ts));
     const clearBioFail = (name) => { setBioFailCount(name, 0); setBioLockedUntil(name, 0); };
+
+    // 新增：IndexedDB (大倉庫) 初始化與封裝，徹底解除 5MB 容量限制
+    const idbInit = () => new Promise((res, rej) => {
+      const req = indexedDB.open("FamilyAppDB", 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore("store");
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+    const idbSet = async (k, v) => { const db = await idbInit(); return new Promise(res => { const tx = db.transaction("store", "readwrite"); tx.objectStore("store").put(v, k); tx.oncomplete = res; }); };
+    const idbGet = async (k) => { const db = await idbInit(); return new Promise(res => { const tx = db.transaction("store", "readonly"); const req = tx.objectStore("store").get(k); req.onsuccess = () => res(req.result); req.onerror = () => res(null); }); };
 
     const SvgIcon = ({ name, size = 24, className = "" }) => {
       const icons = {
@@ -323,15 +334,15 @@
 
             <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
+              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs max-w-[160px] w-full text-right"
                 value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
             </div>
 
             {!isSplit && (
               <>
-                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
-                  <div className="flex gap-1.5 flex-1 justify-end">
+                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">對象</label>
+                  <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                     {BEN_OPTIONS.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
                         className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
@@ -351,7 +362,7 @@
 
             {isSplit && (
               <>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
                     <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目標題</label>
                     <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs"
@@ -386,17 +397,17 @@
                           </select>
                         </div>
                         <div className="flex gap-2 mb-2 items-center">
-                          <input type="text" className="flex-[2] bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-3 py-2 rounded-xl"
+                          <input type="text" className="flex-1 bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-3 py-2 rounded-xl min-w-0"
                             placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, {desc: e.target.value})} />
-                          <div className="flex-1 relative">
+                          <div className="w-24 shrink-0 relative">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span>
                             <input type="number" inputMode="decimal" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right"
                               placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} />
                           </div>
                         </div>
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-[9px] font-bold text-gray-400 uppercase pr-2">對象</span>
-                          <div className="flex gap-1.5 flex-1 justify-end">
+                        <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase shrink-0">對象</span>
+                          <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                             {BEN_OPTIONS.map(b => (
                               <button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)}
                                 className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-400"}`}>
@@ -482,12 +493,12 @@
               <div className="space-y-4 text-left">
                 <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
+                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs max-w-[160px] w-full text-right"
                     value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
                 </div>
 
-                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
+                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">對象</label>
                   <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                     {BEN_OPTIONS.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
@@ -613,8 +624,6 @@
       const [currentUser, setCurrentUser] = useState(null);
       const [selectingUser, setSelectingUser] = useState(null);
       const [pinInput, setPinInput] = useState("");
-      
-      // 修復防卡死狀態
       const [fallbackToPin, setFallbackToPin] = useState(false);
 
       const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -623,9 +632,11 @@
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
-      const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
-      const [transactions, setTransactions] = useState(() => safeArrayLS(LS.txCache));
-      const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
+      
+      // 變更：改為非同步載入，初始為空陣列
+      const [txCache, setTxCache] = useState([]);
+      const [transactions, setTransactions] = useState([]);
+      const [syncQueue, setSyncQueue] = useState([]);
 
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
@@ -656,11 +667,20 @@
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
-      useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
-      useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
-      useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
-      useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
-      useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
+      // 新增：組件載入時，從 IndexedDB 大倉庫非同步提取歷史資料與暫存
+      useEffect(() => {
+        idbGet(LS.txCache).then(d => { if(Array.isArray(d) && d.length > 0) { setTxCache(d); setTransactions(d); } });
+        idbGet(LS.pending).then(d => { if(Array.isArray(d) && d.length > 0) setSyncQueue(d); });
+      }, []);
+
+      // 修改：巨量資料 (歷史與待同步) 改存入 IndexedDB
+      useEffect(() => { idbSet(LS.pending, syncQueue); }, [syncQueue]);
+      useEffect(() => { idbSet(LS.txCache, txCache); }, [txCache]);
+      
+      // 維持：輕量設定資料繼續放在 LocalStorage 即可
+      useEffect(() => { localStorage.setItem(LS.members, JSON.stringify(familyConfig)); }, [familyConfig]);
+      useEffect(() => { localStorage.setItem(LS.lastSync, lastSyncText); }, [lastSyncText]);
+      useEffect(() => { localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})); }, [greetingsCache]);
 
       useEffect(() => {
         if (currentUser && greetingsCache && greetingsCache[currentUser.name]) {
@@ -705,8 +725,15 @@
         setDeviceToken(data.deviceToken, data.deviceExp); return data;
       };
 
+      // 新增：產生送到雲端專用的 Hash (與本地端隔離解鎖機制)
+      const getCloudPinHash = async (name, pin) => {
+        return await sha256Base64(`${name}::${pin}::cloud`);
+      };
+
+      // 修改：送出加密後的 PIN
       const verifyPinOnline = async (name, pin) => {
-        const res = await postGAS({ action:"VERIFY_PIN", name, pin, deviceToken: getDeviceToken() });
+        const hashedPin = await getCloudPinHash(name, pin);
+        const res = await postGAS({ action:"VERIFY_PIN", name, pin: hashedPin, deviceToken: getDeviceToken() });
         if (res.result !== "success") throw new Error(res.message || "PIN 錯誤"); return true;
       };
 
@@ -723,20 +750,21 @@
         return formatted;
       };
 
+      // --- [核心修改點 1] 改為 BATCH_ADD 一次打包處理同步暫存 ---
       const processQueueToCloud = async ({ doRefreshFirst }) => {
         if (!navigator.onLine) return;
         if (!deviceValid()) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); return; }
         try {
           if (doRefreshFirst) await refreshDeviceToken();
           if (syncQueue.length > 0) {
-            setLoadingCard({ show:true, text:"正在同步暫存..." });
-            const queue = [...syncQueue];
-            for (const item of queue) {
-              const payload = { ...item, deviceToken: getDeviceToken() };
-              const res = await postGAS(payload);
-              if (res.result !== "success") throw new Error(res.message || "同步失敗");
-              setSyncQueue(prev => prev.filter(p => !(p.id === item.id && (p.action||"") === (item.action||""))));
-            }
+            setLoadingCard({ show:true, text:`正在批量同步 ${syncQueue.length} 筆暫存...` });
+            const res = await postGAS({ 
+              action: "BATCH_ADD", 
+              transactions: syncQueue, 
+              deviceToken: getDeviceToken() 
+            });
+            if (res.result !== "success") throw new Error(res.message || "同步失敗");
+            setSyncQueue([]);
           }
           await fetchCloudTx(); showStatus("success", "同步完成");
         } catch (e) {
@@ -798,6 +826,7 @@
         } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
+      // 修改：將舊密碼與新密碼都加密後再送出
       const changePin = async () => {
         if (!navigator.onLine) { showStatus("error","需連線才能更換密碼"); return; }
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
@@ -805,7 +834,9 @@
         if (newPin !== newPin2) { showStatus("error","兩次輸入不一致"); return; }
         try {
           setLoadingCard({ show:true, text:"正在更新密碼..." });
-          const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
+          const hashedOldPin = await getCloudPinHash(currentUser.name, oldPin);
+          const hashedNewPin = await getCloudPinHash(currentUser.name, newPin);
+          const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin: hashedOldPin, newPin: hashedNewPin, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name); setShowChangePinModal(false);
           showStatus("success","密碼更新成功，請重新登入"); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard");
@@ -824,11 +855,11 @@
         }
 
         try {
-          setLoadingCard({ show:true, text: isMulti ? `寫入 ${completeTxs.length} 筆明細...` : "正在寫入..." }); await refreshDeviceToken();
-          for (const tx of completeTxs) {
-             const res = await postGAS({ ...tx, deviceToken: getDeviceToken() });
-             if (res.result !== "success") throw new Error(res.message || "寫入失敗");
-          }
+          setLoadingCard({ show:true, text: isMulti ? `正在一次性批量寫入 ${completeTxs.length} 筆...` : "正在寫入..." }); 
+          await refreshDeviceToken();
+          const res = await postGAS({ action: "BATCH_ADD", transactions: completeTxs, deviceToken: getDeviceToken() });
+          if (res.result !== "success") throw new Error(res.message || "寫入失敗");
+          
           await fetchCloudTx(); showStatus("success", isMulti ? `已同步 ${completeTxs.length} 筆紀錄` : "已同步");
         } catch (e) {
           const msg = e.message || "寫入失敗"; setSyncQueue(prev => [...prev, ...completeTxs]);
@@ -891,8 +922,7 @@
 
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        if (navigator.onLine && deviceValid()) return transactions.length ? transactions : txCache;
-        return txCache;
+        return transactions.length ? transactions : txCache;
       }, [currentUser, transactions, txCache]);
 
       const myTransactions = useMemo(() => {
@@ -992,21 +1022,21 @@
         const showBenTag = benTag && benTag !== "";
         return (
           <div key={tx.id} className="flex gap-2 items-center mb-3">
-            <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden">
+            <div className="flex-1 bg-white p-3 sm:p-4 rounded-3xl border border-gray-100 flex items-center gap-2 sm:gap-3 shadow-sm relative overflow-hidden">
               <div className="relative shrink-0">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+                <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
                 </div>
                 {tx.member !== currentUser.name && (
-                  <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
+                  <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
                     {tx.member}
                   </div>
                 )}
               </div>
               <div className="flex-1 min-w-0 pl-1">
-                <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-2">
+                <div className="font-bold text-[14px] sm:text-[15px] truncate text-gray-800 flex items-center gap-1.5 flex-wrap">
                   {getParentCat(tx.category)} - {getChildCat(tx.category)}
-                  {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{benTag}</span>}
+                  {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200 break-keep">{benTag}</span>}
                 </div>
                 <div className="flex flex-col gap-1 mt-1.5 w-full">
                   <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(tx.date)}</span>
@@ -1014,11 +1044,11 @@
                 </div>
               </div>
               <div className="flex flex-col items-end justify-center shrink-0 pl-1">
-                <div className={`font-black tabular-nums text-lg leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
+                <div className={`font-black tabular-nums text-base sm:text-lg leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
                   ${Number(tx.amount||0).toLocaleString()}
                 </div>
                 {tx.recorder && tx.recorder !== tx.member && (
-                  <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                  <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
                     ✍️ {tx.recorder}代記
                   </div>
                 )}
@@ -1026,8 +1056,8 @@
             </div>
             {allowEdit && (
               <div className="flex flex-col justify-center shrink-0 pr-1">
-                <button onClick={() => setEditingTx(tx)} className="w-12 h-12 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                  <SvgIcon name="edit" size={20} />
+                <button onClick={() => setEditingTx(tx)} className="w-9 h-9 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100 shadow-sm">
+                  <SvgIcon name="edit" size={16} />
                 </button>
               </div>
             )}
@@ -1044,24 +1074,24 @@
         return (
           <div key={group.groupId} className="flex gap-2 items-start mb-3">
             <div className="flex-1 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-              <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
+              <div onClick={() => toggleGroup(group.groupId)} className="p-3 sm:p-4 flex items-center gap-2 sm:gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
                 <div className="relative shrink-0">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+                  <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                     {group.type==="income" ? "收入" : "支出"}
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">
                     多筆
                   </div>
                   {group.member !== currentUser.name && (
-                    <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
+                    <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
                       {group.member}
                     </div>
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
-                  <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-1.5 flex-wrap">
+                  <div className="font-bold text-[14px] sm:text-[15px] truncate text-gray-800 flex items-center gap-1.5 flex-wrap">
                     {group.parentTitle}
-                    {parentBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{parentBenTag}</span>}
+                    {parentBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200 break-keep">{parentBenTag}</span>}
                     <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 ${isExp ? 'rotate-180' : ''}`}>▼</span>
                   </div>
                   <div className="flex flex-col gap-1 mt-1 w-full">
@@ -1070,11 +1100,11 @@
                   </div>
                 </div>
                 <div className="flex flex-col items-end justify-center shrink-0 pl-1">
-                  <div className={`font-black tabular-nums text-xl leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>
+                  <div className={`font-black tabular-nums text-lg sm:text-xl leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>
                     ${Number(group.amount||0).toLocaleString()}
                   </div>
                   {group.recorder && group.recorder !== group.member && (
-                    <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                    <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
                       ✍️ {group.recorder}代記
                     </div>
                   )}
@@ -1082,29 +1112,29 @@
               </div>
 
               {isExp && (
-                <div className="bg-gray-50/80 p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
+                <div className="bg-gray-50/80 p-2 sm:p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
                   {group.children.map((child, idx) => {
                     const childBen = formatBen(child.beneficiary, group.member);
                     return (
                       <div key={child.id} className="flex gap-2 items-center">
-                        <div className="flex-1 flex items-center gap-3 bg-white p-3 rounded-2xl shadow-sm border border-gray-200">
-                          <div className="w-6 h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
+                        <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-white p-2 sm:p-3 rounded-2xl shadow-sm border border-gray-200">
+                          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[9px] sm:text-[10px] font-black flex items-center justify-center shrink-0">
                             {idx + 1}
                           </div>
-                          <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
-                            <div className="font-bold text-sm text-gray-800 flex items-center gap-2">
+                          <div className="flex-1 min-w-0 pr-1 sm:pr-2 border-r border-gray-100">
+                            <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1 sm:gap-2 flex-wrap">
                               {getParentCat(child.category)} - {getChildCat(child.category)}
-                              {childBen && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
+                              {childBen && <span className="bg-gray-100 text-gray-500 text-[8px] px-1 py-0.5 rounded-md border border-gray-200 break-keep">{childBen}</span>}
                             </div>
-                            {child.desc && <div className="text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
+                            {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
                           </div>
-                          <div className={`font-black tabular-nums text-sm shrink-0 w-16 text-right ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
+                          <div className={`font-black tabular-nums text-xs sm:text-sm shrink-0 w-14 sm:w-16 text-right ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
                             ${Number(child.amount||0).toLocaleString()}
                           </div>
                         </div>
                         {allowEdit && (
-                          <button onClick={() => setEditingTx(child)} className="w-10 h-10 shrink-0 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
-                            <SvgIcon name="edit" size={16} />
+                          <button onClick={() => setEditingTx(child)} className="w-8 h-8 shrink-0 bg-blue-50/80 text-blue-600 rounded-lg flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
+                            <SvgIcon name="edit" size={14} />
                           </button>
                         )}
                       </div>
@@ -1115,8 +1145,8 @@
             </div>
             {allowEdit && (
               <div className="flex flex-col justify-center shrink-0 pr-1 mt-1">
-                 <button onClick={() => setEditingGroup(group)} className="w-12 h-12 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                   <SvgIcon name="edit" size={20} />
+                 <button onClick={() => setEditingGroup(group)} className="w-9 h-9 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100 shadow-sm">
+                   <SvgIcon name="edit" size={16} />
                  </button>
               </div>
             )}
@@ -1128,11 +1158,6 @@
         if (item.isGroup) return renderGroupCard(item, allowEdit);
         return renderStandaloneCard(item, allowEdit);
       };
-
-      const [animTrigger, setAnimTrigger] = useState(false);
-      useEffect(() => {
-        if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
-      }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
       const handleUserClick = async (user) => {
         setSelectingUser(user);
@@ -1146,7 +1171,7 @@
             setPinInput("");
             if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
           } else {
-            setFallbackToPin(true); // 生物辨識失敗或取消，自動開啟密碼輸入
+            setFallbackToPin(true);
           }
         }
       };
@@ -1314,17 +1339,7 @@
             </div>
           )}
 
-          {loadingCard?.show && (
-            <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
-              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="refresh" size={28} className="animate-spin text-blue-600"/></div>
-                <div className="font-black text-lg">處理中</div>
-                <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
-              </div>
-            </div>
-          )}
-
-          <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 shadow-sm">
+          <header className="px-4 sm:px-6 pt-12 pb-4 sm:pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 shadow-sm">
             <div className="flex items-center gap-3 text-left">
               <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-11 h-11 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/30`}>
                 {currentUser.name.charAt(0)}
@@ -1335,7 +1350,7 @@
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="text-right leading-none">
+              <div className="text-right leading-none hidden sm:block">
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
@@ -1346,7 +1361,7 @@
             </div>
           </header>
 
-          <main className="p-6 flex-1 overflow-y-auto scrollbar-hide text-gray-800">
+          <main className="p-4 sm:p-6 flex-1 overflow-y-auto scrollbar-hide text-gray-800">
             {activeTab === "dashboard" && (
               <div className="space-y-6 animate-in">
                 <div className="bg-gray-900 p-8 rounded-[3rem] shadow-2xl text-white relative overflow-hidden text-center">
@@ -1386,7 +1401,7 @@
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <div className="flex-1 relative">
                       <select value={historyTypeFilter} onChange={(e) => setHistoryTypeFilter(e.target.value)} className="w-full appearance-none bg-gray-50 py-2.5 pl-4 pr-8 rounded-xl font-black text-xs text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20">
                         <option value="all">全部收支</option><option value="expense">支出</option><option value="income">收入</option>
@@ -1584,7 +1599,7 @@
                                        <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
-                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: `${pct}%` }}></div>
                                     </div>
                                  </div>
                                )
@@ -1609,7 +1624,7 @@
                                        <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                                       <div className="h-full bg-pink-500 rounded-full transition-all duration-1000 ease-out" style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                       <div className="h-full bg-pink-500 rounded-full transition-all duration-1000 ease-out" style={{ width: `${pct}%` }}></div>
                                     </div>
                                  </div>
                                )
@@ -1679,6 +1694,8 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>[V12] 升級 IndexedDB 大倉庫儲存 (徹底解除 5MB 暫存崩潰危機)</li>
+                          <li>[V11] BATCH_ADD 打包傳輸優化 (解決多筆拆分連線超慢的問題)</li>
                           <li>修復生物辨識彈窗遭瀏覽器攔截卡死的問題，並加入密碼降級機制 (V6)</li>
                           <li>修復斜線類別字串截斷異常，優化狀態切換 (V5)</li>
                           <li>自訂問候語支援同步儲存至 GAS 雲端表單 (V5)</li>
@@ -1691,6 +1708,7 @@
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>[V6] 導入 CacheService 與 TextFinder，實現毫秒級讀取與光速搜尋</li>
                           <li>新增 UPDATE_GREETING 儲存自訂問候語，並於 GET_TX 派發 (V4)</li>
                           <li>擴充至 11 欄，新增 Beneficiary (用在誰身上) 欄位 (V3)</li>
                           <li>新增 UPDATE_GROUP_PARENT 支援母項目更新 (V3)</li>
