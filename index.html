@@ -48,6 +48,14 @@
     }
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .animate-in { animation: fadeIn 0.2s ease-out forwards; }
+    
+    /* 新增頂部向下滑入動畫 */
+    @keyframes slideDownNotif { 
+      0% { transform: translateY(-150%); opacity: 0; } 
+      100% { transform: translateY(0); opacity: 1; } 
+    }
+    .animate-slide-down { animation: slideDownNotif 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
     @keyframes cursor-blink { 0%,100%{opacity:1} 50%{opacity:0} }
     .animate-cursor { animation: cursor-blink 1s step-end infinite; }
@@ -60,13 +68,13 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useEffect, useMemo, useRef, useState } = React;
+    const { useEffect, useMemo, useCallback, useRef, useState } = React;
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本升級至 V22：徹底清除重複代碼結構、修復 isLoading 遺失，並確保所有函數無縫對齊
-    const APP_VERSION = "2026.02.28.PRO.V22";
-    const GAS_TARGET_VERSION = "2026.02.28.PRO.V7";
+    // 版本升級至 V28：新增跨頁面滑動通知系統(處理未確認代記明細)、圖示防變形終極包裹
+    const APP_VERSION = "2026.02.28.PRO.V28";
+    const GAS_TARGET_VERSION = "2026.02.28.PRO.V8";
 
     const LS = {
       pending: "pending_sync_v26",
@@ -202,14 +210,15 @@
     const clearBioFail = (name) => { setBioFailCount(name, 0); setBioLockedUntil(name, 0); };
 
     const idbInit = () => new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error("No IDB"));
       const req = indexedDB.open("FamilyAppDB", 3);
       req.onupgradeneeded = e => e.target.result.createObjectStore("store");
       req.onsuccess = () => res(req.result);
       req.onerror = () => rej(req.error);
+      req.onblocked = () => rej(new Error("IDB Blocked"));
     });
     
     const idbSet = async (k, v) => { 
-      if (!k) return;
       try {
         const db = await idbInit(); 
         return new Promise((res, rej) => { 
@@ -218,11 +227,10 @@
           req.onsuccess = res; 
           req.onerror = () => rej(req.error); 
         }); 
-      } catch (e) { console.warn("IDB Set Error:", e); }
+      } catch (e) { }
     };
     
     const idbGet = async (k) => { 
-      if (!k) return null;
       try {
         const db = await idbInit(); 
         return new Promise((res, rej) => { 
@@ -231,10 +239,26 @@
           req.onsuccess = () => res(req.result); 
           req.onerror = () => res(null); 
         });
-      } catch (e) { console.warn("IDB Get Error:", e); return null; }
+      } catch (e) { return null; }
     };
 
-    const SvgIcon = ({ name, size = 24, className = "" }) => {
+    const safeStorageSet = async (key, val) => {
+      if (!key) return;
+      try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+      await idbSet(key, val);
+    };
+
+    const safeStorageGet = async (key, fallback = []) => {
+      if (!key) return fallback;
+      let data = await idbGet(key);
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        data = safeParse(localStorage.getItem(key), null);
+      }
+      return (data && Array.isArray(data)) ? data : fallback;
+    };
+
+    // 終極防變形包裹：用 span 鎖定長寬與禁止縮放
+    const SvgIcon = React.memo(({ name, size = 24, className = "" }) => {
       const icons = {
         home: <React.Fragment><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></React.Fragment>,
         pieChart: <React.Fragment><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></React.Fragment>,
@@ -243,9 +267,10 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
+        loader: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
         bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
         close: <path d="M18 6L6 18M6 6l12 12"/>,
         info: <React.Fragment><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></React.Fragment>,
@@ -258,9 +283,111 @@
         clock: <React.Fragment><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></React.Fragment>
       };
       return (
-        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 aspect-square ${className}`}>
-          {icons[name] || <circle cx="12" cy="12" r="10" />}
-        </svg>
+        <span className={`inline-flex items-center justify-center shrink-0 ${className}`} style={{ width: size, height: size }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            {icons[name] || <circle cx="12" cy="12" r="10" />}
+          </svg>
+        </span>
+      );
+    });
+
+    // --- 新增：跨頁面的對方代記帳通知滑動視窗 ---
+    const DelegatedNoticeModal = ({ txs, onConfirm }) => {
+      if (!txs || txs.length === 0) return null;
+      return (
+        <div className="fixed top-0 left-0 right-0 z-[1000] p-4 pointer-events-none flex flex-col gap-2">
+          <div className="max-w-md mx-auto w-full bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-gray-100 p-5 pointer-events-auto animate-slide-down flex flex-col max-h-[60vh]">
+            <div className="flex items-center gap-3 mb-4 shrink-0">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                <SvgIcon name="info" size={20} />
+              </div>
+              <div>
+                <h3 className="font-black text-gray-800 text-sm">有幫您記帳的明細</h3>
+                <p className="text-[10px] text-gray-500">請確認以下由他人代記的帳目</p>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide mb-4">
+              {txs.map(t => (
+                 <div key={t.id} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5 flex-wrap">
+                        {getParentCat(t.category)} - {getChildCat(t.category)}
+                        <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[8px] whitespace-nowrap">由 {t.recorder} 記錄</span>
+                      </div>
+                      <div className="text-[9px] text-gray-400 mt-1">{displayDateClean(t.date)} {t.desc ? `· ${t.desc}` : ''}</div>
+                    </div>
+                    <div className={`font-black text-sm shrink-0 pl-2 ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                      ${Number(t.amount).toLocaleString()}
+                    </div>
+                 </div>
+              ))}
+            </div>
+
+            <button onClick={() => onConfirm(txs.map(t => t.id))} className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-blue-500/30 shrink-0">
+              我已確認 ({txs.length} 筆)
+            </button>
+          </div>
+        </div>
+      )
+    };
+
+    const PendingSyncModal = ({ isOpen, onClose, syncQueue, onSync, isLoading }) => {
+      if (!isOpen) return null;
+
+      const getActionLabel = (action) => {
+        switch(action) {
+          case 'UPDATE': return { text: '修改', color: 'bg-orange-100 text-orange-600 border-orange-200' };
+          case 'DELETE': return { text: '刪除', color: 'bg-red-100 text-red-600 border-red-200' };
+          case 'UPDATE_GROUP': return { text: '修改母項', color: 'bg-purple-100 text-purple-600 border-purple-200' };
+          case 'CONFIRM': return { text: '已讀', color: 'bg-gray-100 text-gray-600 border-gray-200' };
+          case 'ADD':
+          default: return { text: '新增', color: 'bg-blue-100 text-blue-600 border-blue-200' };
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 z-[750] bg-gray-900/90 backdrop-blur-sm flex flex-col items-center justify-end sm:justify-center animate-in font-black text-left" onClick={(e) => { if(e.target === e.currentTarget) onClose(); }}>
+          <div className="w-full max-w-md bg-white rounded-t-[2.5rem] sm:rounded-[2.5rem] p-6 relative max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6 sm:hidden shrink-0"></div>
+            <button onClick={onClose} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24} /></button>
+            <h2 className="text-xl font-black text-gray-800 mb-2 flex items-center gap-2 shrink-0">
+              <SvgIcon name="cloud" size={20} className="text-yellow-500" /> 待同步清單
+            </h2>
+            <p className="text-[10px] text-gray-400 mb-4 shrink-0">共有 {syncQueue.length} 筆變更尚未上傳至雲端</p>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide pb-4">
+              {syncQueue.map((q, idx) => {
+                const badge = getActionLabel(q._action);
+                const isGroup = q._action === 'UPDATE_GROUP';
+                let title = isGroup ? (q.parentTitle || '拆分紀錄') : (q.category ? `${getParentCat(q.category)} - ${getChildCat(q.category)}` : '系統確認操作');
+                if (q._action === 'CONFIRM') title = `確認代記 (${q.id})`;
+                const amt = q.amount ? `$${Number(q.amount).toLocaleString()}` : '';
+                
+                return (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-2xl border border-gray-100 flex items-center gap-3">
+                    <div className={`px-2 py-1 rounded-lg text-[9px] font-black border whitespace-nowrap ${badge.color}`}>
+                      {badge.text}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-gray-800 truncate">{title}</div>
+                      {q._action !== 'CONFIRM' && <div className="text-[10px] text-gray-400 truncate">{q.desc || q.parentDesc || displayDateClean(q.date)}</div>}
+                    </div>
+                    {amt && <div className="text-sm font-black text-gray-600 shrink-0">{amt}</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100 shrink-0">
+              <button onClick={onClose} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl active:scale-95 font-black text-sm">稍後同步</button>
+              <button disabled={isLoading} onClick={() => { onSync(); onClose(); }} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl active:scale-95 shadow-lg shadow-blue-500/30 font-black text-lg flex justify-center items-center gap-2 disabled:opacity-50">
+                {isLoading ? <SvgIcon name="loader" size={18} className="animate-spin" /> : <SvgIcon name="cloud" size={18} />}
+                立即同步
+              </button>
+            </div>
+          </div>
+        </div>
       );
     };
 
@@ -314,7 +441,7 @@
       )
     };
 
-    const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
+    const CategorySelectPair = React.memo(({ type, parentCat, childCat, onChange }) => {
       const pCats = Object.keys(CATEGORY_MAP[type] || CATEGORY_MAP.expense);
       const safeParentCat = pCats.includes(parentCat) ? parentCat : pCats[0];
       const cCats = CATEGORY_MAP[type][safeParentCat] || CATEGORY_MAP[type][pCats[0]];
@@ -337,9 +464,9 @@
           </div>
         </div>
       );
-    };
+    });
 
-    const AddTransactionForm = ({ loginUser, onSubmit }) => {
+    const AddTransactionForm = ({ loginUser, onSubmit, isLoading }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
@@ -354,7 +481,7 @@
       ]);
 
       const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
-      const dynamicBenOptions = [loginUser, ...BEN_OPTIONS.filter(b => b !== loginUser)];
+      const dynamicBenOptions = useMemo(() => [loginUser, ...BEN_OPTIONS.filter(b => b !== loginUser)], [loginUser]);
 
       useEffect(() => { 
         setFormData(prev => ({ ...prev, member: loginUser || prev.member, beneficiary: [loginUser || prev.member] })); 
@@ -553,10 +680,11 @@
             </div>
           </div>
 
-          <button disabled={isSubmitDisabled} onClick={submitForm}
+          <button disabled={isSubmitDisabled || isLoading} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            確認存檔
+            {isLoading ? <SvgIcon name="loader" size={20} className="animate-spin" /> : null}
+            {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
           </button>
         </div>
       );
@@ -650,8 +778,8 @@
                     <button disabled={isLoading} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
-                    <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
-                      {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
+                    <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 disabled:opacity-30">
+                      {isLoading ? <SvgIcon name="loader" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
                     </button>
                   </>
                 ) : (
@@ -717,8 +845,8 @@
               </div>
 
               <div className="mt-8">
-                <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
-                  {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
+                <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg flex justify-center items-center gap-2 disabled:opacity-30">
+                  {isLoading ? <SvgIcon name="loader" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
                 </button>
               </div>
             </div>
@@ -748,7 +876,7 @@
          let startTs = tempFilter.customStart ? new Date(`${tempFilter.customStart}T00:00:00`).getTime() : 0;
          let endTs = tempFilter.customEnd ? new Date(`${tempFilter.customEnd}T23:59:59`).getTime() : Infinity;
 
-         return transactions.filter(t => {
+         return (transactions || []).filter(t => {
             const txTime = parseDateForSort(t.date);
             if (tempFilter.dateType === "custom") {
                if (txTime < startTs || txTime > endTs) return false;
@@ -938,9 +1066,7 @@
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
       const isLoading = loadingCard.show || isSyncing;
-
       const [isDbLoaded, setIsDbLoaded] = useState(false);
-
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
       const [txCache, setTxCache] = useState([]);
@@ -951,6 +1077,7 @@
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
       const [viewingHistory, setViewingHistory] = useState(null);
+      const [showPendingModal, setShowPendingModal] = useState(false);
 
       const [expandedGroups, setExpandedGroups] = useState({});
       const [historySearch, setHistorySearch] = useState("");
@@ -984,19 +1111,40 @@
       const [newPin2, setNewPin2] = useState("");
       const [isLogOpen, setIsLogOpen] = useState(false);
 
-      const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
+      const showStatus = useCallback((type, text) => { 
+        setStatusMsg({ type, text }); 
+        setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); 
+      }, []);
 
       useEffect(() => {
         Promise.all([
-          idbGet(LS.txCache).then(d => { if(Array.isArray(d) && d.length > 0) { setTxCache(d); setTransactions(d); } }),
-          idbGet(LS.historyCache).then(d => { if(Array.isArray(d)) setHistoryCache(d); }),
-          idbGet(LS.pending).then(d => { if(Array.isArray(d) && d.length > 0) setSyncQueue(d); })
-        ]).then(() => setIsDbLoaded(true));
+          safeStorageGet(LS.txCache).then(d => { setTxCache(d); setTransactions(d); }),
+          safeStorageGet(LS.historyCache).then(d => setHistoryCache(d)),
+          safeStorageGet(LS.pending).then(d => setSyncQueue(d))
+        ]).finally(() => setIsDbLoaded(true));
       }, []);
 
-      useEffect(() => { if (isDbLoaded) idbSet(LS.pending, syncQueue); }, [syncQueue, isDbLoaded]);
-      useEffect(() => { if (isDbLoaded) idbSet(LS.txCache, txCache); }, [txCache, isDbLoaded]);
-      useEffect(() => { if (isDbLoaded) idbSet(LS.historyCache, historyCache); }, [historyCache, isDbLoaded]);
+      useEffect(() => {
+        const handleBeforeUnload = (e) => {
+          if (syncQueue && syncQueue.length > 0) {
+            e.preventDefault();
+            e.returnValue = ''; 
+          }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+      }, [syncQueue]);
+
+      const safeSetSyncQueue = useCallback((newQueueOrFn) => {
+        setSyncQueue(prev => {
+          const newQ = typeof newQueueOrFn === 'function' ? newQueueOrFn(prev) : newQueueOrFn;
+          if (isDbLoaded) safeStorageSet(LS.pending, newQ);
+          return newQ;
+        });
+      }, [isDbLoaded]);
+
+      useEffect(() => { if (isDbLoaded) safeStorageSet(LS.txCache, txCache); }, [txCache, isDbLoaded]);
+      useEffect(() => { if (isDbLoaded) safeStorageSet(LS.historyCache, historyCache); }, [historyCache, isDbLoaded]);
       
       useEffect(() => { localStorage.setItem(LS.members, JSON.stringify(familyConfig)); }, [familyConfig]);
       useEffect(() => { localStorage.setItem(LS.lastSync, lastSyncText); }, [lastSyncText]);
@@ -1019,7 +1167,28 @@
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
       useEffect(() => { if (navigator.onLine && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, []);
       
-      const syncDataToCloud = async (isManual = false) => {
+      const forceReloginForToken = useCallback(() => { setTimeout(() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setBootstrapSecret(""); setShowBootstrapModal(true); }, 2000); }, []);
+
+      const fetchCloudTx = useCallback(async () => {
+        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
+        if (data.result !== "success") throw new Error(data.message || "抓取失敗");
+        
+        const formattedTxs = (data.transactions || []).map((t, i) => ({
+          id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
+          date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
+          desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || "",
+          editHistory: safeParse(t["EditHistory"], []),
+          isConfirmed: String(t["IsConfirmed"] || "") 
+        }));
+        
+        const formattedHistory = data.history || [];
+        setHistoryCache(formattedHistory);
+        setTransactions(formattedTxs); setTxCache(formattedTxs); setLastSyncText(nowStr()); 
+        if (data.greetings) setGreetingsCache(data.greetings); 
+        return formattedTxs;
+      }, []);
+
+      const syncDataToCloud = useCallback(async (isManual = false) => {
         if (isSyncing || !navigator.onLine) return;
         if (!deviceValid()) { 
            if (isManual) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); }
@@ -1041,12 +1210,17 @@
         if (isManual) setLoadingCard({ show:true, text:`同步 ${currentQueue.length} 筆中...` });
 
         try {
-          if (isManual) await refreshDeviceToken();
+          if (isManual) {
+             const data = await postGAS({ action: "DEVICE_REFRESH", deviceToken: getDeviceToken() });
+             if (data.result !== "success") throw new Error(data.message || "憑證已過期");
+             setDeviceToken(data.deviceToken, data.deviceExp);
+          }
           
           const adds = currentQueue.filter(q => !q._action || q._action === 'ADD').map(q => ({...q, editHistory: JSON.stringify(q.editHistory || [])}));
           const updates = currentQueue.filter(q => q._action === 'UPDATE');
           const deletes = currentQueue.filter(q => q._action === 'DELETE');
           const groupUpdates = currentQueue.filter(q => q._action === 'UPDATE_GROUP');
+          const confirms = currentQueue.filter(q => q._action === 'CONFIRM').map(q => q.id);
           
           if (adds.length > 0) {
             const res = await postGAS({ action: "BATCH_ADD", transactions: adds, deviceToken: getDeviceToken() });
@@ -1068,9 +1242,14 @@
             const res = await postGAS({ action:"UPDATE_GROUP_PARENT", groupId: gu.groupId, parentDesc: gu.parentDesc, date: gu.date, editor: gu.editor, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message || "群組更新同步失敗");
           }
+
+          if (confirms.length > 0) {
+            const res = await postGAS({ action: "CONFIRM_TXS", ids: confirms, deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message || "確認狀態同步失敗");
+          }
           
           await fetchCloudTx(); 
-          setSyncQueue(prev => prev.filter(p => !currentQueue.some(q => q.id === p.id && q._action === p._action)));
+          safeSetSyncQueue(prev => prev.filter(p => !currentQueue.some(q => q.id === p.id && q._action === p._action)));
           if (isManual) showStatus("success", "同步完成");
         } catch (e) {
           if (isManual) {
@@ -1081,21 +1260,35 @@
           setIsSyncing(false);
           if (isManual) setLoadingCard({ show:false, text:"" });
         }
-      };
+      }, [syncQueue, isSyncing, fetchCloudTx, forceReloginForToken, showStatus, safeSetSyncQueue]);
 
       useEffect(() => {
         if (syncQueue.length > 0 && navigator.onLine && deviceValid() && !isSyncing) {
           syncDataToCloud(false);
         }
-      }, [syncQueue, navigator.onLine, isSyncing]);
-
-      const forceReloginForToken = () => { setTimeout(() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setBootstrapSecret(""); setShowBootstrapModal(true); }, 2000); };
-
-      const refreshDeviceToken = async () => {
-        const data = await postGAS({ action: "DEVICE_REFRESH", deviceToken: getDeviceToken() });
-        if (data.result !== "success") throw new Error(data.message || "憑證已過期");
-        setDeviceToken(data.deviceToken, data.deviceExp); return data;
+      }, [syncQueue, navigator.onLine, isSyncing, syncDataToCloud]);
+      
+      const handleSyncButtonClick = () => {
+        if (syncQueue.length > 0) {
+          setShowPendingModal(true);
+        } else {
+          syncDataToCloud(true);
+        }
       };
+
+      const handleConfirmDelegated = useCallback((ids) => {
+        setTransactions(prev => prev.map(t => ids.includes(t.id) ? { ...t, isConfirmed: 'Y' } : t));
+        setTxCache(prev => prev.map(t => ids.includes(t.id) ? { ...t, isConfirmed: 'Y' } : t));
+        
+        safeSetSyncQueue(prev => {
+           let newQ = prev.map(q => ids.includes(q.id) ? { ...q, isConfirmed: 'Y' } : q);
+           const existingIdsInQueue = new Set(newQ.map(q => q.id));
+           const toAddConfirms = ids.filter(id => !existingIdsInQueue.has(id));
+           const confirmActions = toAddConfirms.map(id => ({ id, _action: 'CONFIRM' }));
+           return [...newQ, ...confirmActions];
+        });
+        showStatus("success", "已標記為確認");
+      }, [safeSetSyncQueue, showStatus]);
 
       const bootstrapDevice = async () => {
         if (!bootstrapSecret) throw new Error("請輸入雲端密碼");
@@ -1110,25 +1303,6 @@
         const hashedPin = await getCloudPinHash(name, pin);
         const res = await postGAS({ action:"VERIFY_PIN", name, pin: hashedPin, deviceToken: getDeviceToken() });
         if (res.result !== "success") throw new Error(res.message || "PIN 錯誤"); return true;
-      };
-
-      const fetchCloudTx = async () => {
-        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
-        if (data.result !== "success") throw new Error(data.message || "抓取失敗");
-        
-        const formattedTxs = (data.transactions || []).map((t, i) => ({
-          id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
-          date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
-          desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || "",
-          editHistory: safeParse(t["EditHistory"], [])
-        }));
-        
-        const formattedHistory = data.history || [];
-        setHistoryCache(formattedHistory);
-        
-        setTransactions(formattedTxs); setTxCache(formattedTxs); setLastSyncText(nowStr()); 
-        if (data.greetings) setGreetingsCache(data.greetings); 
-        return formattedTxs;
       };
 
       const handleSaveGreeting = async () => {
@@ -1200,7 +1374,7 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      const handleAdd = (newTxs) => {
+      const handleAdd = useCallback((newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseId = Date.now(); 
         const isMulti = newTxs.length > 1;
@@ -1214,21 +1388,17 @@
           id: String(baseId + idx), 
           groupId, 
           parentDesc,
-          editHistory: [] 
+          editHistory: [],
+          isConfirmed: currentUser.name !== tx.member ? "N" : "Y" 
         }));
 
-        setSyncQueue(prev => [...prev, ...completeTxs.map(t => ({...t, _action: 'ADD'}))]);
+        safeSetSyncQueue(prev => [...prev, ...completeTxs.map(t => ({...t, _action: 'ADD'}))]);
         setActiveTab("dashboard");
-        
-        if (navigator.onLine && deviceValid()) {
-          showStatus("success", "已儲存，背景同步中");
-        } else {
-          showStatus("info", "無網路，已暫存於設備");
-        }
-      };
+        showStatus(navigator.onLine && deviceValid() ? "success" : "info", navigator.onLine && deviceValid() ? "已儲存，背景同步中" : "無網路，已暫存於設備");
+      }, [currentUser, showStatus, safeSetSyncQueue]);
 
-      const handleUpdateTx = (updatedTx) => {
-        const oldTx = visibleTransactions.find(t => t.id === updatedTx.id) || {};
+      const handleUpdateTx = useCallback((updatedTx) => {
+        const oldTx = transactions.find(t => String(t.id) === String(updatedTx.id)) || txCache.find(t => String(t.id) === String(updatedTx.id)) || {};
         const historyEntry = {
            timestamp: nowStr(),
            txId: updatedTx.id,
@@ -1243,28 +1413,28 @@
         };
         
         setHistoryCache(prev => [historyEntry, ...prev]);
+        const isConfirmed = currentUser.name !== updatedTx.member ? "N" : updatedTx.isConfirmed;
+        const finalTx = { ...updatedTx, date: updatedTx.date, isConfirmed }; 
         
-        const finalTx = { ...updatedTx, date: updatedTx.date }; 
-        
-        setTransactions(prev => prev.map(t => t.id === finalTx.id ? finalTx : t));
-        setTxCache(prev => prev.map(t => t.id === finalTx.id ? finalTx : t));
+        setTransactions(prev => prev.map(t => String(t.id) === String(finalTx.id) ? finalTx : t));
+        setTxCache(prev => prev.map(t => String(t.id) === String(finalTx.id) ? finalTx : t));
 
-        const isPendingAdd = syncQueue.some(q => q.id === finalTx.id && (!q._action || q._action === 'ADD'));
-        if (isPendingAdd) {
-           setSyncQueue(prev => prev.map(q => q.id === finalTx.id ? { ...finalTx, _action: 'ADD' } : q));
-        } else {
-           setSyncQueue(prev => {
-              const filtered = prev.filter(q => !(q.id === finalTx.id && q._action === 'UPDATE'));
-              return [...filtered, { ...finalTx, _action: 'UPDATE', editor: currentUser.name }];
-           });
-        }
+        safeSetSyncQueue(prev => {
+          const isPendingAdd = prev.some(q => String(q.id) === String(finalTx.id) && (!q._action || q._action === 'ADD'));
+          if (isPendingAdd) {
+            return prev.map(q => String(q.id) === String(finalTx.id) ? { ...finalTx, _action: 'ADD' } : q);
+          } else {
+            const filtered = prev.filter(q => !(String(q.id) === String(finalTx.id) && q._action === 'UPDATE'));
+            return [...filtered, { ...finalTx, _action: 'UPDATE', editor: currentUser.name }];
+          }
+        });
 
         setEditingTx(null);
         showStatus("success", "已暫存修改，背景同步中");
-      };
+      }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
 
-      const handleUpdateGroupParent = (groupData) => {
-        const children = visibleTransactions.filter(t => t.groupId === groupData.groupId);
+      const handleUpdateGroupParent = useCallback((groupData) => {
+        const children = transactions.filter(t => String(t.groupId) === String(groupData.groupId)).length ? transactions.filter(t => String(t.groupId) === String(groupData.groupId)) : txCache.filter(t => String(t.groupId) === String(groupData.groupId));
         const histRecs = children.map(oldTx => ({
           timestamp: nowStr(),
           txId: oldTx.id,
@@ -1279,25 +1449,37 @@
         }));
         setHistoryCache(prev => [...histRecs, ...prev]);
 
-        const updateFn = t => t.groupId === groupData.groupId ? { ...t, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : t;
+        const updateFn = t => {
+          if (String(t.groupId) === String(groupData.groupId)) {
+            return { 
+               ...t, 
+               parentTitle: groupData.parentTitle, 
+               parentDesc: groupData.parentDesc, 
+               date: groupData.date,
+               isConfirmed: currentUser.name !== t.member ? "N" : t.isConfirmed
+            };
+          }
+          return t;
+        };
+        
         setTransactions(prev => prev.map(updateFn));
         setTxCache(prev => prev.map(updateFn));
 
-        const isPendingGroup = syncQueue.some(p => p.groupId === groupData.groupId && (!p._action || p._action === 'ADD'));
-        if (isPendingGroup) {
-          setSyncQueue(prev => prev.map(p => p.groupId === groupData.groupId ? { ...p, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : p));
-        } else {
-          setSyncQueue(prev => {
-            const filtered = prev.filter(q => !(q.groupId === groupData.groupId && q._action === 'UPDATE_GROUP'));
+        safeSetSyncQueue(prev => {
+          const isPendingGroup = prev.some(p => String(p.groupId) === String(groupData.groupId) && (!p._action || p._action === 'ADD'));
+          if (isPendingGroup) {
+            return prev.map(p => String(p.groupId) === String(groupData.groupId) ? { ...p, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : p);
+          } else {
+            const filtered = prev.filter(q => !(String(q.groupId) === String(groupData.groupId) && q._action === 'UPDATE_GROUP'));
             return [...filtered, { ...groupData, _action: 'UPDATE_GROUP', editor: currentUser.name }];
-          });
-        }
+          }
+        });
         setEditingGroup(null);
         showStatus("success", "已暫存母項目修改");
-      };
+      }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
 
-      const handleDeleteTx = (id) => {
-        const oldTx = visibleTransactions.find(t => t.id === id);
+      const handleDeleteTx = useCallback((id) => {
+        const oldTx = transactions.find(t => String(t.id) === String(id)) || txCache.find(t => String(t.id) === String(id));
         if (oldTx) {
           const histRec = {
             timestamp: nowStr(),
@@ -1314,34 +1496,35 @@
           setHistoryCache(prev => [histRec, ...prev]);
         }
 
-        setTransactions(prev => prev.filter(t => t.id !== id));
-        setTxCache(prev => prev.filter(t => t.id !== id));
+        setTransactions(prev => prev.filter(t => String(t.id) !== String(id)));
+        setTxCache(prev => prev.filter(t => String(t.id) !== String(id)));
         
-        const isPendingAdd = syncQueue.some(q => q.id === id && (!q._action || q._action === 'ADD'));
-        if (isPendingAdd) {
-           setSyncQueue(prev => prev.filter(q => q.id !== id));
-        } else {
-           setSyncQueue(prev => {
-              const filtered = prev.filter(q => q.id !== id);
-              return [...filtered, { id: id, _action: 'DELETE', editor: currentUser.name }];
-           });
-        }
+        safeSetSyncQueue(prev => {
+          const isPendingAdd = prev.some(q => String(q.id) === String(id) && (!q._action || q._action === 'ADD'));
+          if (isPendingAdd) {
+             return prev.filter(q => String(q.id) !== String(id));
+          } else {
+             const filtered = prev.filter(q => String(q.id) !== String(id));
+             return [...filtered, { id: id, _action: 'DELETE', editor: currentUser.name }];
+          }
+        });
         setEditingTx(null);
         showStatus("success", "已刪除，背景同步中");
-      };
+      }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
 
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        const baseList = transactions.length ? transactions : txCache;
+        const baseList = Array.isArray(transactions) && transactions.length ? transactions : (Array.isArray(txCache) ? txCache : []);
         
-        const deleteIds = new Set(syncQueue.filter(q => q._action === 'DELETE').map(q => q.id));
-        const activeBaseList = baseList.filter(t => !deleteIds.has(t.id));
+        const deleteIds = new Set((syncQueue || []).filter(q => q._action === 'DELETE').map(q => String(q.id)));
+        const activeBaseList = baseList.filter(t => !deleteIds.has(String(t.id)));
         
-        const updateMap = new Map(syncQueue.filter(q => q._action === 'UPDATE').map(q => [q.id, q]));
-        const mergedList = activeBaseList.map(t => updateMap.has(t.id) ? { ...updateMap.get(t.id), isPending: true } : t);
+        const updateMap = new Map((syncQueue || []).filter(q => q._action === 'UPDATE').map(q => [String(q.id), q]));
+        const mergedList = activeBaseList.map(t => updateMap.has(String(t.id)) ? { ...updateMap.get(String(t.id)), isPending: true } : t);
 
-        const pendingAdds = syncQueue
-          .filter(q => (!q._action || q._action === 'ADD') && !baseIds.has(q.id))
+        const baseIds = new Set(baseList.map(t => String(t.id)));
+        const pendingAdds = (syncQueue || [])
+          .filter(q => (!q._action || q._action === 'ADD') && !baseIds.has(String(q.id)))
           .map(t => ({ ...t, isPending: true }));
         
         return [...pendingAdds, ...mergedList];
@@ -1352,16 +1535,28 @@
         return visibleTransactions.filter(t => t.member === currentUser.name);
       }, [visibleTransactions, currentUser]);
 
+      const unconfirmedTxs = useMemo(() => {
+        if (!currentUser) return [];
+        return visibleTransactions.filter(t => 
+          String(t.member) === String(currentUser.name) && 
+          t.recorder && 
+          String(t.recorder) !== String(currentUser.name) && 
+          t.isConfirmed !== 'Y' && 
+          !t.isDeleted &&
+          t._action !== 'DELETE'
+        );
+      }, [visibleTransactions, currentUser]);
+
       const stats = useMemo(() => {
         const income = myTransactions.filter(t => t.type === "income").reduce((s,t)=>s+(Number(t.amount)||0),0);
         const expense = myTransactions.filter(t => t.type === "expense").reduce((s,t)=>s+(Number(t.amount)||0),0);
         return { income, expense, balance: income - expense };
       }, [myTransactions]);
 
-      const groupTransactions = (list) => {
+      const groupTransactions = useCallback((list) => {
         const grouped = []; const groupMap = {};
         for (const rawTx of list) {
-          const txHist = historyCache.filter(h => String(h.txId) === String(rawTx.id) && h.action !== 'DELETE')
+          const txHist = (historyCache || []).filter(h => String(h.txId) === String(rawTx.id) && h.action !== 'DELETE')
                                      .sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp));
           const tx = { ...rawTx, editHistory: txHist };
 
@@ -1384,7 +1579,7 @@
           }
         }
         
-        const deletedRecords = historyCache.filter(h => h.action === 'DELETE');
+        const deletedRecords = (historyCache || []).filter(h => h.action === 'DELETE');
         for (const dr of deletedRecords) {
           if (dr.groupId && groupMap[dr.groupId]) {
             if (!groupMap[dr.groupId].children.some(c => String(c.id) === String(dr.txId))) {
@@ -1395,13 +1590,13 @@
                  isDeleted: true,
                  deleteEditor: dr.editor,
                  deleteTime: dr.timestamp,
-                 editHistory: historyCache.filter(h => String(h.txId) === String(dr.txId) && h.action !== 'DELETE').sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp))
+                 editHistory: (historyCache || []).filter(h => String(h.txId) === String(dr.txId) && h.action !== 'DELETE').sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp))
                });
             }
           }
         }
 
-        const groupUpdates = syncQueue.filter(q => q._action === 'UPDATE_GROUP');
+        const groupUpdates = (syncQueue || []).filter(q => q._action === 'UPDATE_GROUP');
         groupUpdates.forEach(gu => {
            const grp = groupMap[gu.groupId];
            if (grp) {
@@ -1418,19 +1613,20 @@
         }
         
         return grouped;
-      };
+      }, [historyCache, syncQueue]);
 
       const myGroupedAndSorted = useMemo(() => {
         const grouped = groupTransactions(myTransactions);
         return grouped.sort((a, b) => {
            const tA = parseDateForSort(a.date); const tB = parseDateForSort(b.date);
            if (tB !== tA) return tB - tA;
-           const idA = a.isGroup ? a.children[0].id : a.id; const idB = b.isGroup ? b.children[0].id : b.id;
+           const idA = a.isGroup && a.children.length ? a.children[0].id : a.id; 
+           const idB = b.isGroup && b.children.length ? b.children[0].id : b.id;
            return (Number(idB) || 0) - (Number(idA) || 0);
         });
-      }, [myTransactions, syncQueue, historyCache]);
+      }, [myTransactions, groupTransactions]);
 
-      const checkCatMatch = (tx, filterObj) => {
+      const checkCatMatch = useCallback((tx, filterObj) => {
         const pCat = getParentCat(tx.category);
         const cCat = getChildCat(tx.category);
         const bCat = formatBen(tx.beneficiary, tx.member) || "未知";
@@ -1453,7 +1649,7 @@
           if (incBen.length > 0 && !incBen.some(c => c.val === bCat)) return false;
         }
         return true;
-      };
+      }, []);
 
       const filteredHistoryGroups = useMemo(() => {
         if (!currentUser) return [];
@@ -1494,13 +1690,13 @@
           };
 
           if (item.isGroup) {
-            const validChildren = item.children.filter(c => {
+            const validChildren = (item.children || []).filter(c => {
                if (historyFilter.minAmount && Number(c.amount) < Number(historyFilter.minAmount)) return false;
                if (historyFilter.maxAmount && Number(c.amount) > Number(historyFilter.maxAmount)) return false;
                return checkCatMatch(c, historyFilter) && matchesSearch(c);
             });
             const groupMatchesSearch = !q || String(item.parentTitle || "").toLowerCase().includes(q) || String(item.parentDesc || "").toLowerCase().includes(q);
-            const finalChildren = groupMatchesSearch ? item.children.filter(c => checkCatMatch(c, historyFilter)) : validChildren;
+            const finalChildren = groupMatchesSearch ? (item.children || []).filter(c => checkCatMatch(c, historyFilter)) : validChildren;
 
             if (finalChildren.length > 0) {
               filteredList.push({
@@ -1516,7 +1712,7 @@
           }
         }
         return filteredList;
-      }, [myGroupedAndSorted, currentUser, historyFilter, historySearch]);
+      }, [myGroupedAndSorted, currentUser, historyFilter, historySearch, checkCatMatch]);
 
       const isHistoryFiltered = useMemo(() => {
         return historySearch.trim() !== "" || 
@@ -1531,7 +1727,7 @@
         let exp = 0, inc = 0;
         filteredHistoryGroups.forEach(item => {
            if (item.isGroup) {
-              item.children.forEach(c => {
+              (item.children || []).forEach(c => {
                  if (c.isDeleted) return;
                  if (c.type === 'expense') exp += (Number(c.amount)||0);
                  else inc += (Number(c.amount)||0);
@@ -1580,7 +1776,7 @@
           if (!checkCatMatch(t, analysisFilter)) return false;
           return true;
         });
-      }, [visibleTransactions, analysisFilter, analysisType, currentUser]);
+      }, [visibleTransactions, analysisFilter, analysisType, currentUser, checkCatMatch]);
 
       const analysisData = useMemo(() => {
         let level1Data = {};
@@ -1605,9 +1801,9 @@
 
       const totalAnalysisAmount = useMemo(() => Object.values(analysisData).reduce((s,v) => s + v.total, 0), [analysisData]);
 
-      const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
+      const toggleGroup = useCallback((gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })), []);
 
-      const jumpToHistoryFromChart = (childCat, benCat = null, parentCat = null) => {
+      const jumpToHistoryFromChart = useCallback((childCat, benCat = null, parentCat = null) => {
         const newConds = [{ mode: 'include', level: 'child', val: childCat, id: Date.now() }];
         if (parentCat) newConds.push({ mode: 'include', level: 'parent', val: parentCat, id: Date.now() + 1 });
         if (benCat) newConds.push({ mode: 'include', level: 'beneficiary', val: benCat, id: Date.now() + 2 });
@@ -1623,19 +1819,19 @@
         });
         setHistorySearch("");
         setActiveTab("history");
-      };
+      }, [analysisFilter, analysisType]);
 
-      const renderStandaloneCard = (tx, allowEdit = true) => {
+      const renderStandaloneCard = useCallback((tx, allowEdit = true) => {
         const rawBen = formatBen(tx.beneficiary, tx.member);
-        const benTag = rawBen === currentUser.name ? "" : rawBen;
+        const benTag = rawBen === currentUser?.name ? "" : rawBen;
         const showBenTag = benTag !== "";
-        const hasHistory = tx.editHistory && tx.editHistory.length > 0;
+        const hasHistory = Array.isArray(tx.editHistory) && tx.editHistory.length > 0;
 
         return (
           <div key={tx.id} className="bg-white rounded-3xl border border-gray-100 flex items-center gap-2 sm:gap-3 shadow-sm relative overflow-hidden mb-3 pr-2 sm:pr-3">
             {tx.isPending && (
               <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[9px] font-black px-2 py-1 rounded-bl-xl shadow-sm z-10 flex items-center gap-1">
-                <SvgIcon name="refresh" size={10} className="animate-spin opacity-70" /> 未同步
+                <SvgIcon name="loader" size={10} className="animate-spin opacity-70" /> 未同步
               </div>
             )}
             <div className="flex-1 p-3 sm:p-4 flex items-center gap-2 sm:gap-3 pr-0 mt-1">
@@ -1643,7 +1839,7 @@
                 <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
                 </div>
-                {tx.member !== currentUser.name && (
+                {tx.member !== currentUser?.name && (
                   <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
                     {tx.member}
                   </div>
@@ -1682,20 +1878,20 @@
             )}
           </div>
         );
-      };
+      }, [currentUser]);
 
-      const renderGroupCard = (group, allowEdit = true) => {
+      const renderGroupCard = useCallback((group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
-        group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
+        (group.children || []).forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
         const rawParentBen = formatBen(Array.from(allBens).join(","), group.member);
-        const parentBenTag = rawParentBen === currentUser.name ? "" : rawParentBen;
+        const parentBenTag = rawParentBen === currentUser?.name ? "" : rawParentBen;
 
         return (
           <div key={group.groupId} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden mb-3 transition-all duration-300 relative">
             {group.isPending && (
               <div className="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[9px] font-black px-2 py-1 rounded-bl-xl shadow-sm z-20 flex items-center gap-1">
-                <SvgIcon name="refresh" size={10} className="animate-spin opacity-70" /> 未同步
+                <SvgIcon name="loader" size={10} className="animate-spin opacity-70" /> 未同步
               </div>
             )}
             <div className="flex items-center pr-2 sm:pr-3 cursor-pointer active:bg-gray-50 transition-colors relative mt-1" onClick={() => toggleGroup(group.groupId)}>
@@ -1705,7 +1901,7 @@
                     {group.type==="income" ? "收入" : "支出"}
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
-                  {group.member !== currentUser.name && (
+                  {group.member !== currentUser?.name && (
                     <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div>
                   )}
                 </div>
@@ -1738,10 +1934,10 @@
 
             {isExp && (
               <div className="bg-gray-50/80 p-2 sm:p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner relative">
-                {group.children.map((child, idx) => {
+                {(group.children || []).map((child, idx) => {
                   const rawChildBen = formatBen(child.beneficiary, group.member);
-                  const childBenTag = rawChildBen === currentUser.name ? "" : rawChildBen;
-                  const hasHistory = child.editHistory && child.editHistory.length > 0;
+                  const childBenTag = rawChildBen === currentUser?.name ? "" : rawChildBen;
+                  const hasHistory = Array.isArray(child.editHistory) && child.editHistory.length > 0;
                   return (
                     <div key={child.id} className="flex items-center gap-2 pr-1 relative">
                       <div className={`flex-1 flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-2xl shadow-sm border border-gray-200 pr-3 ${child.isDeleted ? 'opacity-60 bg-gray-100' : 'bg-white'}`}>
@@ -1775,12 +1971,12 @@
             )}
           </div>
         );
-      };
+      }, [expandedGroups, currentUser, toggleGroup]);
 
-      const renderItemOrGroup = (item, allowEdit) => {
+      const renderItemOrGroup = useCallback((item, allowEdit) => {
         if (item.isGroup) return renderGroupCard(item, allowEdit);
         return renderStandaloneCard(item, allowEdit);
-      };
+      }, [renderGroupCard, renderStandaloneCard]);
 
       const [animTrigger, setAnimTrigger] = useState(false);
       useEffect(() => {
@@ -1924,7 +2120,7 @@
             {loadingCard?.show && (
               <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
                 <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="refresh" size={28} className="animate-spin text-blue-600"/></div>
+                  <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="loader" size={28} className="animate-spin text-blue-600"/></div>
                   <div className="font-black text-lg">處理中</div>
                   <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
                 </div>
@@ -1938,6 +2134,16 @@
 
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
+          {/* 代記帳確認滑動視窗 */}
+          <DelegatedNoticeModal txs={unconfirmedTxs} onConfirm={handleConfirmDelegated} />
+
+          <PendingSyncModal 
+            isOpen={showPendingModal} 
+            onClose={() => setShowPendingModal(false)} 
+            syncQueue={syncQueue} 
+            onSync={() => syncDataToCloud(true)} 
+            isLoading={isLoading} 
+          />
           {viewingHistory && <ViewEditHistoryModal tx={viewingHistory} onClose={() => setViewingHistory(null)} />}
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
@@ -1988,7 +2194,7 @@
 
           <header className="px-4 sm:px-6 pt-12 pb-4 sm:pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 shadow-sm">
             <div className="flex items-center gap-3 text-left">
-              <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-11 h-11 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/30`}>
+              <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-11 h-11 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/30 shrink-0`}>
                 {currentUser.name.charAt(0)}
               </div>
               <div className="flex flex-col justify-center">
@@ -2001,8 +2207,8 @@
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
-              <button onClick={() => syncDataToCloud(true)} disabled={isLoading} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex flex-col items-center justify-center border border-blue-100 disabled:opacity-50">
-                <SvgIcon name="cloud" size={18} className={isSyncing ? "animate-pulse text-blue-400" : ""}/>
+              <button onClick={handleSyncButtonClick} disabled={isLoading} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex flex-col items-center justify-center border border-blue-100 disabled:opacity-50 shrink-0">
+                <SvgIcon name={isSyncing ? "loader" : "cloud"} size={18} className={isSyncing ? "animate-spin text-blue-400" : ""}/>
                 <span className={`text-[8px] font-black mt-0.5 ${isSyncing ? "text-blue-500" : navigator.onLine ? "text-green-500" : "text-gray-400"}`}>
                   {isSyncing ? "同步中" : navigator.onLine ? "線上" : "離線"}
                 </span>
@@ -2087,7 +2293,7 @@
                   {filteredHistoryGroups.slice(0, historyVisibleCount).map(item => renderItemOrGroup(item, true))}
                   {historyVisibleCount < filteredHistoryGroups.length && (
                     <button onClick={() => setHistoryVisibleCount(prev => prev + 20)} className="w-full py-4 bg-white border border-gray-200 text-blue-600 rounded-2xl font-black text-xs active:bg-gray-50 transition-colors shadow-sm mt-4 flex justify-center items-center gap-2">
-                      <SvgIcon name="refresh" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {filteredHistoryGroups.length})
+                      <SvgIcon name="loader" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {filteredHistoryGroups.length})
                     </button>
                   )}
                   {filteredHistoryGroups.length === 0 && <div className="text-center py-10 flex flex-col items-center gap-2"><span className="text-gray-400 text-sm font-bold">尚無符合條件的紀錄</span></div>}
@@ -2122,6 +2328,7 @@
 
                   if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄，請調整過濾條件</div>;
                   
+                  // 三組不同情境的獨立色系
                   const EXPENSE_COLORS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#14b8a6", "#ec4899", "#f43f5e", "#be123c"];
                   const INCOME_COLORS = ["#10b981", "#059669", "#047857", "#14b8a6", "#0d9488", "#0f766e", "#3b82f6", "#2563eb", "#1d4ed8"];
                   const BEN_COLORS = ["#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#0ea5e9", "#0284c7", "#4338ca", "#6d28d9", "#3b82f6"];
@@ -2344,16 +2551,18 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V22] 徹底清除重複代碼結構、修復 isLoading 遺失，並確保所有函數無縫對齊</li>
-                          <li>[V21.1] 徹底修復 IDB Key 遺失問題，加上 `isDbLoaded` 防護，消除 Race Condition，杜絕白屏。</li>
-                          <li>[V21] 完美解決同步後白屏問題 (資料格式安全轉換與拷貝保護)</li>
-                          <li>[V20] 修正 Race Condition，無縫背景同步消除空窗期，待同步項目永駐所有頁面</li>
-                          <li>[V19] 首頁與歷史篩選完全脫鉤，新增子項目刪除墓碑標記，並支援完整編輯歷史溯源</li>
+                          <li>[V28] 新增跨頁面滑動通知系統(處理未確認代記明細)、圖示防變形終極包裹</li>
+                          <li>[V27] 更換處理中圖示為質感開口圓環</li>
+                          <li>[V26.1] 修復 `safeArrayLS` 遺失問題，徹底解決白屏</li>
+                          <li>[V26] 絕對防護版：雙引擎存取不漏接，IDB防卡死機制，強制預設陣列，杜絕一切資料遺失</li>
+                          <li>[V25] 鐵壁防護版：雙重備份寫入 (IDB + LocalStorage)、BeforeUnload 防跳出警告</li>
+                          <li>[V24] 加入點擊同步按鈕時，若有排隊資料會顯示「待同步清單彈窗」</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>[V8] 擴增第 13 欄位 (IsConfirmed)，支援跨設備舊資料代記狀態確認</li>
                           <li>[V7] 資料表擴充，新增獨立的歷史編輯表 (EditHistory) 支援完整快照備份</li>
                           <li>[V6] 導入 CacheService 與 TextFinder，實現毫秒級讀取與光速搜尋</li>
                         </ul>
