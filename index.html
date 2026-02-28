@@ -64,8 +64,9 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.02.26.PRO.V6";
-    const GAS_TARGET_VERSION = "2026.02.26.PRO.V4";
+    // 【更新】版號同步
+    const APP_VERSION = "2026.02.28.PRO.V8.OPT";
+    const GAS_TARGET_VERSION = "2026.02.28.PRO.V5.OPT";
 
     const LS = {
       pending: "pending_sync_v23",
@@ -81,7 +82,6 @@
       greetingsCache: "greetings_cache_v1" 
     };
 
-    // --- 三口小家庭專用類別定義 ---
     const CATEGORY_MAP = {
       expense: {
         "食": ["早餐", "午餐", "晚餐", "生鮮食材", "零食/飲料", "外食聚餐", "其他"],
@@ -170,7 +170,9 @@
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
         settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
-        refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
+        refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
+        spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
+        cloudSync: <React.Fragment><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></React.Fragment>,
         bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
         close: <path d="M18 6L6 18M6 6l12 12"/>,
         info: <React.Fragment><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></React.Fragment>,
@@ -193,14 +195,14 @@
 
       return (
         <div className="flex gap-2">
-          <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
+          <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
             <label className="text-[8px] font-black text-blue-500 uppercase block mb-0.5 tracking-widest">主類別</label>
             <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"
               value={safeParentCat} onChange={(e) => onChange(e.target.value, CATEGORY_MAP[type][e.target.value][0])}>
               {pCats.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
-          <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 border border-transparent focus-within:border-blue-200 transition-colors">
+          <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
             <label className="text-[8px] font-black text-blue-500 uppercase block mb-0.5 tracking-widest">子項目</label>
             <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"
               value={childCat} onChange={(e) => onChange(safeParentCat, e.target.value)}>
@@ -292,7 +294,7 @@
       const isSubmitDisabled = isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
       return (
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black pb-8">
+        <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black pb-8">
           <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6 text-sm text-gray-500">
             <button onClick={() => handleTypeChange("expense")} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
             <button onClick={() => handleTypeChange("income")} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
@@ -300,9 +302,9 @@
 
           <div className="relative flex flex-col items-center justify-center mb-6 py-2 min-h-[80px] text-gray-800">
             {isSplit && <span className="text-[10px] text-gray-400 uppercase tracking-widest font-black mb-1">自動加總金額</span>}
-            <div className="flex items-center justify-center cursor-pointer" onClick={() => !isSplit && inputRef.current?.focus()}>
-              <span className="text-2xl font-black text-gray-300 mr-1 mt-2">$</span>
-              <div className={`text-6xl font-black text-center min-w-[1.5rem] tracking-tighter transition-colors ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}>
+            <div className="flex items-center justify-center cursor-pointer max-w-full overflow-hidden" onClick={() => !isSplit && inputRef.current?.focus()}>
+              <span className="text-2xl font-black text-gray-300 mr-1 mt-2 shrink-0">$</span>
+              <div className={`text-5xl font-black text-center min-w-[1.5rem] tracking-tighter truncate transition-colors ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}>
                 {renderAmount()}
               </div>
               {!isSplit && (
@@ -316,22 +318,22 @@
           <div className="space-y-4 text-left">
             <div className="bg-gray-100 p-3 rounded-2xl flex items-center justify-between">
               <span className="text-xs font-black text-gray-600 pl-2">拆分多筆明細 (如單張發票)</span>
-              <button onClick={() => setIsSplit(!isSplit)} className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${isSplit ? 'bg-blue-500' : 'bg-gray-300'}`}>
+              <button onClick={() => setIsSplit(!isSplit)} className={`w-12 h-6 shrink-0 rounded-full p-1 transition-colors duration-200 ease-in-out ${isSplit ? 'bg-blue-500' : 'bg-gray-300'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isSplit ? 'translate-x-6' : 'translate-x-0'}`}></div>
               </button>
             </div>
 
             <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">時間</label>
+              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs flex-1 text-right min-w-0"
                 value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
             </div>
 
             {!isSplit && (
               <>
                 <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
-                  <div className="flex gap-1.5 flex-1 justify-end">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">對象</label>
+                  <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                     {BEN_OPTIONS.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
                         className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
@@ -343,7 +345,7 @@
                 <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
                 <div className="bg-gray-100 py-2.5 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
-                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0"
                     placeholder="輸入說明..." value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
                 </div>
               </>
@@ -352,14 +354,14 @@
             {isSplit && (
               <>
                 <div className="flex gap-2">
-                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
+                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 min-w-0 focus-within:border-blue-200 border border-transparent transition-colors">
                     <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目標題</label>
-                    <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs"
+                    <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs min-w-0"
                       placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })} />
                   </div>
-                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 focus-within:border-blue-200 border border-transparent transition-colors">
+                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 min-w-0 focus-within:border-blue-200 border border-transparent transition-colors">
                     <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目備註</label>
-                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs"
+                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs min-w-0"
                       placeholder="選填..." value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })} />
                   </div>
                 </div>
@@ -376,30 +378,30 @@
                           <button onClick={() => handleRemoveSubItem(sub.id)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-sm font-bold">✕</button>
                         )}
                         <div className="flex gap-2 mb-2">
-                          <select className="flex-1 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
+                          <select className="flex-1 min-w-0 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-2 py-2 rounded-xl text-gray-700"
                             value={safeParentCat} onChange={(e) => { const newP = e.target.value; updateSubItem(sub.id, {parentCat: newP, childCat: CATEGORY_MAP[formData.type][newP][0]}); }}>
                             {pCats.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
-                          <select className="flex-1 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-3 py-2 rounded-xl text-gray-700"
+                          <select className="flex-1 min-w-0 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-2 py-2 rounded-xl text-gray-700"
                             value={sub.childCat} onChange={(e) => updateSubItem(sub.id, {childCat: e.target.value})}>
                             {cCats.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
                         <div className="flex gap-2 mb-2 items-center">
-                          <input type="text" className="flex-[2] bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-3 py-2 rounded-xl"
+                          <input type="text" className="flex-[3] min-w-0 bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-2.5 py-2 rounded-xl"
                             placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, {desc: e.target.value})} />
-                          <div className="flex-1 relative">
+                          <div className="flex-[2] min-w-0 relative">
                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span>
-                            <input type="number" inputMode="decimal" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right"
+                            <input type="number" inputMode="decimal" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right min-w-0"
                               placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} />
                           </div>
                         </div>
                         <div className="flex items-center justify-between pt-1">
-                          <span className="text-[9px] font-bold text-gray-400 uppercase pr-2">對象</span>
-                          <div className="flex gap-1.5 flex-1 justify-end">
+                          <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">對象</span>
+                          <div className="flex gap-1 flex-1 justify-end flex-wrap">
                             {BEN_OPTIONS.map(b => (
                               <button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)}
-                                className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-400"}`}>
+                                className={`px-2 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-400"}`}>
                                 {b}
                               </button>
                             ))}
@@ -416,8 +418,8 @@
             )}
 
             <div className="bg-gray-50 py-2.5 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">記錄帳本</label>
-              <div className="flex gap-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0 mr-2">記錄帳本</label>
+              <div className="flex gap-1.5 flex-wrap justify-end">
                 <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>自己</button>
                 <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>幫{otherMember}記</button>
               </div>
@@ -427,7 +429,7 @@
           <button disabled={isSubmitDisabled} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            {isLoading ? <SvgIcon name="refresh" size={20} className="animate-spin" /> : null}
+            {isLoading ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : null}
             {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
           </button>
         </div>
@@ -461,10 +463,10 @@
       const handleSave = () => onSave({ ...formData, category: `${formData.parentCat}/${formData.childCat}`, beneficiary: formData.beneficiary.join(",") });
 
       return (
-        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
+        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
           <div className="w-full max-w-sm relative">
             <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition"><SvgIcon name="close" size={32} /></button>
-            <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
+            <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
               <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
               <h2 className="text-xl font-black text-center mb-6 text-gray-800 pt-2">編輯明細</h2>
 
@@ -473,21 +475,21 @@
                 <button onClick={() => { const p = "收入"; const c = CATEGORY_MAP["income"][p][0]; setFormData({ ...formData, type: "income", parentCat: p, childCat: c }) }} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
               </div>
 
-              <div className="relative flex items-center justify-center mb-6 py-2 border-b border-gray-100 pb-6 text-gray-800">
-                <span className="text-2xl font-black text-gray-300 mr-1 mt-1">$</span>
-                <input type="number" inputMode="decimal" className={`w-32 text-5xl font-black text-center outline-none bg-transparent ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}
+              <div className="relative flex items-center justify-center mb-6 py-2 border-b border-gray-100 pb-6 text-gray-800 max-w-full overflow-hidden">
+                <span className="text-2xl font-black text-gray-300 mr-1 mt-1 shrink-0">$</span>
+                <input type="number" inputMode="decimal" className={`w-[120px] max-w-full text-4xl sm:text-5xl font-black text-center outline-none bg-transparent min-w-0 ${formData.type === "expense" ? "text-red-500" : "text-green-500"}`}
                   value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} />
               </div>
 
               <div className="space-y-4 text-left">
                 <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[160px] text-right"
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">時間</label>
+                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs w-[140px] md:w-[160px] text-right min-w-0"
                     value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
                 </div>
 
                 <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">對象</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">對象</label>
                   <div className="flex gap-1.5 flex-1 justify-end flex-wrap">
                     {BEN_OPTIONS.map(b => (
                       <button type="button" key={b} onClick={() => toggleBeneficiary(b)}
@@ -502,7 +504,7 @@
 
                 <div className="bg-gray-100 py-2 px-3 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">帳本</label>
-                  <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-right"
+                  <select className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-right min-w-0"
                     value={formData.member} onChange={(e) => setFormData({ ...formData, member: e.target.value })}>
                     <option value={loginUser}>自己</option><option value={otherMember}>{otherMember}</option>
                   </select>
@@ -510,7 +512,7 @@
 
                 <div className="bg-gray-100 py-2 px-3 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
-                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm text-right"
+                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm text-right min-w-0"
                     placeholder="選填" value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
                 </div>
               </div>
@@ -522,15 +524,15 @@
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
                     <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
-                      {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
+                      {isLoading ? <SvgIcon name="spinner" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
                     </button>
                   </>
                 ) : (
                   <div className="w-full animate-in bg-red-50 p-4 rounded-2xl text-center border border-red-100">
                     <p className="text-red-600 font-black text-xs mb-3">確定永久刪除此紀錄？</p>
-                    <div className="flex gap-2">
-                      <button onClick={() => setShowConfirmDelete(false)} className="flex-1 py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
-                      <button disabled={isLoading} onClick={() => onDelete(tx.id)} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => setShowConfirmDelete(false)} className="flex-1 min-w-[100px] py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
+                      <button disabled={isLoading} onClick={() => onDelete(tx.id)} className="flex-1 min-w-[100px] py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
                     </div>
                   </div>
                 )}
@@ -559,37 +561,37 @@
       };
 
       return (
-        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
+        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
           <div className="w-full max-w-sm relative">
             <button onClick={onCancel} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition">
               <SvgIcon name="close" size={32} />
             </button>
-            <div className="bg-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
+            <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
               <div className="absolute top-0 left-0 w-full h-2 bg-gray-800"></div>
               <h2 className="text-xl font-black text-center mb-2 text-gray-800 pt-2">編輯母項目</h2>
               <p className="text-[10px] text-gray-400 text-center mb-6">修改後將同步更新旗下所有明細的時間與標題</p>
 
               <div className="space-y-4 text-left">
                 <div className="bg-gray-100 py-2.5 px-4 rounded-xl flex items-center justify-between border border-transparent focus-within:border-gray-300 transition-colors">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label>
-                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm w-[180px] text-right"
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">時間</label>
+                  <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-sm flex-1 text-right min-w-0"
                     value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
                 </div>
                 <div className="bg-gray-100 py-3 px-4 rounded-xl flex flex-col gap-1 border border-transparent focus-within:border-gray-300 transition-colors">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">母項目標題</label>
-                  <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">母項目標題</label>
+                  <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0"
                     placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })} />
                 </div>
                 <div className="bg-gray-100 py-3 px-4 rounded-xl flex flex-col gap-1 border border-transparent focus-within:border-gray-300 transition-colors">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">母項目備註</label>
-                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">母項目備註</label>
+                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0"
                     placeholder="選填" value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })} />
                 </div>
               </div>
 
               <div className="mt-8">
                 <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
-                  {isLoading ? <SvgIcon name="refresh" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
+                  {isLoading ? <SvgIcon name="spinner" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
                 </button>
               </div>
             </div>
@@ -614,7 +616,6 @@
       const [selectingUser, setSelectingUser] = useState(null);
       const [pinInput, setPinInput] = useState("");
       
-      // 修復防卡死狀態
       const [fallbackToPin, setFallbackToPin] = useState(false);
 
       const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -632,7 +633,10 @@
       const [editingIsPending, setEditingIsPending] = useState(false);
 
       const [expandedGroups, setExpandedGroups] = useState({});
+      
+      // 【優化】搜尋防抖狀態
       const [historySearch, setHistorySearch] = useState("");
+      const [debouncedHistorySearch, setDebouncedHistorySearch] = useState(""); 
       const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
       const [historyDateFilter, setHistoryDateFilter] = useState("all");
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
@@ -670,7 +674,13 @@
         }
       }, [currentUser, greetingsCache]);
 
-      useEffect(() => setHistoryVisibleCount(20), [historySearch, historyTypeFilter, historyDateFilter, activeTab]);
+      // 【優化】搜尋防抖監聽器 (350ms)
+      useEffect(() => {
+        const timer = setTimeout(() => setDebouncedHistorySearch(historySearch), 350);
+        return () => clearTimeout(timer);
+      }, [historySearch]);
+
+      useEffect(() => setHistoryVisibleCount(20), [debouncedHistorySearch, historyTypeFilter, historyDateFilter, activeTab]);
       useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
       useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
       useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
@@ -713,11 +723,17 @@
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
-        const formatted = (data.transactions || []).map((t, i) => ({
-          id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
-          date: t["日期時間"] || t["日期"] || "", member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
-          desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
-        }));
+        const formatted = (data.transactions || []).map((t, i) => {
+          const rawDate = t["日期時間"] || t["日期"] || "";
+          // 【優化】提早解析時間戳記，避免排序時重複進行 Regex 運算
+          const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
+          const ts = new Date(cleanStr).getTime() || 0;
+          return {
+            id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
+            date: rawDate, timestamp: ts, member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
+            desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
+          };
+        });
         setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); 
         if (data.greetings) setGreetingsCache(data.greetings); 
         return formatted;
@@ -730,13 +746,23 @@
           if (doRefreshFirst) await refreshDeviceToken();
           if (syncQueue.length > 0) {
             setLoadingCard({ show:true, text:"正在同步暫存..." });
-            const queue = [...syncQueue];
-            for (const item of queue) {
-              const payload = { ...item, deviceToken: getDeviceToken() };
-              const res = await postGAS(payload);
-              if (res.result !== "success") throw new Error(res.message || "同步失敗");
-              setSyncQueue(prev => prev.filter(p => !(p.id === item.id && (p.action||"") === (item.action||""))));
+            
+            // 【優化】將新增 (ADD) 的紀錄獨立打包成 Batch
+            const addItems = syncQueue.filter(item => !item.action || item.action === "ADD");
+            const updateItems = syncQueue.filter(item => item.action && item.action !== "ADD");
+
+            if (addItems.length > 0) {
+              const res = await postGAS({ action: "BATCH_SYNC", transactions: addItems, deviceToken: getDeviceToken() });
+              if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             }
+            
+            // 其他操作維持單筆發送
+            for (const item of updateItems) {
+              const res = await postGAS({ ...item, deviceToken: getDeviceToken() });
+              if (res.result !== "success") throw new Error(res.message || "同步失敗");
+            }
+            
+            setSyncQueue([]); // 成功後一次性清空
           }
           await fetchCloudTx(); showStatus("success", "同步完成");
         } catch (e) {
@@ -816,7 +842,7 @@
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseId = Date.now(); const isMulti = newTxs.length > 1;
         const groupId = isMulti ? `G${baseId}` : ""; const parentDesc = isMulti ? newTxs[0].parentDesc : "";
-        const completeTxs = newTxs.map((tx, idx) => ({ ...tx, date: baseDate, recorder: currentUser.name, id: String(baseId + idx), groupId, parentDesc }));
+        const completeTxs = newTxs.map((tx, idx) => ({ ...tx, date: baseDate, recorder: currentUser.name, id: String(baseId + idx), groupId, parentDesc, action: "ADD" }));
 
         if (!navigator.onLine || !deviceValid()) {
           setSyncQueue(prev => [...prev, ...completeTxs]); showStatus("info", `已暫存 ${completeTxs.length} 筆（待同步）`);
@@ -825,8 +851,12 @@
 
         try {
           setLoadingCard({ show:true, text: isMulti ? `寫入 ${completeTxs.length} 筆明細...` : "正在寫入..." }); await refreshDeviceToken();
-          for (const tx of completeTxs) {
-             const res = await postGAS({ ...tx, deviceToken: getDeviceToken() });
+          
+          if (isMulti) {
+             const res = await postGAS({ action: "BATCH_SYNC", transactions: completeTxs, deviceToken: getDeviceToken() });
+             if (res.result !== "success") throw new Error(res.message || "批次寫入失敗");
+          } else {
+             const res = await postGAS({ ...completeTxs[0], deviceToken: getDeviceToken() });
              if (res.result !== "success") throw new Error(res.message || "寫入失敗");
           }
           await fetchCloudTx(); showStatus("success", isMulti ? `已同步 ${completeTxs.length} 筆紀錄` : "已同步");
@@ -915,7 +945,7 @@
               const pTitle = parts.length > 1 ? parts[0] : (parts[0] || "拆分紀錄");
               const pDesc = parts.length > 1 ? parts[1] : "";
               groupMap[tx.groupId] = {
-                isGroup: true, groupId: tx.groupId, parentTitle: pTitle, parentDesc: pDesc, date: tx.date,
+                isGroup: true, groupId: tx.groupId, parentTitle: pTitle, parentDesc: pDesc, date: tx.date, timestamp: tx.timestamp,
                 member: tx.member, recorder: tx.recorder, type: tx.type, amount: 0, children: []
               };
               grouped.push(groupMap[tx.groupId]);
@@ -929,16 +959,19 @@
         return grouped;
       };
 
-      const parseDateForSort = (val) => {
-        if (!val) return 0;
-        let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
+      // 【優化】優先讀取計算好的 timestamp 快取
+      const parseDateForSort = (item) => {
+        if (!item) return 0;
+        if (item.timestamp) return item.timestamp;
+        if (!item.date) return 0;
+        let str = String(item.date).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
         return new Date(str).getTime() || 0;
       };
 
       const allGroupedAndSorted = useMemo(() => {
         const grouped = groupTransactions(visibleTransactions);
         return grouped.sort((a, b) => {
-          const tA = parseDateForSort(a.date); const tB = parseDateForSort(b.date);
+          const tA = parseDateForSort(a); const tB = parseDateForSort(b);
           if (tB !== tA) return tB - tA;
           const idA = a.isGroup ? a.children[0].id : a.id; const idB = b.isGroup ? b.children[0].id : b.id;
           return (Number(idB) || 0) - (Number(idA) || 0);
@@ -957,10 +990,11 @@
           else if (historyDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
           else if (historyDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
           else if (historyDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
-          list = list.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
+          list = list.filter(item => parseDateForSort(item) >= cutoff.getTime());
         }
 
-        const searchTxt = historySearch.trim();
+        // 【優化】改用 debouncedHistorySearch，防止打字卡頓
+        const searchTxt = debouncedHistorySearch.trim();
         const dateRangeRegex = /^(\d{4}\/\d{1,2}\/\d{1,2})\s*-\s*(\d{4}\/\d{1,2}\/\d{1,2})$/;
         const match = searchTxt.match(dateRangeRegex);
 
@@ -968,7 +1002,7 @@
           const startTimestamp = new Date(`${match[1]} 00:00:00`).getTime();
           const endTimestamp = new Date(`${match[2]} 23:59:59`).getTime();
           if (!isNaN(startTimestamp) && !isNaN(endTimestamp)) {
-            list = list.filter(item => { const txTime = parseDateForSort(item.date); return txTime >= startTimestamp && txTime <= endTimestamp; });
+            list = list.filter(item => { const txTime = parseDateForSort(item); return txTime >= startTimestamp && txTime <= endTimestamp; });
           }
         } else if (searchTxt) {
           const q = searchTxt.toLowerCase();
@@ -983,7 +1017,7 @@
           });
         }
         return list;
-      }, [allGroupedAndSorted, currentUser, historyTypeFilter, historyDateFilter, historySearch]);
+      }, [allGroupedAndSorted, currentUser, historyTypeFilter, historyDateFilter, debouncedHistorySearch]);
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
@@ -992,7 +1026,7 @@
         const showBenTag = benTag && benTag !== "";
         return (
           <div key={tx.id} className="flex gap-2 items-center mb-3">
-            <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden">
+            <div className="flex-1 min-w-0 bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden">
               <div className="relative shrink-0">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
@@ -1004,9 +1038,9 @@
                 )}
               </div>
               <div className="flex-1 min-w-0 pl-1">
-                <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-2">
-                  {getParentCat(tx.category)} - {getChildCat(tx.category)}
-                  {showBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{benTag}</span>}
+                <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
+                  <span className="truncate max-w-full">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
+                  {showBenTag && <span className="shrink-0 bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{benTag}</span>}
                 </div>
                 <div className="flex flex-col gap-1 mt-1.5 w-full">
                   <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(tx.date)}</span>
@@ -1014,7 +1048,7 @@
                 </div>
               </div>
               <div className="flex flex-col items-end justify-center shrink-0 pl-1">
-                <div className={`font-black tabular-nums text-lg leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
+                <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
                   ${Number(tx.amount||0).toLocaleString()}
                 </div>
                 {tx.recorder && tx.recorder !== tx.member && (
@@ -1025,9 +1059,9 @@
               </div>
             </div>
             {allowEdit && (
-              <div className="flex flex-col justify-center shrink-0 pr-1">
-                <button onClick={() => setEditingTx(tx)} className="w-12 h-12 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                  <SvgIcon name="edit" size={20} />
+              <div className="flex flex-col justify-center shrink-0">
+                <button onClick={() => setEditingTx(tx)} className="w-8 h-8 bg-blue-50/50 text-blue-500 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
+                  <SvgIcon name="edit" size={14} />
                 </button>
               </div>
             )}
@@ -1043,7 +1077,7 @@
 
         return (
           <div key={group.groupId} className="flex gap-2 items-start mb-3">
-            <div className="flex-1 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
+            <div className="flex-1 min-w-0 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
               <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
                 <div className="relative shrink-0">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
@@ -1059,9 +1093,9 @@
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
-                  <div className="font-bold text-[15px] truncate text-gray-800 flex items-center gap-1.5 flex-wrap">
-                    {group.parentTitle}
-                    {parentBenTag && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{parentBenTag}</span>}
+                  <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
+                    <span className="truncate max-w-full">{group.parentTitle}</span>
+                    {parentBenTag && <span className="shrink-0 bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{parentBenTag}</span>}
                     <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 ${isExp ? 'rotate-180' : ''}`}>▼</span>
                   </div>
                   <div className="flex flex-col gap-1 mt-1 w-full">
@@ -1070,7 +1104,7 @@
                   </div>
                 </div>
                 <div className="flex flex-col items-end justify-center shrink-0 pl-1">
-                  <div className={`font-black tabular-nums text-xl leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>
+                  <div className={`font-black tabular-nums text-lg leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>
                     ${Number(group.amount||0).toLocaleString()}
                   </div>
                   {group.recorder && group.recorder !== group.member && (
@@ -1087,24 +1121,24 @@
                     const childBen = formatBen(child.beneficiary, group.member);
                     return (
                       <div key={child.id} className="flex gap-2 items-center">
-                        <div className="flex-1 flex items-center gap-3 bg-white p-3 rounded-2xl shadow-sm border border-gray-200">
-                          <div className="w-6 h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
+                        <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200">
+                          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
                             {idx + 1}
                           </div>
                           <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
-                            <div className="font-bold text-sm text-gray-800 flex items-center gap-2">
-                              {getParentCat(child.category)} - {getChildCat(child.category)}
-                              {childBen && <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
+                            <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
+                              <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
+                              {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                             </div>
-                            {child.desc && <div className="text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
+                            {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
                           </div>
-                          <div className={`font-black tabular-nums text-sm shrink-0 w-16 text-right ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
+                          <div className={`font-black tabular-nums text-xs sm:text-sm shrink-0 min-w-[3.5rem] text-right ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
                             ${Number(child.amount||0).toLocaleString()}
                           </div>
                         </div>
                         {allowEdit && (
-                          <button onClick={() => setEditingTx(child)} className="w-10 h-10 shrink-0 bg-blue-50/80 text-blue-600 rounded-xl flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
-                            <SvgIcon name="edit" size={16} />
+                          <button onClick={() => setEditingTx(child)} className="w-7 h-7 shrink-0 bg-blue-50/80 text-blue-600 rounded-lg flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
+                            <SvgIcon name="edit" size={12} />
                           </button>
                         )}
                       </div>
@@ -1114,19 +1148,14 @@
               )}
             </div>
             {allowEdit && (
-              <div className="flex flex-col justify-center shrink-0 pr-1 mt-1">
-                 <button onClick={() => setEditingGroup(group)} className="w-12 h-12 bg-blue-50/50 text-blue-500 rounded-2xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                   <SvgIcon name="edit" size={20} />
+              <div className="flex flex-col justify-center shrink-0 mt-3">
+                 <button onClick={() => setEditingGroup(group)} className="w-8 h-8 bg-blue-50/50 text-blue-500 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
+                   <SvgIcon name="edit" size={14} />
                  </button>
               </div>
             )}
           </div>
         );
-      };
-
-      const renderItemOrGroup = (item, allowEdit) => {
-        if (item.isGroup) return renderGroupCard(item, allowEdit);
-        return renderStandaloneCard(item, allowEdit);
       };
 
       const [animTrigger, setAnimTrigger] = useState(false);
@@ -1146,7 +1175,7 @@
             setPinInput("");
             if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
           } else {
-            setFallbackToPin(true); // 生物辨識失敗或取消，自動開啟密碼輸入
+            setFallbackToPin(true);
           }
         }
       };
@@ -1271,7 +1300,7 @@
             {loadingCard?.show && (
               <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
                 <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="refresh" size={28} className="animate-spin text-blue-600"/></div>
+                  <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="spinner" size={28} className="animate-spin text-blue-600"/></div>
                   <div className="font-black text-lg">處理中</div>
                   <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
                 </div>
@@ -1317,7 +1346,7 @@
           {loadingCard?.show && (
             <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
               <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="refresh" size={28} className="animate-spin text-blue-600"/></div>
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="spinner" size={28} className="animate-spin text-blue-600"/></div>
                 <div className="font-black text-lg">處理中</div>
                 <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
               </div>
@@ -1340,7 +1369,7 @@
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
               <button onClick={() => processQueueToCloud({ doRefreshFirst: true })} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
-                <SvgIcon name="refresh" size={20}/>
+                <SvgIcon name="cloudSync" size={20}/>
                 {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
               </button>
             </div>
@@ -1453,7 +1482,7 @@
                       const start = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0;
                       const end = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity;
                       analysisTxs = analysisTxs.filter(item => {
-                         const txTime = parseDateForSort(item.date);
+                         const txTime = parseDateForSort(item);
                          return txTime >= start && txTime <= end;
                       });
                     } else {
@@ -1464,7 +1493,7 @@
                       else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
                       else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
                       else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
-                      analysisTxs = analysisTxs.filter(item => parseDateForSort(item.date) >= cutoff.getTime());
+                      analysisTxs = analysisTxs.filter(item => parseDateForSort(item) >= cutoff.getTime());
                     }
                   }
 
@@ -1679,11 +1708,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>導入搜尋防抖 (Debounce) 機制，解決巨量歷史清單輸入卡頓 (V8.OPT)</li>
+                          <li>最佳化 Timestamp 排序快取，提升資料切換與解析速度 (V8.OPT)</li>
+                          <li>配合後端新增 BATCH_SYNC 機制，離線恢復同步改為批次上傳 (V8.OPT)</li>
                           <li>修復生物辨識彈窗遭瀏覽器攔截卡死的問題，並加入密碼降級機制 (V6)</li>
-                          <li>修復斜線類別字串截斷異常，優化狀態切換 (V5)</li>
-                          <li>自訂問候語支援同步儲存至 GAS 雲端表單 (V5)</li>
-                          <li>歷史清單母項目編輯按鈕置中並統一樣式 (V5)</li>
-                          <li>分析圖表支援自訂日期範圍篩選 (V5)</li>
                           <li>獨立多筆明細的花費對象標籤與子項選擇 (V4)</li>
                           <li>支援分析圖表三階層下鑽 (對象 ➔ 母類 ➔ 子類) (V4)</li>
                         </ul>
@@ -1691,11 +1719,11 @@
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>導入 HMAC-SHA256 簽章驗證，防禦 API 偽造存取 (V5.OPT)</li>
+                          <li>實作 Smart Hash 保護機制，支援 Sheet 表單明文重置與自動加密升級 (V5.OPT)</li>
+                          <li>新增 BATCH_SYNC 批次同步 API，大幅減少連線次數 (V5.OPT)</li>
+                          <li>尋找機制反向迴圈優化、母項目更新改用記憶體批次寫入防 Timeout (V5.OPT)</li>
                           <li>新增 UPDATE_GREETING 儲存自訂問候語，並於 GET_TX 派發 (V4)</li>
-                          <li>擴充至 11 欄，新增 Beneficiary (用在誰身上) 欄位 (V3)</li>
-                          <li>新增 UPDATE_GROUP_PARENT 支援母項目更新 (V3)</li>
-                          <li>支援 ParentDesc 與 GroupID 虛擬聚合欄位 (V2)</li>
-                          <li>導入 Device Token 設備綁定機制與 PIN 安全防護 (V1)</li>
                         </ul>
                       </div>
                     </div>
