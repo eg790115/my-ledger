@@ -64,19 +64,19 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本升級至 V21：完美解決同步後白屏問題 (資料格式安全轉換)
-    const APP_VERSION = "2026.02.28.PRO.V21";
+    // 版本升級至 V22：徹底清除重複代碼結構、修復 isLoading 遺失，並確保所有函數無縫對齊
+    const APP_VERSION = "2026.02.28.PRO.V22";
     const GAS_TARGET_VERSION = "2026.02.28.PRO.V7";
 
     const LS = {
-      pending: "pending_sync_v25",
-      txCache: "local_tx_cache_v25",
-      historyCache: "local_history_cache_v25",
-      lastSync: "last_sync_time_v25",
-      members: "family_member_config_v25",
+      pending: "pending_sync_v26",
+      txCache: "local_tx_cache_v26",
+      historyCache: "local_history_cache_v26", 
+      lastSync: "last_sync_time_v26",
+      members: "family_member_config_v26",
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
-      pinHashPrefix: "pin_hash_v25_",
+      pinHashPrefix: "pin_hash_v26_",
       bioCredPrefix: "bio_cred_",
       bioFailPrefix: "bio_fail_v1_", 
       bioLockPrefix: "bio_lock_v1_",
@@ -100,7 +100,6 @@
       }
     };
 
-    // 極致安全的字串提取函數，防止 Cannot read properties of undefined 報錯
     const getParentCat = (catStr) => {
       if (!catStr || typeof catStr !== 'string') return "其他";
       if (catStr.includes('/')) return catStr.split('/')[0];
@@ -132,7 +131,6 @@
     const safeStringLS = (key, fallback="") => { const v = localStorage.getItem(key); return (v === null || v === "null" || v === "undefined") ? fallback : v; };
     const safeNumberLS = (key, fallback=0) => { const v = Number(localStorage.getItem(key)); return Number.isFinite(v) ? v : fallback; };
 
-    // 核心資料翻譯機：將 GAS 的中文 Header 快照轉為 Frontend 的英文變數，消滅白屏
     const normalizeSnapshot = (snapStr) => {
       if (!snapStr) return {};
       let obj = {};
@@ -153,7 +151,7 @@
           beneficiary: obj['Beneficiary'] || ""
         };
       }
-      return obj; // 如果已經是英文結構就直接回傳
+      return obj; 
     };
 
     const parseDateForSort = (val) => {
@@ -209,8 +207,32 @@
       req.onsuccess = () => res(req.result);
       req.onerror = () => rej(req.error);
     });
-    const idbSet = async (k, v) => { const db = await idbInit(); return new Promise(res => { const tx = db.transaction("store", "readwrite"); tx.objectStore("store").put(v, k); tx.oncomplete = res; }); };
-    const idbGet = async (k) => { const db = await idbInit(); return new Promise(res => { const tx = db.transaction("store", "readonly"); const req = tx.objectStore("store").get(k); req.onsuccess = () => res(req.result); req.onerror = () => res(null); }); };
+    
+    const idbSet = async (k, v) => { 
+      if (!k) return;
+      try {
+        const db = await idbInit(); 
+        return new Promise((res, rej) => { 
+          const tx = db.transaction("store", "readwrite"); 
+          const req = tx.objectStore("store").put(v, k); 
+          req.onsuccess = res; 
+          req.onerror = () => rej(req.error); 
+        }); 
+      } catch (e) { console.warn("IDB Set Error:", e); }
+    };
+    
+    const idbGet = async (k) => { 
+      if (!k) return null;
+      try {
+        const db = await idbInit(); 
+        return new Promise((res, rej) => { 
+          const tx = db.transaction("store", "readonly"); 
+          const req = tx.objectStore("store").get(k); 
+          req.onsuccess = () => res(req.result); 
+          req.onerror = () => res(null); 
+        });
+      } catch (e) { console.warn("IDB Get Error:", e); return null; }
+    };
 
     const SvgIcon = ({ name, size = 24, className = "" }) => {
       const icons = {
@@ -221,7 +243,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
         bio: <React.Fragment><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></React.Fragment>,
@@ -317,7 +339,7 @@
       );
     };
 
-    const AddTransactionForm = ({ loginUser, onSubmit, isLoading }) => {
+    const AddTransactionForm = ({ loginUser, onSubmit }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
@@ -531,11 +553,10 @@
             </div>
           </div>
 
-          <button disabled={isSubmitDisabled || isLoading} onClick={submitForm}
+          <button disabled={isSubmitDisabled} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            {isLoading ? <SvgIcon name="refresh" size={20} className="animate-spin" /> : null}
-            {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
+            確認存檔
           </button>
         </div>
       );
@@ -918,6 +939,8 @@
 
       const isLoading = loadingCard.show || isSyncing;
 
+      const [isDbLoaded, setIsDbLoaded] = useState(false);
+
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
       const [txCache, setTxCache] = useState([]);
@@ -964,14 +987,16 @@
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
       useEffect(() => {
-        idbGet(LS.txCache).then(d => { if(Array.isArray(d) && d.length > 0) { setTxCache(d); setTransactions(d); } });
-        idbGet(LS.historyCache).then(d => { if(Array.isArray(d)) setHistoryCache(d); });
-        idbGet(LS.pending).then(d => { if(Array.isArray(d) && d.length > 0) setSyncQueue(d); });
+        Promise.all([
+          idbGet(LS.txCache).then(d => { if(Array.isArray(d) && d.length > 0) { setTxCache(d); setTransactions(d); } }),
+          idbGet(LS.historyCache).then(d => { if(Array.isArray(d)) setHistoryCache(d); }),
+          idbGet(LS.pending).then(d => { if(Array.isArray(d) && d.length > 0) setSyncQueue(d); })
+        ]).then(() => setIsDbLoaded(true));
       }, []);
 
-      useEffect(() => { idbSet(LS.pending, syncQueue); }, [syncQueue]);
-      useEffect(() => { idbSet(LS.txCache, txCache); }, [txCache]);
-      useEffect(() => { idbSet(LS.historyCache, historyCache); }, [historyCache]);
+      useEffect(() => { if (isDbLoaded) idbSet(LS.pending, syncQueue); }, [syncQueue, isDbLoaded]);
+      useEffect(() => { if (isDbLoaded) idbSet(LS.txCache, txCache); }, [txCache, isDbLoaded]);
+      useEffect(() => { if (isDbLoaded) idbSet(LS.historyCache, historyCache); }, [historyCache, isDbLoaded]);
       
       useEffect(() => { localStorage.setItem(LS.members, JSON.stringify(familyConfig)); }, [familyConfig]);
       useEffect(() => { localStorage.setItem(LS.lastSync, lastSyncText); }, [lastSyncText]);
@@ -1062,7 +1087,7 @@
         if (syncQueue.length > 0 && navigator.onLine && deviceValid() && !isSyncing) {
           syncDataToCloud(false);
         }
-      }, [syncQueue, navigator.onLine]);
+      }, [syncQueue, navigator.onLine, isSyncing]);
 
       const forceReloginForToken = () => { setTimeout(() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setBootstrapSecret(""); setShowBootstrapModal(true); }, 2000); };
 
@@ -1752,6 +1777,11 @@
         );
       };
 
+      const renderItemOrGroup = (item, allowEdit) => {
+        if (item.isGroup) return renderGroupCard(item, allowEdit);
+        return renderStandaloneCard(item, allowEdit);
+      };
+
       const [animTrigger, setAnimTrigger] = useState(false);
       useEffect(() => {
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
@@ -2030,7 +2060,7 @@
                   </div>
                 </div>
 
-                {/* 篩選結果總計 */}
+                {/* 篩選結果總計 - 只有篩選時才出現 */}
                 {isHistoryFiltered && (
                   <div className="flex justify-between items-center bg-gray-800 p-4 rounded-[1.5rem] shadow-sm text-white mb-2 animate-in">
                     <div className="text-[10px] font-black uppercase tracking-widest text-gray-400">當前條件總計</div>
@@ -2092,7 +2122,6 @@
 
                   if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄，請調整過濾條件</div>;
                   
-                  // 三組不同情境的獨立色系
                   const EXPENSE_COLORS = ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#14b8a6", "#ec4899", "#f43f5e", "#be123c"];
                   const INCOME_COLORS = ["#10b981", "#059669", "#047857", "#14b8a6", "#0d9488", "#0f766e", "#3b82f6", "#2563eb", "#1d4ed8"];
                   const BEN_COLORS = ["#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#0ea5e9", "#0284c7", "#4338ca", "#6d28d9", "#3b82f6"];
@@ -2105,7 +2134,6 @@
                     if (t.isDeleted) return; 
                     const amt = Number(t.amount) || 0; grandTotal += amt;
                     if (analysisType === "beneficiary") {
-                       // 直接使用合併後的名稱作為獨立類別，不再平分拆解
                        const b = formatBen(t.beneficiary, t.member) || t.member;
                        level1Totals[b] = (level1Totals[b] || 0) + amt;
                     } else {
@@ -2316,10 +2344,11 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>[V22] 徹底清除重複代碼結構、修復 isLoading 遺失，並確保所有函數無縫對齊</li>
+                          <li>[V21.1] 徹底修復 IDB Key 遺失問題，加上 `isDbLoaded` 防護，消除 Race Condition，杜絕白屏。</li>
                           <li>[V21] 完美解決同步後白屏問題 (資料格式安全轉換與拷貝保護)</li>
                           <li>[V20] 修正 Race Condition，無縫背景同步消除空窗期，待同步項目永駐所有頁面</li>
                           <li>[V19] 首頁與歷史篩選完全脫鉤，新增子項目刪除墓碑標記，並支援完整編輯歷史溯源</li>
-                          <li>[V18] 樂觀更新(秒新增)、背景自動同步與未同步視覺標示(黃色標籤)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
