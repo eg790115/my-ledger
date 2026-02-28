@@ -49,7 +49,6 @@
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     .animate-in { animation: fadeIn 0.2s ease-out forwards; }
     
-    /* 新增頂部向下滑入動畫 */
     @keyframes slideDownNotif { 
       0% { transform: translateY(-150%); opacity: 0; } 
       100% { transform: translateY(0); opacity: 1; } 
@@ -70,25 +69,35 @@
   <script type="text/babel">
     const { useEffect, useMemo, useCallback, useRef, useState } = React;
 
+    const fetchWithTimeout = async (resource, options = {}) => {
+      const { timeout = 25000 } = options;
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+      const response = await fetch(resource, { ...options, signal: controller.signal });
+      clearTimeout(id);
+      return response;
+    };
+
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版本升級至 V28：新增跨頁面滑動通知系統(處理未確認代記明細)、圖示防變形終極包裹
-    const APP_VERSION = "2026.02.28.PRO.V28";
-    const GAS_TARGET_VERSION = "2026.02.28.PRO.V8";
+    // 版本升級至 V37.2：修復由於程式碼截斷導致的 SyntaxError (未結束的字串常數)
+    const APP_VERSION = "2026.02.28.PRO.V37.2";
+    const GAS_TARGET_VERSION = "2026.02.28.PRO.V11";
 
     const LS = {
-      pending: "pending_sync_v26",
-      txCache: "local_tx_cache_v26",
-      historyCache: "local_history_cache_v26", 
-      lastSync: "last_sync_time_v26",
-      members: "family_member_config_v26",
+      pending: "pending_sync_v30",
+      txCache: "local_tx_cache_v30",
+      historyCache: "local_history_cache_v30", 
+      lastSync: "last_sync_time_v30",
+      members: "family_member_config_v30",
       deviceToken: "device_token_v1",
       deviceExp: "device_exp_v1",
-      pinHashPrefix: "pin_hash_v26_",
+      pinHashPrefix: "pin_hash_v30_",
       bioCredPrefix: "bio_cred_",
       bioFailPrefix: "bio_fail_v1_", 
       bioLockPrefix: "bio_lock_v1_",
-      greetingsCache: "greetings_cache_v1" 
+      greetingsCache: "greetings_cache_v1",
+      localDismissed: "local_dismissed_confirms_v1" 
     };
 
     const CATEGORY_MAP = {
@@ -143,7 +152,6 @@
       if (!snapStr) return {};
       let obj = {};
       try { obj = JSON.parse(snapStr); } catch(e) { return {}; }
-      
       if (obj['類別']) {
         return {
           date: obj['日期時間'] || obj['日期'] || "",
@@ -180,8 +188,14 @@
       return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     };
 
+    const generateQueueId = () => `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
     async function postGAS(payload) {
-      const res = await fetch(gasUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
+      const res = await fetchWithTimeout(gasUrl, { 
+        method: "POST", 
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, 
+        body: JSON.stringify(payload) 
+      });
       return await res.json();
     }
 
@@ -257,7 +271,6 @@
       return (data && Array.isArray(data)) ? data : fallback;
     };
 
-    // 終極防變形包裹：用 span 鎖定長寬與禁止縮放
     const SvgIcon = React.memo(({ name, size = 24, className = "" }) => {
       const icons = {
         home: <React.Fragment><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></React.Fragment>,
@@ -267,7 +280,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M17.5 19a5.5 5.5 0 0 0 0-11h-1.3b11a7 7 0 1 0-11.9 4.3"/><path d="m11 15 2 2 4-4"/></React.Fragment>,
         loader: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -283,15 +296,14 @@
         clock: <React.Fragment><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></React.Fragment>
       };
       return (
-        <span className={`inline-flex items-center justify-center shrink-0 ${className}`} style={{ width: size, height: size }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <div style={{ width: size, height: size, minWidth: size, minHeight: size, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} className={className}>
+          <svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, display: 'block' }}>
             {icons[name] || <circle cx="12" cy="12" r="10" />}
           </svg>
-        </span>
+        </div>
       );
     });
 
-    // --- 新增：跨頁面的對方代記帳通知滑動視窗 ---
     const DelegatedNoticeModal = ({ txs, onConfirm }) => {
       if (!txs || txs.length === 0) return null;
       return (
@@ -309,22 +321,27 @@
             
             <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide mb-4">
               {txs.map(t => (
-                 <div key={t.id} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5 flex-wrap">
-                        {getParentCat(t.category)} - {getChildCat(t.category)}
-                        <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[8px] whitespace-nowrap">由 {t.recorder} 記錄</span>
+                 <div key={t.id} className="bg-gray-50 p-2.5 rounded-2xl border border-gray-100 flex items-center gap-3">
+                    <div className="relative shrink-0">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-[12px] leading-none ${t.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+                        {t.type==="income" ? "收入" : "支出"}
                       </div>
-                      <div className="text-[9px] text-gray-400 mt-1">{displayDateClean(t.date)} {t.desc ? `· ${t.desc}` : ''}</div>
                     </div>
-                    <div className={`font-black text-sm shrink-0 pl-2 ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5 flex-wrap">
+                        <span className="truncate">{getParentCat(t.category)} - {getChildCat(t.category)}</span>
+                        <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[8px] whitespace-nowrap shrink-0">由 {t.recorder} 記錄</span>
+                      </div>
+                      <div className="text-[9px] text-gray-400 mt-1 truncate">{displayDateClean(t.date)} {t.desc ? `· ${t.desc}` : ''}</div>
+                    </div>
+                    <div className={`font-black text-sm shrink-0 pl-1 ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                       ${Number(t.amount).toLocaleString()}
                     </div>
                  </div>
               ))}
             </div>
 
-            <button onClick={() => onConfirm(txs.map(t => t.id))} className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-blue-500/30 shrink-0">
+            <button onClick={() => onConfirm(txs.map(t => String(t.id)))} className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-black text-sm active:scale-95 transition-all shadow-lg shadow-blue-500/30 shrink-0">
               我已確認 ({txs.length} 筆)
             </button>
           </div>
@@ -332,15 +349,16 @@
       )
     };
 
-    const PendingSyncModal = ({ isOpen, onClose, syncQueue, onSync, isLoading }) => {
+    const PendingSyncModal = ({ isOpen, onClose, visibleQueue, onSync, isUILoading }) => {
       if (!isOpen) return null;
+      const queue = Array.isArray(visibleQueue) ? visibleQueue : [];
 
       const getActionLabel = (action) => {
         switch(action) {
           case 'UPDATE': return { text: '修改', color: 'bg-orange-100 text-orange-600 border-orange-200' };
           case 'DELETE': return { text: '刪除', color: 'bg-red-100 text-red-600 border-red-200' };
           case 'UPDATE_GROUP': return { text: '修改母項', color: 'bg-purple-100 text-purple-600 border-purple-200' };
-          case 'CONFIRM': return { text: '已讀', color: 'bg-gray-100 text-gray-600 border-gray-200' };
+          case 'CONFIRM': return { text: '已讀確認', color: 'bg-gray-100 text-gray-600 border-gray-200' };
           case 'ADD':
           default: return { text: '新增', color: 'bg-blue-100 text-blue-600 border-blue-200' };
         }
@@ -354,14 +372,14 @@
             <h2 className="text-xl font-black text-gray-800 mb-2 flex items-center gap-2 shrink-0">
               <SvgIcon name="cloud" size={20} className="text-yellow-500" /> 待同步清單
             </h2>
-            <p className="text-[10px] text-gray-400 mb-4 shrink-0">共有 {syncQueue.length} 筆變更尚未上傳至雲端</p>
+            <p className="text-[10px] text-gray-400 mb-4 shrink-0">共有 {queue.length} 筆變更尚未上傳至雲端</p>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide pb-4">
-              {syncQueue.map((q, idx) => {
+              {queue.map((q, idx) => {
                 const badge = getActionLabel(q._action);
                 const isGroup = q._action === 'UPDATE_GROUP';
                 let title = isGroup ? (q.parentTitle || '拆分紀錄') : (q.category ? `${getParentCat(q.category)} - ${getChildCat(q.category)}` : '系統確認操作');
-                if (q._action === 'CONFIRM') title = `確認代記 (${q.id})`;
+                if (q._action === 'CONFIRM') title = `確認代記狀態`;
                 const amt = q.amount ? `$${Number(q.amount).toLocaleString()}` : '';
                 
                 return (
@@ -381,8 +399,8 @@
 
             <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100 shrink-0">
               <button onClick={onClose} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl active:scale-95 font-black text-sm">稍後同步</button>
-              <button disabled={isLoading} onClick={() => { onSync(); onClose(); }} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl active:scale-95 shadow-lg shadow-blue-500/30 font-black text-lg flex justify-center items-center gap-2 disabled:opacity-50">
-                {isLoading ? <SvgIcon name="loader" size={18} className="animate-spin" /> : <SvgIcon name="cloud" size={18} />}
+              <button disabled={isUILoading} onClick={() => { onSync(); onClose(); }} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl active:scale-95 shadow-lg shadow-blue-500/30 font-black text-lg flex justify-center items-center gap-2 disabled:opacity-50">
+                {isUILoading ? <SvgIcon name="loader" size={18} className="animate-spin" /> : <SvgIcon name="cloud" size={18} />}
                 立即同步
               </button>
             </div>
@@ -466,7 +484,7 @@
       );
     });
 
-    const AddTransactionForm = ({ loginUser, onSubmit, isLoading }) => {
+    const AddTransactionForm = ({ loginUser, onSubmit, isUILoading }) => {
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
@@ -680,17 +698,17 @@
             </div>
           </div>
 
-          <button disabled={isSubmitDisabled || isLoading} onClick={submitForm}
+          <button disabled={isSubmitDisabled || isUILoading} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            {isLoading ? <SvgIcon name="loader" size={20} className="animate-spin" /> : null}
-            {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
+            {isUILoading ? <SvgIcon name="loader" size={20} className="animate-spin" /> : null}
+            {isUILoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
           </button>
         </div>
       );
     };
 
-    const EditTransactionModal = ({ tx, loginUser, onSave, onDelete, onCancel, isLoading }) => {
+    const EditTransactionModal = ({ tx, loginUser, onSave, onDelete, onCancel, isUILoading }) => {
       const [formData, setFormData] = useState({ 
         ...tx, parentCat: getParentCat(tx.category), childCat: getChildCat(tx.category),
         beneficiary: tx.beneficiary ? tx.beneficiary.split(",").filter(Boolean) : [tx.member]
@@ -775,11 +793,11 @@
               <div className="flex gap-3 mt-8">
                 {!showConfirmDelete ? (
                   <>
-                    <button disabled={isLoading} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
+                    <button disabled={isUILoading} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
-                    <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 disabled:opacity-30">
-                      {isLoading ? <SvgIcon name="loader" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
+                    <button disabled={!formData.amount || formData.amount === "0" || isUILoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2 disabled:opacity-30">
+                      {isUILoading ? <SvgIcon name="loader" size={16} className="animate-spin" /> : null} {isUILoading ? "處理中..." : "儲存變更"}
                     </button>
                   </>
                 ) : (
@@ -787,7 +805,7 @@
                     <p className="text-red-600 font-black text-xs mb-3">確定永久刪除此紀錄？</p>
                     <div className="flex gap-2">
                       <button onClick={() => setShowConfirmDelete(false)} className="flex-1 py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
-                      <button disabled={isLoading} onClick={() => onDelete(tx.id)} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
+                      <button disabled={isUILoading} onClick={() => onDelete(tx.id)} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
                     </div>
                   </div>
                 )}
@@ -798,8 +816,9 @@
       );
     };
 
-    const EditGroupParentModal = ({ group, onSave, onCancel, isLoading }) => {
+    const EditGroupParentModal = ({ group, onSave, onDelete, onCancel, isUILoading }) => {
       const [formData, setFormData] = useState({ parentTitle: group.parentTitle, parentDesc: group.parentDesc, date: group.date });
+      const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
       useEffect(() => {
         let formattedDate = "";
@@ -844,10 +863,25 @@
                 </div>
               </div>
 
-              <div className="mt-8">
-                <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg flex justify-center items-center gap-2 disabled:opacity-30">
-                  {isLoading ? <SvgIcon name="loader" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
-                </button>
+              <div className="flex gap-3 mt-8">
+                {!showConfirmDelete ? (
+                  <>
+                    <button disabled={isUILoading} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
+                      <SvgIcon name="trash" size={18} /> 刪除整筆
+                    </button>
+                    <button disabled={isUILoading} onClick={handleSave} className="flex-[2] py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg flex justify-center items-center gap-2 disabled:opacity-30">
+                      {isUILoading ? <SvgIcon name="loader" size={16} className="animate-spin" /> : null} {isUILoading ? "處理中..." : "批次更新子項目"}
+                    </button>
+                  </>
+                ) : (
+                  <div className="w-full animate-in bg-red-50 p-4 rounded-2xl text-center border border-red-100">
+                    <p className="text-red-600 font-black text-xs mb-3">確定永久刪除這整筆多項紀錄？</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowConfirmDelete(false)} className="flex-1 py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
+                      <button disabled={isUILoading} onClick={() => onDelete(group.groupId)} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -873,12 +907,11 @@
          else if (tempFilter.dateType === "1y") cutoff.setFullYear(cutoff.getFullYear() - 1);
          else useDate = false;
 
-         let startTs = tempFilter.customStart ? new Date(`${tempFilter.customStart}T00:00:00`).getTime() : 0;
-         let endTs = tempFilter.customEnd ? new Date(`${tempFilter.customEnd}T23:59:59`).getTime() : Infinity;
-
          return (transactions || []).filter(t => {
             const txTime = parseDateForSort(t.date);
             if (tempFilter.dateType === "custom") {
+               let startTs = tempFilter.customStart ? new Date(`${tempFilter.customStart}T00:00:00`).getTime() : 0;
+               let endTs = tempFilter.customEnd ? new Date(`${tempFilter.customEnd}T23:59:59`).getTime() : Infinity;
                if (txTime < startTs || txTime > endTs) return false;
             } else if (useDate && txTime < cutoff.getTime()) {
                return false;
@@ -1065,7 +1098,10 @@
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
-      const isLoading = loadingCard.show || isSyncing;
+      // 將畫面鎖定與背景同步分離，不再互相綁架
+      const isUILoading = loadingCard.show;
+      const isSyncingRef = useRef(false);
+
       const [isDbLoaded, setIsDbLoaded] = useState(false);
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
@@ -1073,6 +1109,8 @@
       const [historyCache, setHistoryCache] = useState([]);
       const [transactions, setTransactions] = useState([]);
       const [syncQueue, setSyncQueue] = useState([]);
+
+      const [localDismissed, setLocalDismissed] = useState(() => safeArrayLS(LS.localDismissed));
 
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
@@ -1189,23 +1227,25 @@
       }, []);
 
       const syncDataToCloud = useCallback(async (isManual = false) => {
-        if (isSyncing || !navigator.onLine) return;
+        if (isSyncingRef.current || !navigator.onLine) return;
         if (!deviceValid()) { 
            if (isManual) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); }
            return; 
         }
         
-        const currentQueue = [...syncQueue];
+        const currentQueue = Array.isArray(syncQueue) ? [...syncQueue] : [];
         if (currentQueue.length === 0) {
           if (isManual) {
+            isSyncingRef.current = true;
             setIsSyncing(true);
             try { await fetchCloudTx(); showStatus("success", "同步完成"); } 
             catch(e) { showStatus("error", "同步失敗"); } 
-            finally { setIsSyncing(false); }
+            finally { isSyncingRef.current = false; setIsSyncing(false); }
           }
           return;
         }
 
+        isSyncingRef.current = true;
         setIsSyncing(true);
         if (isManual) setLoadingCard({ show:true, text:`同步 ${currentQueue.length} 筆中...` });
 
@@ -1220,71 +1260,101 @@
           const updates = currentQueue.filter(q => q._action === 'UPDATE');
           const deletes = currentQueue.filter(q => q._action === 'DELETE');
           const groupUpdates = currentQueue.filter(q => q._action === 'UPDATE_GROUP');
-          const confirms = currentQueue.filter(q => q._action === 'CONFIRM').map(q => q.id);
+          const confirms = currentQueue.filter(q => q._action === 'CONFIRM').map(q => String(q.id));
           
-          if (adds.length > 0) {
-            const res = await postGAS({ action: "BATCH_ADD", transactions: adds, deviceToken: getDeviceToken() });
-            if (res.result !== "success") throw new Error(res.message || "新增同步失敗");
-          }
+          let successfulSyncs = [];
+          let hasError = false;
+          let errorMessage = "";
 
-          for (const u of updates) {
-            const payload = { ...u, editHistory: JSON.stringify(u.editHistory || []) };
-            const res = await postGAS({ ...payload, action:"UPDATE_TX", deviceToken: getDeviceToken() });
-            if (res.result !== "success") throw new Error(res.message || "更新同步失敗");
-          }
+          const payload = {
+             action: "BATCH_SYNC",
+             deviceToken: getDeviceToken(),
+             adds: adds.length > 0 ? adds : null,
+             updates: updates.length > 0 ? updates : null,
+             deletes: deletes.length > 0 ? deletes : null,
+             groupUpdates: groupUpdates.length > 0 ? groupUpdates : null,
+             confirms: confirms.length > 0 ? confirms : null
+          };
 
-          for (const d of deletes) {
-            const res = await postGAS({ action:"DELETE_TX", id: d.id, editor: d.editor, deviceToken: getDeviceToken() });
-            if (res.result !== "success") throw new Error(res.message || "刪除同步失敗");
-          }
-
-          for (const gu of groupUpdates) {
-            const res = await postGAS({ action:"UPDATE_GROUP_PARENT", groupId: gu.groupId, parentDesc: gu.parentDesc, date: gu.date, editor: gu.editor, deviceToken: getDeviceToken() });
-            if (res.result !== "success") throw new Error(res.message || "群組更新同步失敗");
-          }
-
-          if (confirms.length > 0) {
-            const res = await postGAS({ action: "CONFIRM_TXS", ids: confirms, deviceToken: getDeviceToken() });
-            if (res.result !== "success") throw new Error(res.message || "確認狀態同步失敗");
+          try {
+             const res = await postGAS(payload);
+             if (res.result === "success") {
+                successfulSyncs = [...currentQueue];
+             } else {
+                hasError = true;
+                errorMessage = res.message || "批次同步失敗";
+             }
+          } catch(e) {
+             hasError = true;
+             errorMessage = e.message || "網路連線超時，請稍後再試";
           }
           
-          await fetchCloudTx(); 
-          safeSetSyncQueue(prev => prev.filter(p => !currentQueue.some(q => q.id === p.id && q._action === p._action)));
-          if (isManual) showStatus("success", "同步完成");
+          if (successfulSyncs.length > 0) {
+             safeSetSyncQueue(prev => prev.filter(p => !successfulSyncs.some(s => (s._qId && s._qId === p._qId) || (!s._qId && s.id === p.id && s._action === p._action))));
+          }
+
+          if (hasError) {
+             if (isManual) showStatus("error", errorMessage);
+          } else {
+             await fetchCloudTx(); 
+             if (isManual) showStatus("success", "同步完成");
+          }
         } catch (e) {
           if (isManual) {
             const msg = e.message || "同步失敗"; showStatus("error", msg);
             if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
           }
         } finally {
+          isSyncingRef.current = false;
           setIsSyncing(false);
           if (isManual) setLoadingCard({ show:false, text:"" });
         }
-      }, [syncQueue, isSyncing, fetchCloudTx, forceReloginForToken, showStatus, safeSetSyncQueue]);
+      }, [syncQueue, fetchCloudTx, forceReloginForToken, showStatus, safeSetSyncQueue]);
+
+      const lastSyncAttemptQueueRef = useRef(null);
 
       useEffect(() => {
-        if (syncQueue.length > 0 && navigator.onLine && deviceValid() && !isSyncing) {
-          syncDataToCloud(false);
+        let timer;
+        const currentQueueArr = Array.isArray(syncQueue) ? syncQueue : [];
+        const currentQueueSig = JSON.stringify(currentQueueArr.map(q => q._qId));
+        
+        if (currentQueueArr.length > 0 && navigator.onLine && !isSyncingRef.current && lastSyncAttemptQueueRef.current !== currentQueueSig) {
+           timer = setTimeout(() => {
+              syncDataToCloud(false).then(() => {
+                  lastSyncAttemptQueueRef.current = currentQueueSig; 
+              });
+           }, 3000); 
         }
-      }, [syncQueue, navigator.onLine, isSyncing, syncDataToCloud]);
+        return () => clearTimeout(timer);
+      }, [syncQueue, navigator.onLine, syncDataToCloud]);
       
       const handleSyncButtonClick = () => {
-        if (syncQueue.length > 0) {
+        const queue = Array.isArray(syncQueue) ? syncQueue : [];
+        const visibleSyncCount = queue.filter(q => q._action !== 'CONFIRM').length;
+        if (visibleSyncCount > 0) {
           setShowPendingModal(true);
         } else {
           syncDataToCloud(true);
         }
       };
 
-      const handleConfirmDelegated = useCallback((ids) => {
-        setTransactions(prev => prev.map(t => ids.includes(t.id) ? { ...t, isConfirmed: 'Y' } : t));
-        setTxCache(prev => prev.map(t => ids.includes(t.id) ? { ...t, isConfirmed: 'Y' } : t));
+      const handleConfirmDelegated = useCallback((rawIds) => {
+        const stringIds = rawIds.map(id => String(id));
+        
+        setLocalDismissed(prev => {
+          const updated = [...new Set([...prev, ...stringIds])];
+          localStorage.setItem(LS.localDismissed, JSON.stringify(updated));
+          return updated;
+        });
+
+        setTransactions(prev => prev.map(t => stringIds.includes(String(t.id)) ? { ...t, isConfirmed: 'Y' } : t));
+        setTxCache(prev => prev.map(t => stringIds.includes(String(t.id)) ? { ...t, isConfirmed: 'Y' } : t));
         
         safeSetSyncQueue(prev => {
-           let newQ = prev.map(q => ids.includes(q.id) ? { ...q, isConfirmed: 'Y' } : q);
-           const existingIdsInQueue = new Set(newQ.map(q => q.id));
-           const toAddConfirms = ids.filter(id => !existingIdsInQueue.has(id));
-           const confirmActions = toAddConfirms.map(id => ({ id, _action: 'CONFIRM' }));
+           let newQ = prev.map(q => stringIds.includes(String(q.id)) ? { ...q, isConfirmed: 'Y' } : q);
+           const existingIdsInQueue = new Set(newQ.map(q => String(q.id)));
+           const toAddConfirms = stringIds.filter(id => !existingIdsInQueue.has(id));
+           const confirmActions = toAddConfirms.map(id => ({ id, _action: 'CONFIRM', _qId: generateQueueId() }));
            return [...newQ, ...confirmActions];
         });
         showStatus("success", "已標記為確認");
@@ -1392,13 +1462,17 @@
           isConfirmed: currentUser.name !== tx.member ? "N" : "Y" 
         }));
 
-        safeSetSyncQueue(prev => [...prev, ...completeTxs.map(t => ({...t, _action: 'ADD'}))]);
+        safeSetSyncQueue(prev => {
+          const q = Array.isArray(prev) ? prev : [];
+          return [...q, ...completeTxs.map(t => ({...t, _action: 'ADD', _qId: generateQueueId()}))];
+        });
         setActiveTab("dashboard");
         showStatus(navigator.onLine && deviceValid() ? "success" : "info", navigator.onLine && deviceValid() ? "已儲存，背景同步中" : "無網路，已暫存於設備");
       }, [currentUser, showStatus, safeSetSyncQueue]);
 
       const handleUpdateTx = useCallback((updatedTx) => {
-        const oldTx = transactions.find(t => String(t.id) === String(updatedTx.id)) || txCache.find(t => String(t.id) === String(updatedTx.id)) || {};
+        const baseList = Array.isArray(transactions) && transactions.length > 0 ? transactions : (Array.isArray(txCache) ? txCache : []);
+        const oldTx = baseList.find(t => String(t.id) === String(updatedTx.id)) || {};
         const historyEntry = {
            timestamp: nowStr(),
            txId: updatedTx.id,
@@ -1412,20 +1486,24 @@
            })
         };
         
-        setHistoryCache(prev => [historyEntry, ...prev]);
+        setHistoryCache(prev => {
+          const arr = Array.isArray(prev) ? prev : [];
+          return [historyEntry, ...arr];
+        });
         const isConfirmed = currentUser.name !== updatedTx.member ? "N" : updatedTx.isConfirmed;
         const finalTx = { ...updatedTx, date: updatedTx.date, isConfirmed }; 
         
-        setTransactions(prev => prev.map(t => String(t.id) === String(finalTx.id) ? finalTx : t));
-        setTxCache(prev => prev.map(t => String(t.id) === String(finalTx.id) ? finalTx : t));
+        setTransactions(prev => (Array.isArray(prev) ? prev : []).map(t => String(t.id) === String(finalTx.id) ? finalTx : t));
+        setTxCache(prev => (Array.isArray(prev) ? prev : []).map(t => String(t.id) === String(finalTx.id) ? finalTx : t));
 
         safeSetSyncQueue(prev => {
-          const isPendingAdd = prev.some(q => String(q.id) === String(finalTx.id) && (!q._action || q._action === 'ADD'));
+          const q = Array.isArray(prev) ? prev : [];
+          const isPendingAdd = q.some(item => String(item.id) === String(finalTx.id) && (!item._action || item._action === 'ADD'));
           if (isPendingAdd) {
-            return prev.map(q => String(q.id) === String(finalTx.id) ? { ...finalTx, _action: 'ADD' } : q);
+            return q.map(item => String(item.id) === String(finalTx.id) ? { ...finalTx, _action: 'ADD', _qId: item._qId } : item);
           } else {
-            const filtered = prev.filter(q => !(String(q.id) === String(finalTx.id) && q._action === 'UPDATE'));
-            return [...filtered, { ...finalTx, _action: 'UPDATE', editor: currentUser.name }];
+            const filtered = q.filter(item => !(String(item.id) === String(finalTx.id) && item._action === 'UPDATE'));
+            return [...filtered, { ...finalTx, _action: 'UPDATE', editor: currentUser.name, _qId: generateQueueId() }];
           }
         });
 
@@ -1434,7 +1512,8 @@
       }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
 
       const handleUpdateGroupParent = useCallback((groupData) => {
-        const children = transactions.filter(t => String(t.groupId) === String(groupData.groupId)).length ? transactions.filter(t => String(t.groupId) === String(groupData.groupId)) : txCache.filter(t => String(t.groupId) === String(groupData.groupId));
+        const baseList = Array.isArray(transactions) && transactions.length > 0 ? transactions : (Array.isArray(txCache) ? txCache : []);
+        const children = baseList.filter(t => String(t.groupId) === String(groupData.groupId));
         const histRecs = children.map(oldTx => ({
           timestamp: nowStr(),
           txId: oldTx.id,
@@ -1447,7 +1526,10 @@
               'GroupID': oldTx.groupId, 'ParentDesc': oldTx.parentDesc, 'Beneficiary': oldTx.beneficiary
            })
         }));
-        setHistoryCache(prev => [...histRecs, ...prev]);
+        setHistoryCache(prev => {
+          const arr = Array.isArray(prev) ? prev : [];
+          return [...histRecs, ...arr];
+        });
 
         const updateFn = t => {
           if (String(t.groupId) === String(groupData.groupId)) {
@@ -1462,16 +1544,17 @@
           return t;
         };
         
-        setTransactions(prev => prev.map(updateFn));
-        setTxCache(prev => prev.map(updateFn));
+        setTransactions(prev => (Array.isArray(prev) ? prev : []).map(updateFn));
+        setTxCache(prev => (Array.isArray(prev) ? prev : []).map(updateFn));
 
         safeSetSyncQueue(prev => {
-          const isPendingGroup = prev.some(p => String(p.groupId) === String(groupData.groupId) && (!p._action || p._action === 'ADD'));
+          const q = Array.isArray(prev) ? prev : [];
+          const isPendingGroup = q.some(p => String(p.groupId) === String(groupData.groupId) && (!p._action || p._action === 'ADD'));
           if (isPendingGroup) {
-            return prev.map(p => String(p.groupId) === String(groupData.groupId) ? { ...p, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : p);
+            return q.map(p => String(p.groupId) === String(groupData.groupId) ? { ...p, parentTitle: groupData.parentTitle, parentDesc: groupData.parentDesc, date: groupData.date } : p);
           } else {
-            const filtered = prev.filter(q => !(String(q.groupId) === String(groupData.groupId) && q._action === 'UPDATE_GROUP'));
-            return [...filtered, { ...groupData, _action: 'UPDATE_GROUP', editor: currentUser.name }];
+            const filtered = q.filter(item => !(String(item.groupId) === String(groupData.groupId) && item._action === 'UPDATE_GROUP'));
+            return [...filtered, { ...groupData, _action: 'UPDATE_GROUP', editor: currentUser.name, _qId: generateQueueId() }];
           }
         });
         setEditingGroup(null);
@@ -1479,7 +1562,8 @@
       }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
 
       const handleDeleteTx = useCallback((id) => {
-        const oldTx = transactions.find(t => String(t.id) === String(id)) || txCache.find(t => String(t.id) === String(id));
+        const baseList = Array.isArray(transactions) && transactions.length > 0 ? transactions : (Array.isArray(txCache) ? txCache : []);
+        const oldTx = baseList.find(t => String(t.id) === String(id));
         if (oldTx) {
           const histRec = {
             timestamp: nowStr(),
@@ -1493,37 +1577,96 @@
               'GroupID': oldTx.groupId, 'ParentDesc': oldTx.parentDesc, 'Beneficiary': oldTx.beneficiary
             })
           };
-          setHistoryCache(prev => [histRec, ...prev]);
+          setHistoryCache(prev => {
+             const arr = Array.isArray(prev) ? prev : [];
+             return [histRec, ...arr];
+          });
         }
 
-        setTransactions(prev => prev.filter(t => String(t.id) !== String(id)));
-        setTxCache(prev => prev.filter(t => String(t.id) !== String(id)));
+        setTransactions(prev => (Array.isArray(prev) ? prev : []).filter(t => String(t.id) !== String(id)));
+        setTxCache(prev => (Array.isArray(prev) ? prev : []).filter(t => String(t.id) !== String(id)));
         
         safeSetSyncQueue(prev => {
-          const isPendingAdd = prev.some(q => String(q.id) === String(id) && (!q._action || q._action === 'ADD'));
+          const q = Array.isArray(prev) ? prev : [];
+          const isPendingAdd = q.some(item => String(item.id) === String(id) && (!item._action || item._action === 'ADD'));
           if (isPendingAdd) {
-             return prev.filter(q => String(q.id) !== String(id));
+             return q.filter(item => String(item.id) !== String(id));
           } else {
-             const filtered = prev.filter(q => String(q.id) !== String(id));
-             return [...filtered, { id: id, _action: 'DELETE', editor: currentUser.name }];
+             const filtered = q.filter(item => String(item.id) !== String(id));
+             return [...filtered, { id: id, _action: 'DELETE', editor: currentUser.name, _qId: generateQueueId() }];
           }
         });
         setEditingTx(null);
         showStatus("success", "已刪除，背景同步中");
       }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
 
+      const handleDeleteGroup = useCallback((groupId) => {
+        const baseList = Array.isArray(transactions) && transactions.length > 0 ? transactions : (Array.isArray(txCache) ? txCache : []);
+        const children = baseList.filter(t => String(t.groupId) === String(groupId));
+        
+        if (children.length === 0) return;
+
+        const histRecs = children.map(oldTx => ({
+          timestamp: nowStr(),
+          txId: oldTx.id,
+          groupId: oldTx.groupId,
+          action: 'DELETE',
+          editor: currentUser.name,
+          snapshot: JSON.stringify({
+            '日期時間': oldTx.date, '類別': oldTx.category, '金額': oldTx.amount, '成員': oldTx.member, 
+            '備註': oldTx.desc, '類型': oldTx.type, '記錄者': oldTx.recorder, 'ID': oldTx.id, 
+            'GroupID': oldTx.groupId, 'ParentDesc': oldTx.parentDesc, 'Beneficiary': oldTx.beneficiary
+          })
+        }));
+        
+        setHistoryCache(prev => {
+           const arr = Array.isArray(prev) ? prev : [];
+           return [...histRecs, ...arr];
+        });
+
+        setTransactions(prev => (Array.isArray(prev) ? prev : []).filter(t => String(t.groupId) !== String(groupId)));
+        setTxCache(prev => (Array.isArray(prev) ? prev : []).filter(t => String(t.groupId) !== String(groupId)));
+
+        safeSetSyncQueue(prev => {
+          let q = Array.isArray(prev) ? prev : [];
+          children.forEach(child => {
+            const isPendingAdd = q.some(item => String(item.id) === String(child.id) && (!item._action || item._action === 'ADD'));
+            if (isPendingAdd) {
+               q = q.filter(item => String(item.id) !== String(child.id));
+            } else {
+               q = q.filter(item => String(item.id) !== String(child.id)); 
+               q.push({ id: child.id, _action: 'DELETE', editor: currentUser.name, _qId: generateQueueId() });
+            }
+          });
+          q = q.filter(item => !(String(item.groupId) === String(groupId) && item._action === 'UPDATE_GROUP'));
+          return q;
+        });
+
+        setEditingGroup(null);
+        showStatus("success", "已刪除整筆紀錄，背景同步中");
+      }, [transactions, txCache, currentUser, showStatus, safeSetSyncQueue]);
+
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        const baseList = Array.isArray(transactions) && transactions.length ? transactions : (Array.isArray(txCache) ? txCache : []);
+        const baseList = Array.isArray(transactions) && transactions.length > 0 ? transactions : (Array.isArray(txCache) ? txCache : []);
+        const validSyncQueue = Array.isArray(syncQueue) ? syncQueue : [];
         
-        const deleteIds = new Set((syncQueue || []).filter(q => q._action === 'DELETE').map(q => String(q.id)));
+        const deleteIds = new Set(validSyncQueue.filter(q => q._action === 'DELETE').map(q => String(q.id)));
         const activeBaseList = baseList.filter(t => !deleteIds.has(String(t.id)));
         
-        const updateMap = new Map((syncQueue || []).filter(q => q._action === 'UPDATE').map(q => [String(q.id), q]));
-        const mergedList = activeBaseList.map(t => updateMap.has(String(t.id)) ? { ...updateMap.get(String(t.id)), isPending: true } : t);
+        const updateMap = new Map(validSyncQueue.filter(q => q._action === 'UPDATE').map(q => [String(q.id), q]));
+        const confirmMap = new Set(validSyncQueue.filter(q => q._action === 'CONFIRM').map(q => String(q.id)));
+
+        const mergedList = activeBaseList.map(t => {
+          let item = updateMap.has(String(t.id)) ? { ...updateMap.get(String(t.id)), isPending: true } : t;
+          if (confirmMap.has(String(item.id))) {
+            item = { ...item, isConfirmed: 'Y' };
+          }
+          return item;
+        });
 
         const baseIds = new Set(baseList.map(t => String(t.id)));
-        const pendingAdds = (syncQueue || [])
+        const pendingAdds = validSyncQueue
           .filter(q => (!q._action || q._action === 'ADD') && !baseIds.has(String(q.id)))
           .map(t => ({ ...t, isPending: true }));
         
@@ -1542,10 +1685,11 @@
           t.recorder && 
           String(t.recorder) !== String(currentUser.name) && 
           t.isConfirmed !== 'Y' && 
+          !localDismissed.includes(String(t.id)) && 
           !t.isDeleted &&
           t._action !== 'DELETE'
         );
-      }, [visibleTransactions, currentUser]);
+      }, [visibleTransactions, currentUser, localDismissed]);
 
       const stats = useMemo(() => {
         const income = myTransactions.filter(t => t.type === "income").reduce((s,t)=>s+(Number(t.amount)||0),0);
@@ -1553,10 +1697,12 @@
         return { income, expense, balance: income - expense };
       }, [myTransactions]);
 
+      // V39: 移除所有從 historyCache 挖出刪除紀錄 (墓碑) 的邏輯
       const groupTransactions = useCallback((list) => {
         const grouped = []; const groupMap = {};
+        const safeHistoryCache = Array.isArray(historyCache) ? historyCache : [];
         for (const rawTx of list) {
-          const txHist = (historyCache || []).filter(h => String(h.txId) === String(rawTx.id) && h.action !== 'DELETE')
+          const txHist = safeHistoryCache.filter(h => String(h.txId) === String(rawTx.id) && h.action !== 'DELETE')
                                      .sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp));
           const tx = { ...rawTx, editHistory: txHist };
 
@@ -1579,24 +1725,8 @@
           }
         }
         
-        const deletedRecords = (historyCache || []).filter(h => h.action === 'DELETE');
-        for (const dr of deletedRecords) {
-          if (dr.groupId && groupMap[dr.groupId]) {
-            if (!groupMap[dr.groupId].children.some(c => String(c.id) === String(dr.txId))) {
-               let parsed = normalizeSnapshot(dr.snapshot);
-               groupMap[dr.groupId].children.push({
-                 ...parsed,
-                 id: dr.txId,
-                 isDeleted: true,
-                 deleteEditor: dr.editor,
-                 deleteTime: dr.timestamp,
-                 editHistory: (historyCache || []).filter(h => String(h.txId) === String(dr.txId) && h.action !== 'DELETE').sort((a,b) => parseDateForSort(b.timestamp) - parseDateForSort(a.timestamp))
-               });
-            }
-          }
-        }
-
-        const groupUpdates = (syncQueue || []).filter(q => q._action === 'UPDATE_GROUP');
+        const validSyncQueue = Array.isArray(syncQueue) ? syncQueue : [];
+        const groupUpdates = validSyncQueue.filter(q => q._action === 'UPDATE_GROUP');
         groupUpdates.forEach(gu => {
            const grp = groupMap[gu.groupId];
            if (grp) {
@@ -1840,7 +1970,7 @@
                   {tx.type==="income" ? "收入" : "支出"}
                 </div>
                 {tx.member !== currentUser?.name && (
-                  <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
+                  <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>
                     {tx.member}
                   </div>
                 )}
@@ -1865,7 +1995,7 @@
                   ${Number(tx.amount||0).toLocaleString()}
                 </div>
                 {tx.recorder && tx.recorder !== tx.member && (
-                  <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                  <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>
                     ✍️ {tx.recorder}代記
                   </div>
                 )}
@@ -1902,7 +2032,7 @@
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
                   {group.member !== currentUser?.name && (
-                    <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div>
+                    <div className={`absolute -top-2 -left-2 text-[9px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div>
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
@@ -1921,7 +2051,7 @@
                     ${Number(group.amount||0).toLocaleString()}
                   </div>
                   {group.recorder && group.recorder !== group.member && (
-                    <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>✍️ {group.recorder}代記</div>
+                    <div className={`mt-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>✍️ {group.recorder}代記</div>
                   )}
                 </div>
               </div>
@@ -2104,7 +2234,7 @@
                         setLoadingCard({ show:true, text:"正在綁定雲端..." }); await bootstrapDevice();
                         setShowBootstrapModal(false); setBootstrapSecret(""); showStatus("success","雲端已綁定");
                       } catch (e) { showStatus("error", e.message || "雲端密碼錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
-                    }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isLoading}>
+                    }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isUILoading}>
                     確認
                   </button>
                 </div>
@@ -2131,6 +2261,7 @@
       }
 
       const bioBound = currentUser ? isDeviceBioBound(currentUser.name) : false;
+      const visibleSyncQueue = Array.isArray(syncQueue) ? syncQueue.filter(q => q && q._action !== 'CONFIRM') : [];
 
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
@@ -2140,13 +2271,13 @@
           <PendingSyncModal 
             isOpen={showPendingModal} 
             onClose={() => setShowPendingModal(false)} 
-            syncQueue={syncQueue} 
+            visibleQueue={visibleSyncQueue} 
             onSync={() => syncDataToCloud(true)} 
-            isLoading={isLoading} 
+            isUILoading={isUILoading} 
           />
           {viewingHistory && <ViewEditHistoryModal tx={viewingHistory} onClose={() => setViewingHistory(null)} />}
-          {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
-          {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
+          {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); }} isUILoading={isUILoading} />}
+          {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onDelete={handleDeleteGroup} onCancel={() => setEditingGroup(null)} isUILoading={isUILoading} />}
           
           {/* 歷史頁面的獨立過濾器 */}
           <AdvancedFilterModal 
@@ -2173,7 +2304,7 @@
                 <h3 className="font-black text-lg mb-2">解除綁定</h3>
                 <p className="text-[11px] text-gray-500 mb-5">請輸入 PIN 驗證後才能解除。</p>
                 <input value={unbindPin} onChange={(e)=>setUnbindPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="輸入 6 位 PIN" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-4" />
-                <button onClick={unbindDeviceBio} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isLoading}>確認解除</button>
+                <button onClick={unbindDeviceBio} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isUILoading}>確認解除</button>
               </div>
             </div>
           )}
@@ -2187,7 +2318,7 @@
                 <input value={oldPin} onChange={(e)=>setOldPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="舊 PIN（6 位）" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
                 <input value={newPin} onChange={(e)=>setNewPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="新 PIN（6 位）" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
                 <input value={newPin2} onChange={(e)=>setNewPin2(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="再次輸入新 PIN" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
-                <button onClick={changePin} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isLoading}>確認更換</button>
+                <button onClick={changePin} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isUILoading}>確認更換</button>
               </div>
             </div>
           )}
@@ -2207,12 +2338,12 @@
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
-              <button onClick={handleSyncButtonClick} disabled={isLoading} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex flex-col items-center justify-center border border-blue-100 disabled:opacity-50 shrink-0">
+              <button onClick={handleSyncButtonClick} disabled={isUILoading} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex flex-col items-center justify-center border border-blue-100 disabled:opacity-50 shrink-0">
                 <SvgIcon name={isSyncing ? "loader" : "cloud"} size={18} className={isSyncing ? "animate-spin text-blue-400" : ""}/>
                 <span className={`text-[8px] font-black mt-0.5 ${isSyncing ? "text-blue-500" : navigator.onLine ? "text-green-500" : "text-gray-400"}`}>
                   {isSyncing ? "同步中" : navigator.onLine ? "線上" : "離線"}
                 </span>
-                {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
+                {visibleSyncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{visibleSyncQueue.length}</span>}
               </button>
             </div>
           </header>
@@ -2495,7 +2626,7 @@
               </div>
             )}
 
-            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
+            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} isUILoading={isUILoading} />}
 
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
@@ -2508,7 +2639,7 @@
                     <div className="flex gap-2">
                       <input type="text" className="flex-1 bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
                         placeholder="例如：{name}，你好！" value={customSubtitle} onChange={(e) => setCustomSubtitle(e.target.value)} />
-                      <button onClick={handleSaveGreeting} disabled={isLoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black shadow-sm active:scale-95 disabled:opacity-50">儲存</button>
+                      <button onClick={handleSaveGreeting} disabled={isUILoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black shadow-sm active:scale-95 disabled:opacity-50">儲存</button>
                     </div>
                   </div>
                 </div>
@@ -2551,20 +2682,20 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V28] 新增跨頁面滑動通知系統(處理未確認代記明細)、圖示防變形終極包裹</li>
-                          <li>[V27] 更換處理中圖示為質感開口圓環</li>
-                          <li>[V26.1] 修復 `safeArrayLS` 遺失問題，徹底解決白屏</li>
-                          <li>[V26] 絕對防護版：雙引擎存取不漏接，IDB防卡死機制，強制預設陣列，杜絕一切資料遺失</li>
-                          <li>[V25] 鐵壁防護版：雙重備份寫入 (IDB + LocalStorage)、BeforeUnload 防跳出警告</li>
-                          <li>[V24] 加入點擊同步按鈕時，若有排隊資料會顯示「待同步清單彈窗」</li>
+                          <li>[V37.2] 修正底部導航欄 HTML 語法截斷錯誤，恢復畫面正常顯示</li>
+                          <li>[V37.1] 修復未登入時 ReferenceError 報錯，並補齊新增表單的鎖定防護</li>
+                          <li>[V37] 直覺操作升級：移除刪除線(墓碑)設計實現秒消失，新增群組整筆刪除功能</li>
+                          <li>[V36.1] 修復 PendingSyncModal 屬性解構名稱錯誤導致的 TypeError 白屏</li>
+                          <li>[V36] 清除冗餘代碼，確保後端驗證路由相容</li>
+                          <li>[V35] 極限聚合版：所有同步操作打包為單一 Request，杜絕無限迴圈與網路卡死</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>[V8] 擴增第 13 欄位 (IsConfirmed)，支援跨設備舊資料代記狀態確認</li>
-                          <li>[V7] 資料表擴充，新增獨立的歷史編輯表 (EditHistory) 支援完整快照備份</li>
-                          <li>[V6] 導入 CacheService 與 TextFinder，實現毫秒級讀取與光速搜尋</li>
+                          <li>[V12] 絕對精準搜尋：加入陣列暴力搜尋退路機制，確保 ID 刪除 100% 成功，無視格式化錯誤</li>
+                          <li>[V11] 完整修復版：補回 `VERIFY_PIN`, `UPDATE_PIN` 與 `UPDATE_GREETING`，完美支援 V10 聚合處理引擎</li>
+                          <li>[V10] 終極聚合批次同步版：整合所有操作至 `BATCH_SYNC` 端點，大幅減少 Google 伺服器來回連線時間</li>
                         </ul>
                       </div>
                     </div>
