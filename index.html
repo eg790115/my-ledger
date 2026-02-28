@@ -64,9 +64,57 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 【更新】版號同步
-    const APP_VERSION = "2026.02.28.PRO.V8.OPT";
+    // 版號同步
+    const APP_VERSION = "2026.02.28.PRO.V9.DB";
     const GAS_TARGET_VERSION = "2026.02.28.PRO.V5.OPT";
+
+    // ==========================================
+    // 【優化】IndexedDB 雙重緩存系統 (非同步高效能讀寫)
+    // ==========================================
+    const DB_NAME = "FamilyAccountingDB";
+    const STORE_NAME = "transactions";
+    const DB_VERSION = 1;
+
+    function initIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = (e) => reject("IndexedDB 初始化失敗");
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: "id" });
+          }
+        };
+      });
+    }
+
+    async function saveToIndexedDB(data) {
+      try {
+        const db = await initIndexedDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, "readwrite");
+          const store = tx.objectStore(STORE_NAME);
+          store.clear(); // 清空舊快取
+          data.forEach(item => store.put(item)); // 寫入最新完整資料
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject();
+        });
+      } catch (e) { console.warn("IndexedDB 儲存失敗", e); }
+    }
+
+    async function loadFromIndexedDB() {
+      try {
+        const db = await initIndexedDB();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, "readonly");
+          const store = tx.objectStore(STORE_NAME);
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject();
+        });
+      } catch (e) { console.warn("IndexedDB 讀取失敗", e); return []; }
+    }
 
     const LS = {
       pending: "pending_sync_v23",
@@ -168,7 +216,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -624,6 +672,8 @@
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
+      
+      // 【優化】啟動時以 LocalStorage 當備胎預設值，隨後用 IndexedDB 非同步覆蓋
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
       const [transactions, setTransactions] = useState(() => safeArrayLS(LS.txCache));
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
@@ -634,7 +684,6 @@
 
       const [expandedGroups, setExpandedGroups] = useState({});
       
-      // 【優化】搜尋防抖狀態
       const [historySearch, setHistorySearch] = useState("");
       const [debouncedHistorySearch, setDebouncedHistorySearch] = useState(""); 
       const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
@@ -661,10 +710,19 @@
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
       useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
-      useEffect(() => localStorage.setItem(LS.txCache, JSON.stringify(txCache)), [txCache]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
       useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
+
+      // 【優化】啟動時載入 IndexedDB 高效能完整快取
+      useEffect(() => {
+        loadFromIndexedDB().then(idbData => {
+          if (idbData && idbData.length > 0) {
+            setTxCache(idbData);
+            if (!navigator.onLine) setTransactions(idbData);
+          }
+        });
+      }, []);
 
       useEffect(() => {
         if (currentUser && greetingsCache && greetingsCache[currentUser.name]) {
@@ -674,7 +732,6 @@
         }
       }, [currentUser, greetingsCache]);
 
-      // 【優化】搜尋防抖監聽器 (350ms)
       useEffect(() => {
         const timer = setTimeout(() => setDebouncedHistorySearch(historySearch), 350);
         return () => clearTimeout(timer);
@@ -725,7 +782,6 @@
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
         const formatted = (data.transactions || []).map((t, i) => {
           const rawDate = t["日期時間"] || t["日期"] || "";
-          // 【優化】提早解析時間戳記，避免排序時重複進行 Regex 運算
           const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/ \(已編輯\)/g, "").replace(/\(已編輯\)/g, "").replace(/-/g, "/").replace("T", " ");
           const ts = new Date(cleanStr).getTime() || 0;
           return {
@@ -734,20 +790,29 @@
             desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
           };
         });
-        setTransactions(formatted); setTxCache(formatted); setLastSyncText(nowStr()); 
+        setTransactions(formatted); 
+        setTxCache(formatted); 
+        setLastSyncText(nowStr()); 
         if (data.greetings) setGreetingsCache(data.greetings); 
+
+        // 【優化】雙重備份：同時寫入 IndexedDB 與 LocalStorage
+        saveToIndexedDB(formatted);
+        localStorage.setItem(LS.txCache, JSON.stringify(formatted));
+
         return formatted;
       };
 
-      const processQueueToCloud = async ({ doRefreshFirst }) => {
+      // 【優化】處理登入時的同步阻斷機制 (isLoginSync)
+      const processQueueToCloud = async ({ doRefreshFirst, isLoginSync = false }) => {
         if (!navigator.onLine) return;
         if (!deviceValid()) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); return; }
         try {
           if (doRefreshFirst) await refreshDeviceToken();
+          
+          if (isLoginSync) setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
+          else if (syncQueue.length > 0) setLoadingCard({ show: true, text: "正在同步暫存..." });
+
           if (syncQueue.length > 0) {
-            setLoadingCard({ show:true, text:"正在同步暫存..." });
-            
-            // 【優化】將新增 (ADD) 的紀錄獨立打包成 Batch
             const addItems = syncQueue.filter(item => !item.action || item.action === "ADD");
             const updateItems = syncQueue.filter(item => item.action && item.action !== "ADD");
 
@@ -756,19 +821,21 @@
               if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             }
             
-            // 其他操作維持單筆發送
             for (const item of updateItems) {
               const res = await postGAS({ ...item, deviceToken: getDeviceToken() });
               if (res.result !== "success") throw new Error(res.message || "同步失敗");
             }
-            
-            setSyncQueue([]); // 成功後一次性清空
+            setSyncQueue([]);
           }
-          await fetchCloudTx(); showStatus("success", "同步完成");
+
+          await fetchCloudTx();
+          if (!isLoginSync && syncQueue.length > 0) showStatus("success", "同步完成");
         } catch (e) {
           const msg = e.message || "同步失敗"; showStatus("error", msg);
           if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { setLoadingCard({ show:false, text:"" }); }
+        } finally { 
+          if (!isLoginSync) setLoadingCard({ show: false, text: "" }); 
+        }
       };
 
       const handleSaveGreeting = async () => {
@@ -959,7 +1026,6 @@
         return grouped;
       };
 
-      // 【優化】優先讀取計算好的 timestamp 快取
       const parseDateForSort = (item) => {
         if (!item) return 0;
         if (item.timestamp) return item.timestamp;
@@ -993,7 +1059,6 @@
           list = list.filter(item => parseDateForSort(item) >= cutoff.getTime());
         }
 
-        // 【優化】改用 debouncedHistorySearch，防止打字卡頓
         const searchTxt = debouncedHistorySearch.trim();
         const dateRangeRegex = /^(\d{4}\/\d{1,2}\/\d{1,2})\s*-\s*(\d{4}\/\d{1,2}\/\d{1,2})$/;
         const match = searchTxt.match(dateRangeRegex);
@@ -1158,11 +1223,17 @@
         );
       };
 
+      const renderItemOrGroup = (item, allowEdit) => {
+        if (item.isGroup) return renderGroupCard(item, allowEdit);
+        return renderStandaloneCard(item, allowEdit);
+      };
+
       const [animTrigger, setAnimTrigger] = useState(false);
       useEffect(() => {
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
+      // 【優化】登入流程：先阻斷同步最新資料，完畢後才切換畫面
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1170,10 +1241,13 @@
         if (biometricAvailable && isDeviceBioBound(user.name)) {
           const ok = await handleBioLoginLocal(user.name);
           if (ok) {
+            if (navigator.onLine && deviceValid()) {
+               await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+            }
+            setLoadingCard({ show: false, text: "" });
             setCurrentUser(user);
             setSelectingUser(null);
             setPinInput("");
-            if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
           } else {
             setFallbackToPin(true);
           }
@@ -1223,8 +1297,11 @@
                       <button onClick={async () => {
                           const ok = await handleBioLoginLocal(selectingUser.name);
                           if (ok) {
+                            if (navigator.onLine && deviceValid()) {
+                               await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                            }
+                            setLoadingCard({ show: false, text: "" });
                             setCurrentUser(selectingUser); setSelectingUser(null); setPinInput("");
-                            if (navigator.onLine && deviceValid()) setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50);
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1251,13 +1328,16 @@
                                   if (navigator.onLine) {
                                     if (!deviceValid()) { showStatus("error", "雲端尚未綁定，請先輸入雲端密碼"); setShowBootstrapModal(true); setPinInput(""); return; }
                                     setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(selectingUser.name, n);
-                                    setLoadingCard({ show:false, text:"" }); await saveLocalPinHash(selectingUser.name, n);
+                                    await saveLocalPinHash(selectingUser.name, n);
+                                    
+                                    // 【優化】驗證通過，直接同步最新資料後再進主畫面
+                                    await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                                    setLoadingCard({ show: false, text: "" });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）"); setPinInput(""); return; }
                                   }
                                   setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); setFallbackToPin(false);
-                                  if (navigator.onLine && deviceValid()) { setTimeout(() => processQueueToCloud({ doRefreshFirst:true }), 50); }
                                 } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "PIN 錯誤"); setPinInput(""); }
                               }
                             }} className="bg-white/5 h-16 rounded-2xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white shadow-sm hover:bg-white/10">
@@ -1708,12 +1788,11 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>實作雙重本地資料庫緩存 (IndexedDB 效能優化 + LocalStorage 備胎) (V9.DB)</li>
+                          <li>重新設計登入同步機制：登入時同步顯示進度，完畢後秒切主畫面，無縫體驗 (V9.DB)</li>
                           <li>導入搜尋防抖 (Debounce) 機制，解決巨量歷史清單輸入卡頓 (V8.OPT)</li>
                           <li>最佳化 Timestamp 排序快取，提升資料切換與解析速度 (V8.OPT)</li>
                           <li>配合後端新增 BATCH_SYNC 機制，離線恢復同步改為批次上傳 (V8.OPT)</li>
-                          <li>修復生物辨識彈窗遭瀏覽器攔截卡死的問題，並加入密碼降級機制 (V6)</li>
-                          <li>獨立多筆明細的花費對象標籤與子項選擇 (V4)</li>
-                          <li>支援分析圖表三階層下鑽 (對象 ➔ 母類 ➔ 子類) (V4)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
@@ -1723,7 +1802,6 @@
                           <li>實作 Smart Hash 保護機制，支援 Sheet 表單明文重置與自動加密升級 (V5.OPT)</li>
                           <li>新增 BATCH_SYNC 批次同步 API，大幅減少連線次數 (V5.OPT)</li>
                           <li>尋找機制反向迴圈優化、母項目更新改用記憶體批次寫入防 Timeout (V5.OPT)</li>
-                          <li>新增 UPDATE_GREETING 儲存自訂問候語，並於 GET_TX 派發 (V4)</li>
                         </ul>
                       </div>
                     </div>
