@@ -65,11 +65,11 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.02.28.PRO.V9.DB";
-    const GAS_TARGET_VERSION = "2026.02.28.PRO.V5.OPT";
+    const APP_VERSION = "2026.02.28.PRO.V10.FLOW";
+    const GAS_TARGET_VERSION = "2026.02.28.PRO.V6.OPT";
 
     // ==========================================
-    // 【優化】IndexedDB 雙重緩存系統 (非同步高效能讀寫)
+    // IndexedDB 雙重緩存系統 (非同步高效能讀寫)
     // ==========================================
     const DB_NAME = "FamilyAccountingDB";
     const STORE_NAME = "transactions";
@@ -95,8 +95,8 @@
         return new Promise((resolve, reject) => {
           const tx = db.transaction(STORE_NAME, "readwrite");
           const store = tx.objectStore(STORE_NAME);
-          store.clear(); // 清空舊快取
-          data.forEach(item => store.put(item)); // 寫入最新完整資料
+          store.clear(); 
+          data.forEach(item => store.put(item)); 
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject();
         });
@@ -673,7 +673,6 @@
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
-      // 【優化】啟動時以 LocalStorage 當備胎預設值，隨後用 IndexedDB 非同步覆蓋
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
       const [transactions, setTransactions] = useState(() => safeArrayLS(LS.txCache));
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
@@ -714,7 +713,6 @@
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
       useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
 
-      // 【優化】啟動時載入 IndexedDB 高效能完整快取
       useEffect(() => {
         loadFromIndexedDB().then(idbData => {
           if (idbData && idbData.length > 0) {
@@ -795,17 +793,20 @@
         setLastSyncText(nowStr()); 
         if (data.greetings) setGreetingsCache(data.greetings); 
 
-        // 【優化】雙重備份：同時寫入 IndexedDB 與 LocalStorage
         saveToIndexedDB(formatted);
         localStorage.setItem(LS.txCache, JSON.stringify(formatted));
 
         return formatted;
       };
 
-      // 【優化】處理登入時的同步阻斷機制 (isLoginSync)
+      // 【優化】加入同步結果回傳 (Boolean)，供登入流程判斷是否要阻斷
       const processQueueToCloud = async ({ doRefreshFirst, isLoginSync = false }) => {
-        if (!navigator.onLine) return;
-        if (!deviceValid()) { showStatus("error", "雲端憑證已過期，請重新綁定"); forceReloginForToken(); return; }
+        if (!navigator.onLine) return true;
+        if (!deviceValid()) { 
+           showStatus("error", "雲端憑證已過期，請重新綁定"); 
+           forceReloginForToken(); 
+           return false; 
+        }
         try {
           if (doRefreshFirst) await refreshDeviceToken();
           
@@ -830,9 +831,13 @@
 
           await fetchCloudTx();
           if (!isLoginSync && syncQueue.length > 0) showStatus("success", "同步完成");
+          return true; // 同步成功
         } catch (e) {
           const msg = e.message || "同步失敗"; showStatus("error", msg);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
+          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
+             forceReloginForToken();
+          }
+          return false; // 同步失敗
         } finally { 
           if (!isLoginSync) setLoadingCard({ show: false, text: "" }); 
         }
@@ -1233,25 +1238,11 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      // 【優化】登入流程：先阻斷同步最新資料，完畢後才切換畫面
+      // 【優化】取消點擊頭像自動觸發指紋，防二次重複驗證
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
         setFallbackToPin(false);
-        if (biometricAvailable && isDeviceBioBound(user.name)) {
-          const ok = await handleBioLoginLocal(user.name);
-          if (ok) {
-            if (navigator.onLine && deviceValid()) {
-               await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
-            }
-            setLoadingCard({ show: false, text: "" });
-            setCurrentUser(user);
-            setSelectingUser(null);
-            setPinInput("");
-          } else {
-            setFallbackToPin(true);
-          }
-        }
       };
 
       if (!currentUser) {
@@ -1295,13 +1286,21 @@
                   {isDeviceBioBound(selectingUser.name) && !fallbackToPin ? (
                     <div className="flex flex-col items-center mb-8 animate-in">
                       <button onClick={async () => {
+                          // 【優化】點擊按鈕才驗證，杜絕連點衝突
                           const ok = await handleBioLoginLocal(selectingUser.name);
                           if (ok) {
-                            if (navigator.onLine && deviceValid()) {
-                               await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                            if (navigator.onLine) {
+                               setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
+                               const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                               if (!syncOk) {
+                                   setLoadingCard({ show: false, text: "" });
+                                   return; // 若憑證無效則原地阻斷，防止閃跳
+                               }
                             }
                             setLoadingCard({ show: false, text: "" });
-                            setCurrentUser(selectingUser); setSelectingUser(null); setPinInput("");
+                            setCurrentUser(selectingUser); 
+                            setSelectingUser(null); 
+                            setPinInput("");
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1327,17 +1326,27 @@
                                 try {
                                   if (navigator.onLine) {
                                     if (!deviceValid()) { showStatus("error", "雲端尚未綁定，請先輸入雲端密碼"); setShowBootstrapModal(true); setPinInput(""); return; }
-                                    setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(selectingUser.name, n);
+                                    setLoadingCard({ show:true, text:"正在驗證..." }); 
+                                    await verifyPinOnline(selectingUser.name, n);
                                     await saveLocalPinHash(selectingUser.name, n);
                                     
-                                    // 【優化】驗證通過，直接同步最新資料後再進主畫面
-                                    await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                                    // 【優化】驗證通過後，直接同步最新資料後再進主畫面
+                                    setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
+                                    const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                                    if (!syncOk) {
+                                        setLoadingCard({ show: false, text: "" });
+                                        setPinInput("");
+                                        return; // 憑證失效阻斷進入主畫面
+                                    }
                                     setLoadingCard({ show: false, text: "" });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）"); setPinInput(""); return; }
                                   }
-                                  setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); setFallbackToPin(false);
+                                  setCurrentUser(selectingUser); 
+                                  setSelectingUser(null); 
+                                  setPinInput(""); 
+                                  setFallbackToPin(false);
                                 } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "PIN 錯誤"); setPinInput(""); }
                               }
                             }} className="bg-white/5 h-16 rounded-2xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white shadow-sm hover:bg-white/10">
@@ -1788,20 +1797,20 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修復憑證過期時的畫面反覆閃跳衝突，導入同步阻斷機制 (V10.FLOW)</li>
+                          <li>修復點擊頭像與指紋按鈕造成的雙重驗證衝突 (V10.FLOW)</li>
                           <li>實作雙重本地資料庫緩存 (IndexedDB 效能優化 + LocalStorage 備胎) (V9.DB)</li>
                           <li>重新設計登入同步機制：登入時同步顯示進度，完畢後秒切主畫面，無縫體驗 (V9.DB)</li>
                           <li>導入搜尋防抖 (Debounce) 機制，解決巨量歷史清單輸入卡頓 (V8.OPT)</li>
-                          <li>最佳化 Timestamp 排序快取，提升資料切換與解析速度 (V8.OPT)</li>
-                          <li>配合後端新增 BATCH_SYNC 機制，離線恢復同步改為批次上傳 (V8.OPT)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>實作短期提速解法，GET_TX 加入 MAX_FETCH_ROWS 限制，大幅降低傳輸延遲 (V6.OPT)</li>
                           <li>導入 HMAC-SHA256 簽章驗證，防禦 API 偽造存取 (V5.OPT)</li>
                           <li>實作 Smart Hash 保護機制，支援 Sheet 表單明文重置與自動加密升級 (V5.OPT)</li>
                           <li>新增 BATCH_SYNC 批次同步 API，大幅減少連線次數 (V5.OPT)</li>
-                          <li>尋找機制反向迴圈優化、母項目更新改用記憶體批次寫入防 Timeout (V5.OPT)</li>
                         </ul>
                       </div>
                     </div>
