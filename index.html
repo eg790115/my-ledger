@@ -65,12 +65,9 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.02.28.PRO.V10.FLOW";
-    const GAS_TARGET_VERSION = "2026.02.28.PRO.V6.OPT";
+    const APP_VERSION = "2026.02.28.PRO.V13.OFFLINE";
+    const GAS_TARGET_VERSION = "2026.02.28.PRO.V9.STRICT";
 
-    // ==========================================
-    // IndexedDB 雙重緩存系統 (非同步高效能讀寫)
-    // ==========================================
     const DB_NAME = "FamilyAccountingDB";
     const STORE_NAME = "transactions";
     const DB_VERSION = 1;
@@ -216,7 +213,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -671,6 +668,8 @@
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
+      const [showClearQueueModal, setShowClearQueueModal] = useState(false);
+
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
@@ -706,7 +705,21 @@
       const [newPin2, setNewPin2] = useState("");
       const [isLogOpen, setIsLogOpen] = useState(false);
 
+      // 【優化】全局線上/離線狀態追蹤
+      const [isOnline, setIsOnline] = useState(navigator.onLine);
+
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
+
+      useEffect(() => {
+        const handleOnline = () => { setIsOnline(true); showStatus("success", "網路已恢復連線"); };
+        const handleOffline = () => { setIsOnline(false); showStatus("info", "已進入離線模式"); };
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+        };
+      }, []);
 
       useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
@@ -717,10 +730,10 @@
         loadFromIndexedDB().then(idbData => {
           if (idbData && idbData.length > 0) {
             setTxCache(idbData);
-            if (!navigator.onLine) setTransactions(idbData);
+            if (!isOnline) setTransactions(idbData);
           }
         });
-      }, []);
+      }, [isOnline]);
 
       useEffect(() => {
         if (currentUser && greetingsCache && greetingsCache[currentUser.name]) {
@@ -742,11 +755,15 @@
 
       useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
-      useEffect(() => { if (navigator.onLine && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, []);
+      
+      useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
+
+      // 【優化】連網後背景自動恢復同步
       useEffect(() => {
-        const onOnline = async () => { if (!navigator.onLine || !deviceValid()) return; await processQueueToCloud({ doRefreshFirst: true }); };
-        window.addEventListener("online", onOnline); return () => window.removeEventListener("online", onOnline);
-      }, [syncQueue]);
+        if (isOnline && currentUser && syncQueue.length > 0) {
+          processQueueToCloud({ doRefreshFirst: true });
+        }
+      }, [isOnline, currentUser]);
 
       const displayDateClean = (val) => {
         if (!val) return "";
@@ -799,9 +816,8 @@
         return formatted;
       };
 
-      // 【優化】加入同步結果回傳 (Boolean)，供登入流程判斷是否要阻斷
       const processQueueToCloud = async ({ doRefreshFirst, isLoginSync = false }) => {
-        if (!navigator.onLine) return true;
+        if (!isOnline) return true;
         if (!deviceValid()) { 
            showStatus("error", "雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
@@ -831,20 +847,21 @@
 
           await fetchCloudTx();
           if (!isLoginSync && syncQueue.length > 0) showStatus("success", "同步完成");
-          return true; // 同步成功
+          return true; 
         } catch (e) {
           const msg = e.message || "同步失敗"; showStatus("error", msg);
           if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
              forceReloginForToken();
+             return false; 
           }
-          return false; // 同步失敗
+          return true; 
         } finally { 
           if (!isLoginSync) setLoadingCard({ show: false, text: "" }); 
         }
       };
 
       const handleSaveGreeting = async () => {
-         if (!navigator.onLine || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
+         if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
          try {
             setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken();
             const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() });
@@ -888,7 +905,7 @@
 
       const unbindDeviceBio = async () => {
         if (unbindPin.length !== 6) { showStatus("error","請輸入 6 位 PIN"); return; }
-        if (!navigator.onLine) { showStatus("error","需連線驗證 PIN 才能解除"); return; }
+        if (!isOnline) { showStatus("error","需連線驗證 PIN 才能解除"); return; }
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
         try {
           setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(currentUser.name, unbindPin);
@@ -897,7 +914,7 @@
       };
 
       const changePin = async () => {
-        if (!navigator.onLine) { showStatus("error","需連線才能更換密碼"); return; }
+        if (!isOnline) { showStatus("error","需連線才能更換密碼"); return; }
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
         if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { showStatus("error","請輸入 6 位 PIN"); return; }
         if (newPin !== newPin2) { showStatus("error","兩次輸入不一致"); return; }
@@ -912,13 +929,26 @@
 
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
-        const baseId = Date.now(); const isMulti = newTxs.length > 1;
-        const groupId = isMulti ? `G${baseId}` : ""; const parentDesc = isMulti ? newTxs[0].parentDesc : "";
-        const completeTxs = newTxs.map((tx, idx) => ({ ...tx, date: baseDate, recorder: currentUser.name, id: String(baseId + idx), groupId, parentDesc, action: "ADD" }));
+        const baseTimestamp = Date.now();
+        const isMulti = newTxs.length > 1;
+        const randomSuffix = () => Math.random().toString(36).substring(2, 8);
+        
+        const groupId = isMulti ? `G_${baseTimestamp}_${currentUser.name}_${randomSuffix()}` : ""; 
+        const parentDesc = isMulti ? newTxs[0].parentDesc : "";
 
-        if (!navigator.onLine || !deviceValid()) {
+        const completeTxs = newTxs.map((tx, idx) => ({ 
+          ...tx, 
+          date: baseDate, 
+          recorder: currentUser.name, 
+          id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`, 
+          groupId, 
+          parentDesc, 
+          action: "ADD" 
+        }));
+
+        if (!isOnline || !deviceValid()) {
           setSyncQueue(prev => [...prev, ...completeTxs]); showStatus("info", `已暫存 ${completeTxs.length} 筆（待同步）`);
-          setActiveTab("dashboard"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return;
+          setActiveTab("dashboard"); if (isOnline && !deviceValid()) forceReloginForToken(); return;
         }
 
         try {
@@ -944,7 +974,7 @@
           setSyncQueue(prev => prev.map(p => p.id === updatedTx.id ? { ...p, ...updatedTx } : p));
           setEditingTx(null); setEditingIsPending(false); showStatus("success","暫存已更新"); return;
         }
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能編輯"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return; }
+        if (!isOnline || !deviceValid()) { showStatus("error","已離線，更新將暫存於手機"); setSyncQueue(prev => [...prev, { ...updatedTx, action: "UPDATE_TX" }]); setEditingTx(null); setEditingIsPending(false); if (isOnline && !deviceValid()) forceReloginForToken(); return; }
         try {
           setLoadingCard({ show:true, text:"正在更新..." }); await refreshDeviceToken();
           let finalDateStr = updatedTx.date;
@@ -960,7 +990,7 @@
       };
 
       const handleUpdateGroupParent = async (groupData) => {
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能編輯母項目"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return; }
+        if (!isOnline || !deviceValid()) { showStatus("error","已離線，更新將暫存於手機"); setSyncQueue(prev => [...prev, { ...groupData, action: "UPDATE_GROUP_PARENT" }]); setEditingGroup(null); if (isOnline && !deviceValid()) forceReloginForToken(); return; }
         try {
           setLoadingCard({ show:true, text:"正在更新母項目..." }); await refreshDeviceToken();
           let finalDateStr = groupData.date;
@@ -979,7 +1009,7 @@
         if (editingIsPending) {
           setSyncQueue(prev => prev.filter(p => p.id !== id)); setEditingTx(null); setEditingIsPending(false); showStatus("success","暫存已刪除"); return;
         }
-        if (!navigator.onLine || !deviceValid()) { showStatus("error","需連線且雲端已綁定才能刪除"); if (navigator.onLine && !deviceValid()) forceReloginForToken(); return; }
+        if (!isOnline || !deviceValid()) { showStatus("error","已離線，刪除將暫存於手機"); setSyncQueue(prev => [...prev, { id, action: "DELETE_TX" }]); setEditingTx(null); setEditingIsPending(false); if (isOnline && !deviceValid()) forceReloginForToken(); return; }
         try {
           setLoadingCard({ show:true, text:"正在刪除..." }); await refreshDeviceToken();
           const res = await postGAS({ action:"DELETE_TX", id, deviceToken: getDeviceToken() });
@@ -993,9 +1023,9 @@
 
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        if (navigator.onLine && deviceValid()) return transactions.length ? transactions : txCache;
+        if (isOnline && deviceValid()) return transactions.length ? transactions : txCache;
         return txCache;
-      }, [currentUser, transactions, txCache]);
+      }, [currentUser, transactions, txCache, isOnline]);
 
       const myTransactions = useMemo(() => {
         if (!currentUser) return [];
@@ -1045,7 +1075,7 @@
           const tA = parseDateForSort(a); const tB = parseDateForSort(b);
           if (tB !== tA) return tB - tA;
           const idA = a.isGroup ? a.children[0].id : a.id; const idB = b.isGroup ? b.children[0].id : b.id;
-          return (Number(idB) || 0) - (Number(idA) || 0);
+          return (String(idB) || "").localeCompare(String(idA) || ""); 
         });
       }, [visibleTransactions]);
 
@@ -1238,7 +1268,6 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      // 【優化】取消點擊頭像自動觸發指紋，防二次重複驗證
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1257,8 +1286,8 @@
                   <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
                   <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
                   <div className="mt-5 flex items-center justify-center">
-                    <span className={`px-4 py-1.5 text-sm font-bold tracking-widest rounded-xl shadow-sm ${navigator.onLine ? "bg-green-600/20 text-green-300 border border-green-500/20" : "bg-red-600/20 text-red-300 border border-red-500/20"}`}>
-                      {navigator.onLine ? "線上" : "離線"}
+                    <span className={`px-4 py-1.5 text-sm font-bold tracking-widest rounded-xl shadow-sm ${isOnline ? "bg-green-600/20 text-green-300 border border-green-500/20" : "bg-red-600/20 text-red-300 border border-red-500/20"}`}>
+                      {isOnline ? "線上" : "離線"}
                     </span>
                   </div>
                 </div>
@@ -1270,6 +1299,12 @@
                     </button>
                   ))}
                 </div>
+                
+                {syncQueue.length > 0 && (
+                  <button onClick={() => setShowClearQueueModal(true)} className="mt-10 px-4 py-2 bg-red-500/20 text-red-400 rounded-full text-xs font-bold border border-red-500/30 active:scale-95 transition-all">
+                     ⚠️ 發現同步卡死？點此強制清除暫存
+                  </button>
+                )}
               </>
             ) : (
               <div className="w-full max-w-sm animate-in text-white text-center font-black">
@@ -1286,15 +1321,14 @@
                   {isDeviceBioBound(selectingUser.name) && !fallbackToPin ? (
                     <div className="flex flex-col items-center mb-8 animate-in">
                       <button onClick={async () => {
-                          // 【優化】點擊按鈕才驗證，杜絕連點衝突
                           const ok = await handleBioLoginLocal(selectingUser.name);
                           if (ok) {
-                            if (navigator.onLine) {
+                            if (isOnline) {
                                setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
                                const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
                                if (!syncOk) {
                                    setLoadingCard({ show: false, text: "" });
-                                   return; // 若憑證無效則原地阻斷，防止閃跳
+                                   return; 
                                }
                             }
                             setLoadingCard({ show: false, text: "" });
@@ -1324,24 +1358,23 @@
                               const n = pinInput + k; if (n.length > 6) return; setPinInput(n);
                               if (n.length === 6) {
                                 try {
-                                  if (navigator.onLine) {
+                                  if (isOnline) {
                                     if (!deviceValid()) { showStatus("error", "雲端尚未綁定，請先輸入雲端密碼"); setShowBootstrapModal(true); setPinInput(""); return; }
                                     setLoadingCard({ show:true, text:"正在驗證..." }); 
                                     await verifyPinOnline(selectingUser.name, n);
                                     await saveLocalPinHash(selectingUser.name, n);
                                     
-                                    // 【優化】驗證通過後，直接同步最新資料後再進主畫面
                                     setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
                                     const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
                                     if (!syncOk) {
                                         setLoadingCard({ show: false, text: "" });
                                         setPinInput("");
-                                        return; // 憑證失效阻斷進入主畫面
+                                        return; 
                                     }
                                     setLoadingCard({ show: false, text: "" });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
-                                    if (!ok) { showStatus("error", "PIN 錯誤（離線需先線上驗證過一次）"); setPinInput(""); return; }
+                                    if (!ok) { showStatus("error", "PIN 錯誤，或您尚未在有網路時登入過，請先連接網路進行初次驗證"); setPinInput(""); return; }
                                   }
                                   setCurrentUser(selectingUser); 
                                   setSelectingUser(null); 
@@ -1379,6 +1412,30 @@
                 </div>
               </div>
             )}
+            
+            {showClearQueueModal && (
+              <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) setShowClearQueueModal(false); }}>
+                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <SvgIcon name="trash" size={32} />
+                  </div>
+                  <h3 className="font-black text-lg mb-2 text-red-600">強制清除同步暫存</h3>
+                  <p className="text-xs text-gray-500 mb-6 font-bold leading-relaxed">
+                    確定要清除卡在手機裡的 {syncQueue.length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
+                  </p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowClearQueueModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95">取消</button>
+                    <button onClick={() => {
+                      setSyncQueue([]);
+                      localStorage.removeItem(LS.pending);
+                      setShowClearQueueModal(false);
+                      showStatus("success", "已清空卡死的暫存資料");
+                    }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {statusMsg.text && (
               <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
                 <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : "bg-blue-600 text-white"}`}>
@@ -1428,6 +1485,29 @@
                 <input value={newPin} onChange={(e)=>setNewPin(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="新 PIN（6 位）" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-3" />
                 <input value={newPin2} onChange={(e)=>setNewPin2(e.target.value.replace(/\D/g,"").slice(0,6))} inputMode="numeric" placeholder="再次輸入新 PIN" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
                 <button onClick={changePin} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">確認更換</button>
+              </div>
+            </div>
+          )}
+
+          {showClearQueueModal && (
+            <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) setShowClearQueueModal(false); }}>
+              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <SvgIcon name="trash" size={32} />
+                </div>
+                <h3 className="font-black text-lg mb-2 text-red-600">強制清除同步暫存</h3>
+                <p className="text-xs text-gray-500 mb-6 font-bold leading-relaxed">
+                  確定要清除卡在手機裡的 {syncQueue.length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowClearQueueModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95">取消</button>
+                  <button onClick={() => {
+                    setSyncQueue([]);
+                    localStorage.removeItem(LS.pending);
+                    setShowClearQueueModal(false);
+                    showStatus("success", "已清空卡死的暫存資料");
+                  }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
+                </div>
               </div>
             </div>
           )}
@@ -1782,6 +1862,17 @@
                   <button onClick={() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }} className="w-full mt-6 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-2 border border-red-100">
                     <SvgIcon name="logout" size={20} /> 登出 / 切換使用者
                   </button>
+                  
+                  {/* 【緊急清除】主畫面版 */}
+                  {syncQueue.length > 0 && (
+                    <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mt-4 flex justify-between items-center">
+                      <div>
+                        <p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none">異常排解</p>
+                        <p className="font-black text-red-600 text-sm leading-none mt-1">有 {syncQueue.length} 筆資料卡住</p>
+                      </div>
+                      <button onClick={() => setShowClearQueueModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30">強制清除</button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
@@ -1797,20 +1888,18 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>修復憑證過期時的畫面反覆閃跳衝突，導入同步阻斷機制 (V10.FLOW)</li>
-                          <li>修復點擊頭像與指紋按鈕造成的雙重驗證衝突 (V10.FLOW)</li>
+                          <li>徹底優化 PWA 離線偵測機制，動態即時監聽網路狀態 (V13.OFFLINE)</li>
+                          <li>支援無網路環境下的完整離線登入與記帳，連網後背景自動恢復同步 (V13.OFFLINE)</li>
+                          <li>導入 UUID 複合式防撞機制，確保離線產生的 ID 全球唯一不衝突 (V12.ID)</li>
                           <li>實作雙重本地資料庫緩存 (IndexedDB 效能優化 + LocalStorage 備胎) (V9.DB)</li>
-                          <li>重新設計登入同步機制：登入時同步顯示進度，完畢後秒切主畫面，無縫體驗 (V9.DB)</li>
-                          <li>導入搜尋防抖 (Debounce) 機制，解決巨量歷史清單輸入卡頓 (V8.OPT)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>實作短期提速解法，GET_TX 加入 MAX_FETCH_ROWS 限制，大幅降低傳輸延遲 (V6.OPT)</li>
-                          <li>導入 HMAC-SHA256 簽章驗證，防禦 API 偽造存取 (V5.OPT)</li>
-                          <li>實作 Smart Hash 保護機制，支援 Sheet 表單明文重置與自動加密升級 (V5.OPT)</li>
-                          <li>新增 BATCH_SYNC 批次同步 API，大幅減少連線次數 (V5.OPT)</li>
+                          <li>確立「雲端絕對優先」原則。UPDATE 若找不到資料不再 Upsert，直接放行作廢 (V9.STRICT)</li>
+                          <li>記帳時間絕對信任前端手機時間，不混用伺服器時區 (V9.STRICT)</li>
+                          <li>導入 LockService 防止併發寫入衝突 (V7.SAFE)</li>
                         </ul>
                       </div>
                     </div>
