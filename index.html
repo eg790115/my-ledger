@@ -65,8 +65,8 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V18.UIUX_REFINE";
-    const GAS_TARGET_VERSION = "2026.03.01.PRO.V11.CLEANDATE";
+    const APP_VERSION = "2026.03.01.PRO.V19.ROCK_SOLID";
+    const GAS_TARGET_VERSION = "2026.03.01.PRO.V12.LOG";
 
     const DB_NAME = "FamilyAccountingDB";
     const STORE_NAME = "transactions";
@@ -710,16 +710,36 @@
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
+      // 【優化】更穩固的網路狀態偵測
       useEffect(() => {
-        const handleOnline = () => { setIsOnline(true); showStatus("success", "網路已恢復連線"); };
-        const handleOffline = () => { setIsOnline(false); showStatus("info", "已進入離線模式"); };
-        window.addEventListener('online', handleOnline);
-        window.addEventListener('offline', handleOffline);
+        const handleNetworkChange = () => {
+          setIsOnline(navigator.onLine);
+        };
+        window.addEventListener('online', handleNetworkChange);
+        window.addEventListener('offline', handleNetworkChange);
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') handleNetworkChange();
+        });
+        window.addEventListener('focus', handleNetworkChange);
         return () => {
-          window.removeEventListener('online', handleOnline);
-          window.removeEventListener('offline', handleOffline);
+          window.removeEventListener('online', handleNetworkChange);
+          window.removeEventListener('offline', handleNetworkChange);
+          window.removeEventListener('visibilitychange', handleNetworkChange);
+          window.removeEventListener('focus', handleNetworkChange);
         };
       }, []);
+
+      const prevOnline = useRef(navigator.onLine);
+      useEffect(() => {
+          if (prevOnline.current !== isOnline) {
+              if (isOnline) {
+                  showStatus("success", "網路已恢復連線");
+              } else {
+                  showStatus("info", "已進入離線模式");
+              }
+              prevOnline.current = isOnline;
+          }
+      }, [isOnline]);
 
       useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
       useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
@@ -758,6 +778,7 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
+      // 網路恢復後自動同步
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0) {
           processQueueToCloud({ doRefreshFirst: true });
@@ -1350,33 +1371,30 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      // 【優化】加入自動觸發指紋機制
+      // 【修復】拔除延遲，確保 Safari 離線指紋可正常運作
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
         setFallbackToPin(false);
 
-        // 如果該使用者有綁定生物辨識，給予極短延遲讓 UI 切換後，直接觸發系統驗證窗
         if (biometricAvailable && isDeviceBioBound(user.name)) {
-          setTimeout(async () => {
-            const ok = await handleBioLoginLocal(user.name);
-            if (ok) {
-              if (isOnline) {
-                 setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
-                 const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
-                 if (!syncOk) {
-                     setLoadingCard({ show: false, text: "" });
-                     return; 
-                 }
-              }
-              setLoadingCard({ show: false, text: "" });
-              setCurrentUser(user); 
-              setSelectingUser(null); 
-              setPinInput("");
-            } else {
-              setFallbackToPin(true);
+          const ok = await handleBioLoginLocal(user.name);
+          if (ok) {
+            if (isOnline) {
+               setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
+               const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+               if (!syncOk) {
+                   setLoadingCard({ show: false, text: "" });
+                   return; 
+               }
             }
-          }, 100); 
+            setLoadingCard({ show: false, text: "" });
+            setCurrentUser(user); 
+            setSelectingUser(null); 
+            setPinInput("");
+          } else {
+            setFallbackToPin(true);
+          }
         }
       };
 
@@ -1993,18 +2011,17 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修復 iOS/Safari 離線時因延遲封鎖指紋辨識的問題，拔除 setTimeout 實現無縫驗證 (V19.ROCK_SOLID)</li>
+                          <li>加入雙重網路偵測 (visibilitychange & focus)，確保背景切回前景時能秒切上線狀態 (V19.ROCK_SOLID)</li>
                           <li>優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版 (V18.UIUX_REFINE)</li>
-                          <li>優化登入體驗，點擊頭像即可直接喚起指紋驗證，無須二次點擊 (V17.UIUX)</li>
-                          <li>實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備的新資料 (V16.PERFECTMERGE)</li>
-                          <li>拔除舊有的 (已編輯) 標記邏輯，恢復純淨時間格式，解決解析錯亂 (V16.PERFECTMERGE)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>實作 safeFormatDate，解決 Google Sheet Date 物件轉字串產生 "Thu" 導致前端解析出 "hu" 的 Bug (V11.CLEANDATE)</li>
+                          <li>新增 __編輯紀錄__ 獨立分頁。自動將所有修改與刪除的舊資料 JSON 備份至該分頁 (V12.LOG)</li>
+                          <li>實作 safeFormatDate，徹底解決 Google Sheet 產生 "Thu" 等英文字串導致前端解析出 "hu" 亂碼的問題 (V11.CLEANDATE)</li>
                           <li>自動清洗舊資料殘留的 (已編輯) 標籤 (V11.CLEANDATE)</li>
-                          <li>所有寫入動作後加入 SpreadsheetApp.flush()，解決讀寫時間差問題 (V10.SYNC)</li>
                         </ul>
                       </div>
                     </div>
