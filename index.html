@@ -65,7 +65,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V16.PERFECTMERGE";
+    const APP_VERSION = "2026.03.01.PRO.V18.UIUX_REFINE";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V11.CLEANDATE";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -932,7 +932,6 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // 【完美同步】樂觀更新後拉取完整資料
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseTimestamp = Date.now();
@@ -974,7 +973,6 @@
              if (res.result !== "success") throw new Error(res.message || "寫入失敗");
           }
           
-          // 等待 GAS 完全落盤後，發動拉取以包含其他人的新資料
           await new Promise(r => setTimeout(r, 800));
           await fetchCloudTx(); 
           showStatus("success", isMulti ? `已同步 ${completeTxs.length} 筆紀錄` : "已同步");
@@ -1207,12 +1205,13 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
+      // 【UI 優化】將獨立卡片的編輯按鈕融入右下角
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benTag = formatBen(tx.beneficiary, tx.member);
         const showBenTag = benTag && benTag !== "";
         return (
-          <div key={tx.id} className="flex gap-2 items-center mb-3">
-            <div className="flex-1 min-w-0 bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden">
+          <div key={tx.id} className="mb-3">
+            <div className="w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
               <div className="relative shrink-0">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
@@ -1233,7 +1232,7 @@
                   {tx.desc && <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{tx.desc}</span>}
                 </div>
               </div>
-              <div className="flex flex-col items-end justify-center shrink-0 pl-1">
+              <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10">
                 <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
                   ${Number(tx.amount||0).toLocaleString()}
                 </div>
@@ -1243,18 +1242,17 @@
                   </div>
                 )}
               </div>
-            </div>
-            {allowEdit && (
-              <div className="flex flex-col justify-center shrink-0">
-                <button onClick={() => setEditingTx(tx)} className="w-8 h-8 bg-blue-50/50 text-blue-500 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                  <SvgIcon name="edit" size={14} />
+              {allowEdit && (
+                <button onClick={(e) => { e.stopPropagation(); setEditingTx(tx); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all">
+                  <SvgIcon name="edit" size={13} />
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         );
       };
 
+      // 【UI 優化】將母項目卡片的編輯按鈕融入右下角
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
@@ -1262,8 +1260,8 @@
         const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
 
         return (
-          <div key={group.groupId} className="flex gap-2 items-start mb-3">
-            <div className="flex-1 min-w-0 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
+          <div key={group.groupId} className="mb-3">
+            <div className="w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
               <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
                 <div className="relative shrink-0">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
@@ -1289,7 +1287,7 @@
                     {group.parentDesc && <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{group.parentDesc}</span>}
                   </div>
                 </div>
-                <div className="flex flex-col items-end justify-center shrink-0 pl-1">
+                <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10">
                   <div className={`font-black tabular-nums text-lg leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>
                     ${Number(group.amount||0).toLocaleString()}
                   </div>
@@ -1299,6 +1297,11 @@
                     </div>
                   )}
                 </div>
+                {allowEdit && (
+                  <button onClick={(e) => { e.stopPropagation(); setEditingGroup(group); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all">
+                    <SvgIcon name="edit" size={13} />
+                  </button>
+                )}
               </div>
 
               {isExp && (
@@ -1306,25 +1309,25 @@
                   {group.children.map((child, idx) => {
                     const childBen = formatBen(child.beneficiary, group.member);
                     return (
-                      <div key={child.id} className="flex gap-2 items-center">
-                        <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200">
-                          <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
-                            {idx + 1}
+                      <div key={child.id} className="w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden">
+                        <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
+                          <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
+                            <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
+                            {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                           </div>
-                          <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
-                            <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
-                              <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
-                              {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
-                            </div>
-                            {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
-                          </div>
-                          <div className={`font-black tabular-nums text-xs sm:text-sm shrink-0 min-w-[3.5rem] text-right ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
+                          {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
+                        </div>
+                        <div className="flex flex-col items-end shrink-0 min-w-[3.5rem] text-right z-10">
+                          <div className={`font-black tabular-nums text-xs sm:text-sm ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>
                             ${Number(child.amount||0).toLocaleString()}
                           </div>
                         </div>
                         {allowEdit && (
-                          <button onClick={() => setEditingTx(child)} className="w-7 h-7 shrink-0 bg-blue-50/80 text-blue-600 rounded-lg flex items-center justify-center active:scale-90 transition-transform shadow-sm border border-blue-100">
-                            <SvgIcon name="edit" size={12} />
+                          <button onClick={(e) => { e.stopPropagation(); setEditingTx(child); }} className="absolute bottom-1 right-1.5 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all">
+                            <SvgIcon name="edit" size={11} />
                           </button>
                         )}
                       </div>
@@ -1333,13 +1336,6 @@
                 </div>
               )}
             </div>
-            {allowEdit && (
-              <div className="flex flex-col justify-center shrink-0 mt-3">
-                 <button onClick={() => setEditingGroup(group)} className="w-8 h-8 bg-blue-50/50 text-blue-500 rounded-xl flex items-center justify-center active:scale-90 transition-transform border border-blue-100/50 shadow-sm">
-                   <SvgIcon name="edit" size={14} />
-                 </button>
-              </div>
-            )}
           </div>
         );
       };
@@ -1354,10 +1350,34 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
+      // 【優化】加入自動觸發指紋機制
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
         setFallbackToPin(false);
+
+        // 如果該使用者有綁定生物辨識，給予極短延遲讓 UI 切換後，直接觸發系統驗證窗
+        if (biometricAvailable && isDeviceBioBound(user.name)) {
+          setTimeout(async () => {
+            const ok = await handleBioLoginLocal(user.name);
+            if (ok) {
+              if (isOnline) {
+                 setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
+                 const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                 if (!syncOk) {
+                     setLoadingCard({ show: false, text: "" });
+                     return; 
+                 }
+              }
+              setLoadingCard({ show: false, text: "" });
+              setCurrentUser(user); 
+              setSelectingUser(null); 
+              setPinInput("");
+            } else {
+              setFallbackToPin(true);
+            }
+          }, 100); 
+        }
       };
 
       if (!currentUser) {
@@ -1973,10 +1993,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版 (V18.UIUX_REFINE)</li>
+                          <li>優化登入體驗，點擊頭像即可直接喚起指紋驗證，無須二次點擊 (V17.UIUX)</li>
                           <li>實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備的新資料 (V16.PERFECTMERGE)</li>
                           <li>拔除舊有的 (已編輯) 標記邏輯，恢復純淨時間格式，解決解析錯亂 (V16.PERFECTMERGE)</li>
-                          <li>修復 Google Sheet 讀寫時間差導致的新增不顯示問題，加入安全等待機制 (V14.DELAY)</li>
-                          <li>徹底優化 PWA 離線偵測機制，動態即時監聽網路狀態 (V13.OFFLINE)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
