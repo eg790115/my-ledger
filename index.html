@@ -3,12 +3,12 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.01.PRO.V33.ULTIMATE_SYNC
+  最新版本: 2026.03.02.PRO.V34.CHAIN_SYNC
   ==========================================
   【完整更新歷程】
+  - [2026.03.02] V34.CHAIN_SYNC: 實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖 (isSyncing) 導致後續操作卡在本地的問題。現在只要 Queue 內有資料，引擎會自動進行連鎖上傳直到清空為止。
   - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗。
   - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器。新增登入後自動背景同步機制，並補回遺失的分析圖表模組。修正陣列為 undefined 導致的 forEach 崩潰錯誤。
-  - [2026.03.01] V31.REALTIME_SYNC_FIX: 實作記憶體直通引擎 (Direct Override Queue)。
   ==========================================
 -->
 <head>
@@ -81,7 +81,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V33.ULTIMATE_SYNC";
+    const APP_VERSION = "2026.03.02.PRO.V34.CHAIN_SYNC";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -711,9 +711,7 @@
       
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
       
-      // ★ 真正的本地待處理佇列
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
-      // ★ 新增：用於 UI 視覺扣留的「處理中佇列」
       const [processingQueue, setProcessingQueue] = useState([]);
 
       const [editingTx, setEditingTx] = useState(null);
@@ -928,7 +926,7 @@
       };
 
       // ==========================================
-      // 🚀 背景同步引擎 (完美 UI 解耦版)
+      // 🚀 背景同步引擎 (實作：重試解鎖機制 Unlock-and-Check)
       // ==========================================
       const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
@@ -950,18 +948,15 @@
           if (doRefreshFirst || isManualSync) await refreshDeviceToken();
           
           let didWrite = false;
-          // 取得這次要上傳的真實資料
           const currentQueue = overrideQueue || safeParse(localStorage.getItem(LS.pending), []); 
           const hasDelete = (currentQueue || []).some(op => op.action === "DELETE_TX" || op.action === "DELETE_PARENT");
 
-          // ★ 1. 將上傳中的資料丟進 processingQueue，用來「鎖住」畫面上的待處理/灰階標籤
           setProcessingQueue(currentQueue);
 
           if (currentQueue && currentQueue.length > 0) {
             const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             
-            // ★ 2. 雲端寫入成功後，立刻從真實的 syncQueue 拔除，確保不會因為網路中斷而重複上傳
             setSyncQueue(prev => {
                 const nextQ = (prev || []).filter(p => !(currentQueue || []).some(c => 
                     (c.id === p.id && c.action === p.action) || 
@@ -973,10 +968,8 @@
             didWrite = true;
           }
 
-          // 此時畫面依然有 processingQueue 撐場，所以 UI 不會閃爍或突然恢復正常
           if (didWrite) await new Promise(r => setTimeout(r, 800)); 
           
-          // 抓取最新資料
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
           if (isManualSync) {
@@ -996,7 +989,6 @@
                   showStatus("success", `✅ 已自動同步雲端最新資料`);
               }
           } else if (didWrite && hasDelete && !isManualSync && !isAutoRecover) {
-              // 在抓取資料完成後，才精準彈出刪除提示
               showStatus("success", "🗑️ 已刪除紀錄");
           }
 
@@ -1010,9 +1002,17 @@
           }
           return true; 
         } finally { 
-          // ★ 3. 雲朵停止轉動的瞬間，清空 processingQueue，正式解除 UI 視覺標籤
           setProcessingQueue([]);
           setIsSyncing(false);
+
+          // ★ 解鎖回馬槍：下班前檢查有沒有手速太快遺留的 Queue
+          const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
+          if (leftoverQueue && leftoverQueue.length > 0) {
+              // 喘息 500ms 後再次觸發上傳
+              setTimeout(() => {
+                  if (navigator.onLine) processQueueToCloud({ isAutoRecover: true });
+              }, 500);
+          }
         }
       };
 
@@ -1091,19 +1091,16 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // ★ 樂觀 UI 渲染引擎：包含處理中的佇列與尚未上傳的佇列
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         
         let base = [...(txCache || [])]; 
         
-        // 結合 syncQueue (尚未上傳) 與 processingQueue (正在上傳)，並利用 Map 去重
         const queueMap = new Map();
         (processingQueue || []).forEach(q => queueMap.set(q.action === "UPDATE_GROUP_PARENT" ? q.groupId : q.id, q));
         (syncQueue || []).forEach(q => queueMap.set(q.action === "UPDATE_GROUP_PARENT" ? q.groupId : q.id, q));
         const combinedQueue = Array.from(queueMap.values()).reverse();
 
-        // 1. 覆蓋 UPDATEs
         base = base.map(t => {
             let mod = { ...t };
             const pendingGUpdate = combinedQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
@@ -1117,12 +1114,10 @@
             return mod;
         });
 
-        // 2. 加入 ADDs
         const baseIds = new Set(base.map(t => String(t.id)));
         const pendingAdds = combinedQueue.filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
         base = [...pendingAdds, ...base];
         
-        // 3. 排序
         base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
         return base;
       }, [currentUser, txCache, syncQueue, processingQueue]);
@@ -1218,10 +1213,8 @@
         }
       };
 
-      // ★ 提供給 UI 標籤判斷用的 pendingMap 
       const pendingMap = useMemo(() => {
         const map = {};
-        // 結合 syncQueue 與 processingQueue，確保資料真正刷新前 UI 標籤不會消失
         const combinedQueue = [...(syncQueue || []), ...(processingQueue || [])];
         combinedQueue.forEach(item => {
             if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
@@ -2149,13 +2142,13 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖 (isSyncing) 導致後續操作卡在本地的問題。現在只要 Queue 內有資料，引擎會自動進行連鎖上傳直到清空為止 (V34.CHAIN_SYNC)</li>
                           <li>實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗 (V33.ULTIMATE_SYNC)</li>
                           <li>修復陣列在特定情況下變成 undefined 導致的 forEach 崩潰錯誤 (V32.BALANCED_SYNC)</li>
                           <li>絕對不修改 UI 介面，僅針對底層同步邏輯進行優化 (V32.BALANCED_SYNC)</li>
                           <li>徹底拔除複雜的 sessionGhosts 過濾器，防衝突與刪除提示延遲至雲端確認 (V32.BALANCED_SYNC)</li>
                           <li>實作記憶體直通引擎 (Direct Override Queue)，徹底解決 React 非同步狀態更新導致「上傳時抓不到最新佇列，資料卡在待處理」的嚴重 Bug (V31.REALTIME_SYNC_FIX)</li>
                           <li>保證按下儲存/刪除後的載入狀態結束時，資料 100% 精準對齊雲端並消除待處理標籤 (V31.REALTIME_SYNC_FIX)</li>
-                          <li>捨棄激進的樂觀 UI，改回「絕對安全同步模式」。現在連線狀態下新增/修改/刪除，將會顯示載入畫面，強制等待雲端處理完畢並重新抓取最新名單後才顯示成功，提供 100% 的資料對齊安全感 (V30.SAFE_SYNC)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
