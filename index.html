@@ -6,7 +6,7 @@
   最新版本: 2026.03.01.PRO.V32.BALANCED_SYNC
   ==========================================
   【完整更新歷程】
-  - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器，並將刪除的提示 Toast 延遲到雲端確認卡片消失後才彈出，解決認知失調。
+  - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器，並將刪除的提示 Toast 延遲到雲端確認卡片消失後才彈出，解決認知失調。新增登入後自動背景同步機制，並補回遺失的分析圖表模組。修正陣列為 undefined 導致的 forEach 崩潰錯誤。
   - [2026.03.01] V31.REALTIME_SYNC_FIX: 實作記憶體直通引擎 (Direct Override Queue)。
   ==========================================
 -->
@@ -45,6 +45,10 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 補回遺失的圖表套件依賴 -->
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
@@ -71,6 +75,7 @@
 
   <script type="text/babel">
     const { useEffect, useMemo, useRef, useState } = React;
+    const { PieChart, Pie, Cell, ResponsiveContainer, Tooltip: RechartsTooltip, Legend } = window.Recharts || {};
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
@@ -103,7 +108,7 @@
           const tx = db.transaction(STORE_NAME, "readwrite");
           const store = tx.objectStore(STORE_NAME);
           store.clear(); 
-          data.forEach(item => store.put(item)); 
+          (data || []).forEach(item => store.put(item)); 
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject();
         });
@@ -719,6 +724,14 @@
       const [historyDateFilter, setHistoryDateFilter] = useState("all");
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
 
+      // ★ 圖表分析所需狀態
+      const [analysisDateFilter, setAnalysisDateFilter] = useState("1m");
+      const [analysisCustomStart, setAnalysisCustomStart] = useState("");
+      const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
+      const [analysisType, setAnalysisType] = useState("expense"); 
+      const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); 
+      const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); 
+
       const [showBootstrapModal, setShowBootstrapModal] = useState(false);
       const [bootstrapSecret, setBootstrapSecret] = useState("");
       const [showUnbindModal, setShowUnbindModal] = useState(false);
@@ -763,8 +776,8 @@
           }
       }, [isOnline]);
 
-      useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue)), [syncQueue]);
-      useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig)), [familyConfig]);
+      useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue || [])), [syncQueue]);
+      useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig || [])), [familyConfig]);
       useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
       useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
 
@@ -791,14 +804,25 @@
 
       useEffect(() => setHistoryVisibleCount(20), [debouncedHistorySearch, historyTypeFilter, historyDateFilter, activeTab]);
 
+      // 圖表重設機制
+      useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
+      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
+      useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
+
       useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
+      // ★ 登入後自動背景同步機制
       useEffect(() => {
-        if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
-          processQueueToCloud({ doRefreshFirst: true, isAutoRecover: true });
+        if (isOnline && currentUser && !isSyncing) {
+          if (syncQueue && syncQueue.length > 0) {
+             processQueueToCloud({ doRefreshFirst: true, isAutoRecover: true });
+          } else {
+             // 若無待上傳資料，依然向雲端抓取一次最新資料
+             processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+          }
         }
       }, [isOnline, currentUser]); 
 
@@ -862,7 +886,7 @@
           };
         });
 
-        const oldStr = JSON.stringify(txCache);
+        const oldStr = JSON.stringify(txCache || []);
         formatted.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
         const newStr = JSON.stringify(formatted);
 
@@ -877,7 +901,7 @@
       };
 
       const getMergedQueue = (currentQueue, newItem) => {
-        let newQueue = [...currentQueue];
+        let newQueue = [...(currentQueue || [])];
         if (newItem.action === "UPDATE_GROUP_PARENT") {
             const idx = newQueue.findIndex(p => p.action === "UPDATE_GROUP_PARENT" && String(p.groupId) === String(newItem.groupId));
             if (idx >= 0) newQueue[idx] = newItem;
@@ -927,16 +951,16 @@
           
           let didWrite = false;
           // 強制從 localStorage 讀取或使用傳入的最新 Queue 確保絕對同步
-          const currentQueue = overrideQueue || JSON.parse(localStorage.getItem(LS.pending) || "[]"); 
-          const hasDelete = currentQueue.some(op => op.action === "DELETE_TX");
+          const currentQueue = overrideQueue || safeParse(localStorage.getItem(LS.pending), []); 
+          const hasDelete = (currentQueue || []).some(op => op.action === "DELETE_TX" || op.action === "DELETE_PARENT");
 
-          if (currentQueue.length > 0) {
+          if (currentQueue && currentQueue.length > 0) {
             const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             
             // 精準移除已上傳的佇列
             setSyncQueue(prev => {
-                const nextQ = prev.filter(p => !currentQueue.some(c => 
+                const nextQ = (prev || []).filter(p => !(currentQueue || []).some(c => 
                     (c.id === p.id && c.action === p.action) || 
                     (c.groupId && c.groupId === p.groupId && c.action === p.action)
                 ));
@@ -961,6 +985,11 @@
               }
           } else if (isAutoRecover && didWrite) {
               showStatus("success", `✅ 網路已恢復，已將暫存資料同步至雲端`);
+          } else if (isLoginSync) {
+              // 登入後若發現雲端有新資料，輕微提示
+              if (oldStr !== newStr) {
+                  showStatus("success", `✅ 已自動同步雲端最新資料`);
+              }
           } else if (didWrite && hasDelete && !isManualSync && !isAutoRecover) {
               // ★ 平衡模式精髓：在背景同步完成、卡片確實消失後，才精準彈出刪除提示
               showStatus("success", "🗑️ 已刪除紀錄");
@@ -981,7 +1010,7 @@
       };
 
       const handleSyncClick = () => {
-          if (syncQueue.length > 0) {
+          if (syncQueue && syncQueue.length > 0) {
               setShowPendingModal(true);
           } else {
               processQueueToCloud({ isManualSync: true });
@@ -1059,16 +1088,16 @@
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         
-        let base = [...txCache]; 
+        let base = [...(txCache || [])]; 
 
         // 1. 覆蓋 UPDATEs
         base = base.map(t => {
             let mod = { ...t };
-            const pendingGUpdate = syncQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
+            const pendingGUpdate = (syncQueue || []).find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
             if (pendingGUpdate) {
                 mod.date = pendingGUpdate.date; mod.parentDesc = pendingGUpdate.parentDesc;
             }
-            const pendingUpdate = syncQueue.find(q => String(q.id) === String(t.id) && (q.action === 'UPDATE_TX' || q.action === 'DELETE_TX'));
+            const pendingUpdate = (syncQueue || []).find(q => String(q.id) === String(t.id) && (q.action === 'UPDATE_TX' || q.action === 'DELETE_TX'));
             if (pendingUpdate && pendingUpdate.action === 'UPDATE_TX') {
                 mod = { ...mod, ...pendingUpdate };
             }
@@ -1077,7 +1106,7 @@
 
         // 2. 加入 ADDs
         const baseIds = new Set(base.map(t => String(t.id)));
-        const pendingAdds = syncQueue.filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
+        const pendingAdds = (syncQueue || []).filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
         base = [...pendingAdds, ...base];
         
         // 3. 排序
@@ -1103,8 +1132,8 @@
           parentDesc
         }));
 
-        let currentQ = syncQueue;
-        completeTxs.forEach(tx => {
+        let currentQ = syncQueue || [];
+        (completeTxs || []).forEach(tx => {
             currentQ = getMergedQueue(currentQ, { ...tx, action: "ADD" });
         });
         
@@ -1156,15 +1185,15 @@
       };
 
       const handleDeleteTx = async (id) => {
-        const isOfflineAdd = syncQueue.find(p => String(p.id) === String(id) && p.action === 'ADD');
+        const isOfflineAdd = (syncQueue || []).find(p => String(p.id) === String(id) && p.action === 'ADD');
         if (isOfflineAdd) {
-            setSyncQueue(prev => prev.filter(p => String(p.id) !== String(id)));
+            setSyncQueue(prev => (prev || []).filter(p => String(p.id) !== String(id)));
             setEditingTx(null);
             showStatus("success", `🗑️ 已刪除紀錄`);
             return; 
         }
         
-        const txToDelete = visibleTransactions.find(t => String(t.id) === String(id)); 
+        const txToDelete = (visibleTransactions || []).find(t => String(t.id) === String(id)); 
         const currentQ = getMergedQueue(syncQueue, { ...(txToDelete || {id}), action: "DELETE_TX" });
         
         setSyncQueue(currentQ);
@@ -1180,7 +1209,8 @@
 
       const pendingMap = useMemo(() => {
         const map = {};
-        syncQueue.forEach(item => {
+        // 嚴格防止 syncQueue 為 undefined
+        (syncQueue || []).forEach(item => {
             if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
             if (item.groupId && item.action === "UPDATE_GROUP_PARENT") map[item.groupId] = item.action;
         });
@@ -1189,18 +1219,42 @@
 
       const myTransactions = useMemo(() => {
         if (!currentUser) return [];
-        return visibleTransactions.filter(t => t.member === currentUser.name);
+        return (visibleTransactions || []).filter(t => t.member === currentUser.name);
       }, [visibleTransactions, currentUser]);
 
+      // ★ 圖表運算邏輯
+      const analyzeData = useMemo(() => {
+        let totalExpense = 0; let totalIncome = 0;
+        const catMap = {};
+        
+        // 嚴格防止 myTransactions 為 undefined
+        (myTransactions || []).forEach(tx => {
+          const pendingOp = pendingMap[tx.id] || pendingMap[tx.groupId];
+          if (pendingOp === "DELETE_TX" || pendingOp === "DELETE_PARENT") return;
+
+          const amt = Number(tx.amount) || 0;
+          if (tx.type === "expense") {
+            totalExpense += amt;
+            catMap[tx.category] = (catMap[tx.category] || 0) + amt;
+          } else {
+            totalIncome += amt;
+          }
+        });
+        const pieData = Object.keys(catMap).map(k => ({ name: k, value: catMap[k] })).sort((a,b)=>b.value-a.value);
+        return { totalExpense, totalIncome, balance: totalIncome - totalExpense, pieData };
+      }, [myTransactions, pendingMap]);
+
+      const COLORS = ['#FF8042', '#00C49F', '#FFBB28', '#0088FE', '#8884d8', '#ff6b6b', '#4ecdc4'];
+
       const stats = useMemo(() => {
-        const income = myTransactions.filter(t => t.type === "income" && pendingMap[t.id] !== 'DELETE_TX').reduce((s,t)=>s+(Number(t.amount)||0),0);
-        const expense = myTransactions.filter(t => t.type === "expense" && pendingMap[t.id] !== 'DELETE_TX').reduce((s,t)=>s+(Number(t.amount)||0),0);
+        const income = (myTransactions || []).filter(t => t.type === "income" && pendingMap[t.id] !== 'DELETE_TX').reduce((s,t)=>s+(Number(t.amount)||0),0);
+        const expense = (myTransactions || []).filter(t => t.type === "expense" && pendingMap[t.id] !== 'DELETE_TX').reduce((s,t)=>s+(Number(t.amount)||0),0);
         return { income, expense, balance: income - expense };
       }, [myTransactions, pendingMap]);
 
       const groupTransactions = (list) => {
         const grouped = []; const groupMap = {};
-        for (const tx of list) {
+        for (const tx of (list || [])) {
           if (tx.groupId) {
             if (!groupMap[tx.groupId]) {
               const parts = String(tx.parentDesc || "").split("|||");
@@ -1222,7 +1276,7 @@
       };
 
       const allGroupedAndSorted = useMemo(() => {
-        const grouped = groupTransactions(visibleTransactions);
+        const grouped = groupTransactions(visibleTransactions || []);
         return grouped.sort((a, b) => {
           const tA = parseDateForSort(a); const tB = parseDateForSort(b);
           if (tB !== tA) return tB - tA;
@@ -1233,7 +1287,7 @@
 
       const filteredHistoryGroups = useMemo(() => {
         if (!currentUser) return [];
-        let list = allGroupedAndSorted.filter(item => item.member === currentUser.name);
+        let list = (allGroupedAndSorted || []).filter(item => item.member === currentUser.name);
         if (historyTypeFilter !== "all") list = list.filter(item => item.type === historyTypeFilter);
         if (historyDateFilter !== "all") {
           const now = new Date(); const cutoff = new Date();
@@ -1261,7 +1315,7 @@
           list = list.filter(item => {
             if (item.isGroup) {
               const groupMatch = String(item.parentTitle || "").toLowerCase().includes(q) || String(item.parentDesc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q);
-              const childMatch = item.children.some(tx => String(getParentCat(tx.category)).toLowerCase().includes(q) || String(getChildCat(tx.category)).toLowerCase().includes(q) || String(tx.desc || "").toLowerCase().includes(q) || String(tx.amount || "").includes(q) || String(tx.beneficiary || "").toLowerCase().includes(q));
+              const childMatch = (item.children || []).some(tx => String(getParentCat(tx.category)).toLowerCase().includes(q) || String(getChildCat(tx.category)).toLowerCase().includes(q) || String(tx.desc || "").toLowerCase().includes(q) || String(tx.amount || "").includes(q) || String(tx.beneficiary || "").toLowerCase().includes(q));
               return groupMatch || childMatch;
             } else {
               return String(getParentCat(item.category)).toLowerCase().includes(q) || String(getChildCat(item.category)).toLowerCase().includes(q) || String(item.desc || "").toLowerCase().includes(q) || String(item.amount || "").includes(q) || String(item.date || "").includes(q) || String(item.beneficiary || "").toLowerCase().includes(q);
@@ -1328,11 +1382,11 @@
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
-        group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
+        (group.children || []).forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
         const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
         const gAction = pendingMap[group.groupId];
-        const hasChildAction = group.children.some(c => pendingMap[c.id]);
-        const isPendingDeleteGroup = group.children.every(c => pendingMap[c.id] === 'DELETE_TX');
+        const hasChildAction = (group.children || []).some(c => pendingMap[c.id]);
+        const isPendingDeleteGroup = (group.children || []).every(c => pendingMap[c.id] === 'DELETE_TX');
 
         return (
           <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${isPendingDeleteGroup ? 'opacity-40 grayscale' : 'opacity-100'}`}>
@@ -1386,7 +1440,7 @@
 
               {isExp && (
                 <div className="bg-gray-50/80 p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
-                  {group.children.map((child, idx) => {
+                  {(group.children || []).map((child, idx) => {
                     const childBen = formatBen(child.beneficiary, group.member);
                     const cAction = pendingMap[child.id];
                     return (
@@ -1432,11 +1486,6 @@
         return renderStandaloneCard(item, allowEdit);
       };
 
-      const [animTrigger, setAnimTrigger] = useState(false);
-      useEffect(() => {
-        if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
-      }, [activeTab]);
-
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1468,14 +1517,14 @@
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white animate-in">
-                  {familyConfig.map(user => (
+                  {(familyConfig || []).map(user => (
                     <button key={user.name} onClick={() => handleUserClick(user)} className={`${user.color || (user.name==="媽媽"?"bg-pink-600":"bg-blue-600")} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>
                       {user.name}
                     </button>
                   ))}
                 </div>
                 
-                {syncQueue.length > 0 && (
+                {syncQueue && syncQueue.length > 0 && (
                   <button onClick={() => setShowClearQueueModal(true)} className="mt-10 px-4 py-2 bg-red-500/20 text-red-400 rounded-full text-xs font-bold border border-red-500/30 active:scale-95 transition-all">
                      ⚠️ 發現同步卡死？點此強制清除暫存
                   </button>
@@ -1584,7 +1633,7 @@
                   </div>
                   <h3 className="font-black text-lg mb-2 text-red-600">強制清除同步暫存</h3>
                   <p className="text-xs text-gray-500 mb-6 font-bold leading-relaxed">
-                    確定要清除卡在手機裡的 {syncQueue.length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
+                    確定要清除卡在手機裡的 {(syncQueue || []).length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
                   </p>
                   <div className="flex gap-3">
                     <button onClick={() => setShowClearQueueModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95">取消</button>
@@ -1633,11 +1682,11 @@
                   <button onClick={() => setShowPendingModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
                   <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
                       <SvgIcon name="cloudSync" size={24} className="text-blue-500" />
-                      待同步清單 ({syncQueue.length})
+                      待同步清單 ({(syncQueue || []).length})
                   </h3>
                   <p className="text-[10px] text-gray-500 font-bold mb-4">以下清單為暫存於手機尚未上傳的操作（包含待刪除項目），點擊下方按鈕即可一併同步至雲端。</p>
                   <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2 scrollbar-hide">
-                      {syncQueue.map((item, idx) => (
+                      {(syncQueue || []).map((item, idx) => (
                           <div key={idx} className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex items-stretch gap-3 relative overflow-hidden">
                               <div className={`absolute top-0 left-0 w-1.5 h-full ${item.action==='ADD'?'bg-green-500':item.action==='DELETE_TX'?'bg-red-500':'bg-blue-500'}`}></div>
                               <div className="flex-1 min-w-0 pl-1">
@@ -1703,7 +1752,7 @@
                 </div>
                 <h3 className="font-black text-lg mb-2 text-red-600">強制清除同步暫存</h3>
                 <p className="text-xs text-gray-500 mb-6 font-bold leading-relaxed">
-                  確定要清除卡在手機裡的 {syncQueue.length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
+                  確定要清除卡在手機裡的 {(syncQueue || []).length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
                 </p>
                 <div className="flex gap-3">
                   <button onClick={() => setShowClearQueueModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95">取消</button>
@@ -1731,7 +1780,7 @@
             <div className="flex flex-col items-center gap-1 mt-1">
               <button onClick={handleSyncClick} className="relative p-2 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
                 <SvgIcon name="cloudSync" size={20} className={isSyncing ? "animate-spin" : ""} />
-                {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
+                {syncQueue && syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
               </button>
               <span className={`text-[8px] font-black tracking-widest uppercase ${isOnline ? 'text-green-500' : 'text-red-500'}`}>{isOnline ? (isSyncing ? '同步中' : '線上') : '離線'}</span>
             </div>
@@ -1753,7 +1802,7 @@
                 <div className="space-y-4 text-left">
                   <h3 className="font-black text-lg px-1 text-gray-800">最新動態</h3>
                   <div className="space-y-3">
-                    {allGroupedAndSorted.slice(0, 5).map(item => renderItemOrGroup(item, false))}
+                    {(allGroupedAndSorted || []).slice(0, 5).map(item => renderItemOrGroup(item, false))}
                   </div>
                 </div>
               </div>
@@ -1795,14 +1844,231 @@
                 </div>
 
                 <div className="space-y-3 mt-4">
-                  {filteredHistoryGroups.slice(0, historyVisibleCount).map(item => renderItemOrGroup(item, true))}
-                  {historyVisibleCount < filteredHistoryGroups.length && (
+                  {(filteredHistoryGroups || []).slice(0, historyVisibleCount).map(item => renderItemOrGroup(item, true))}
+                  {historyVisibleCount < (filteredHistoryGroups || []).length && (
                     <button onClick={() => setHistoryVisibleCount(prev => prev + 20)} className="w-full py-4 bg-white border border-gray-200 text-blue-600 rounded-2xl font-black text-xs active:bg-gray-50 transition-colors shadow-sm mt-4 flex justify-center items-center gap-2">
-                      <SvgIcon name="refresh" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {filteredHistoryGroups.length})
+                      <SvgIcon name="refresh" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {(filteredHistoryGroups || []).length})
                     </button>
                   )}
-                  {filteredHistoryGroups.length === 0 && <div className="text-center py-10 flex flex-col items-center gap-2"><span className="text-gray-400 text-sm font-bold">尚無符合條件的紀錄</span></div>}
+                  {(filteredHistoryGroups || []).length === 0 && <div className="text-center py-10 flex flex-col items-center gap-2"><span className="text-gray-400 text-sm font-bold">尚無符合條件的紀錄</span></div>}
                 </div>
+              </div>
+            )}
+
+            {activeTab === "analysis" && (
+              <div className="space-y-6 animate-in pb-20 text-left">
+                <div className="flex flex-col gap-3 px-1">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
+                    <div className="relative">
+                      <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
+                        <option value="7d">最近 7 日</option><option value="14d">最近 14 日</option><option value="1m">最近 1 個月</option>
+                        <option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option>
+                        <option value="custom">自訂區間</option>
+                        <option value="all">全部時間</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"><span className="text-[8px] text-blue-500">▼</span></div>
+                    </div>
+                  </div>
+                  {/* 自訂區間輸入框 */}
+                  {analysisDateFilter === "custom" && (
+                    <div className="flex gap-2 items-center bg-gray-100 p-2.5 rounded-xl border border-gray-200 animate-in shadow-inner">
+                      <input type="date" value={analysisCustomStart} onChange={e => setAnalysisCustomStart(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
+                      <span className="text-gray-400 font-bold text-xs">~</span>
+                      <input type="date" value={analysisCustomEnd} onChange={e => setAnalysisCustomEnd(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
+                  <button onClick={() => {setAnalysisType("expense"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出分析</button>
+                  <button onClick={() => {setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
+                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-blue-600 shadow-sm" : ""}`}>對象分析</button>
+                </div>
+
+                {(() => {
+                  let analysisTxs = myTransactions || [];
+                  if (analysisDateFilter !== "all") {
+                    if (analysisDateFilter === "custom") {
+                      const start = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0;
+                      const end = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity;
+                      analysisTxs = analysisTxs.filter(item => {
+                         const txTime = parseDateForSort(item);
+                         return txTime >= start && txTime <= end;
+                      });
+                    } else {
+                      const now = new Date(); const cutoff = new Date();
+                      if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
+                      else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14);
+                      else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
+                      else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
+                      else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
+                      else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
+                      analysisTxs = analysisTxs.filter(item => parseDateForSort(item) >= cutoff.getTime());
+                    }
+                  }
+
+                  if (analysisType === "expense" || analysisType === "income") analysisTxs = analysisTxs.filter(t => t.type === analysisType);
+                  else if (analysisType === "beneficiary") analysisTxs = analysisTxs.filter(t => t.type === "expense");
+
+                  if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄</div>;
+                  
+                  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef"];
+                  let level1Totals = {}; let grandTotal = 0;
+
+                  (analysisTxs || []).forEach(t => {
+                    const pendingOp = pendingMap[t.id] || pendingMap[t.groupId];
+                    if (pendingOp === "DELETE_TX" || pendingOp === "DELETE_PARENT") return;
+
+                    const amt = Number(t.amount) || 0; grandTotal += amt;
+                    if (analysisType === "beneficiary") {
+                       const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
+                       const splitAmt = bens.length ? amt / bens.length : amt;
+                       (bens.length ? bens : ["未知"]).forEach(b => { level1Totals[b] = (level1Totals[b] || 0) + splitAmt; });
+                    } else {
+                       const pCat = getParentCat(t.category);
+                       level1Totals[pCat] = (level1Totals[pCat] || 0) + amt;
+                    }
+                  });
+                  const sortedLevel1 = Object.entries(level1Totals).sort((a,b) => b[1] - a[1]);
+                  let conicStr = ""; let currentPct = 0;
+                  (sortedLevel1 || []).forEach(([cat, amt], idx) => {
+                    const pct = (amt / grandTotal) * 100; const color = colors[idx % colors.length];
+                    conicStr += `${color} ${currentPct}% ${currentPct + pct}%, `; currentPct += pct;
+                  });
+                  conicStr = conicStr.slice(0, -2);
+
+                  let level2Totals = {}; let level1SelectedTotal = 0;
+                  if (selectedAnalysisLevel1) {
+                    if (analysisType === "beneficiary") {
+                      (analysisTxs || []).forEach(t => {
+                        const pendingOp = pendingMap[t.id] || pendingMap[t.groupId];
+                        if (pendingOp === "DELETE_TX" || pendingOp === "DELETE_PARENT") return;
+                        const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
+                        if (bens.includes(selectedAnalysisLevel1)) {
+                          const amt = (Number(t.amount) || 0) / bens.length;
+                          level1SelectedTotal += amt;
+                          const pCat = getParentCat(t.category);
+                          level2Totals[pCat] = (level2Totals[pCat] || 0) + amt;
+                        }
+                      });
+                    } else {
+                      (analysisTxs || []).forEach(t => {
+                        const pendingOp = pendingMap[t.id] || pendingMap[t.groupId];
+                        if (pendingOp === "DELETE_TX" || pendingOp === "DELETE_PARENT") return;
+                        if (getParentCat(t.category) === selectedAnalysisLevel1) {
+                          const cCat = getChildCat(t.category);
+                          const amt = Number(t.amount) || 0;
+                          level1SelectedTotal += amt;
+                          level2Totals[cCat] = (level2Totals[cCat] || 0) + amt;
+                        }
+                      });
+                    }
+                  }
+                  const sortedLevel2 = Object.entries(level2Totals).sort((a,b) => b[1] - a[1]);
+
+                  let level3Totals = {}; let level2SelectedTotal = 0;
+                  if (analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2) {
+                    (analysisTxs || []).forEach(t => {
+                      const pendingOp = pendingMap[t.id] || pendingMap[t.groupId];
+                      if (pendingOp === "DELETE_TX" || pendingOp === "DELETE_PARENT") return;
+                      const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
+                      if (bens.includes(selectedAnalysisLevel1) && getParentCat(t.category) === selectedAnalysisLevel2) {
+                        const amt = (Number(t.amount) || 0) / bens.length;
+                        level2SelectedTotal += amt;
+                        const cCat = getChildCat(t.category);
+                        level3Totals[cCat] = (level3Totals[cCat] || 0) + amt;
+                      }
+                    });
+                  }
+                  const sortedLevel3 = Object.entries(level3Totals).sort((a,b) => b[1] - a[1]);
+
+                  return (
+                    <div className="space-y-4">
+                      <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 relative">
+                        <div className="relative w-48 h-48 mx-auto mb-8 rounded-full shadow-lg" style={{ background: `conic-gradient(${conicStr})` }}>
+                          <div className="absolute inset-0 m-auto w-32 h-32 bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
+                            <span className="text-[10px] text-gray-400 font-black uppercase mb-1">
+                               {analysisType === "expense" ? "總支出" : analysisType === "income" ? "總收入" : "總花費"}
+                            </span>
+                            <span className="text-xl font-black text-gray-800">${grandTotal.toLocaleString()}</span>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {analysisType !== "beneficiary" && <div className="text-[9px] text-center font-black text-gray-400 uppercase tracking-widest mb-3 bg-gray-50 py-1.5 rounded-lg border border-gray-100">點擊下方分類查看細項</div>}
+                          {(sortedLevel1 || []).map(([cat, amt], idx) => {
+                            const isSelected = selectedAnalysisLevel1 === cat;
+                            return (
+                              <div key={cat} onClick={() => { setSelectedAnalysisLevel1(isSelected ? null : cat); setSelectedAnalysisLevel2(null); }} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-colors border ${isSelected ? 'bg-blue-50/50 border-blue-200' : 'bg-gray-50/50 hover:bg-gray-100 border-transparent'}`}>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-3 h-3 rounded-full shadow-sm" style={{ background: colors[idx % colors.length] }}></div>
+                                  <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                                    {analysisType === "beneficiary" ? `👦 ${cat}` : cat}
+                                  </span>
+                                 </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs text-gray-400 font-bold w-10 text-right">{((amt/grandTotal)*100).toFixed(1)}%</span>
+                                  <span className={`font-black w-16 text-right ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>${Math.round(amt).toLocaleString()}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {selectedAnalysisLevel1 && (
+                        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 animate-in relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500"></div>
+                          <h4 className="font-black text-gray-800 mb-5 flex items-center gap-2 text-sm pt-2">
+                            「{selectedAnalysisLevel1}」{analysisType === "beneficiary" ? "母項目花費分析" : "子項目明細"}
+                          </h4>
+                          <div className="space-y-4">
+                            {(sortedLevel2 || []).map(([cat, amt]) => {
+                               const pct = (amt / level1SelectedTotal) * 100;
+                               const isL2Selected = selectedAnalysisLevel2 === cat;
+                               return (
+                                 <div key={cat} className={analysisType === "beneficiary" ? "cursor-pointer" : ""} onClick={() => analysisType === "beneficiary" && setSelectedAnalysisLevel2(isL2Selected ? null : cat)}>
+                                    <div className="flex justify-between text-xs font-bold mb-1.5">
+                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-700'}`}>{cat} {analysisType === "beneficiary" && <span className="text-[9px] text-gray-400 ml-1">▼</span>}</span>
+                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
+                                    </div>
+                                    <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                    </div>
+                                 </div>
+                               )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2 && (
+                        <div className="bg-gray-800 p-6 rounded-[2.5rem] shadow-lg animate-in relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-full h-1.5 bg-pink-500"></div>
+                          <h4 className="font-black text-white mb-5 flex items-center gap-2 text-sm pt-2">
+                            「{selectedAnalysisLevel2}」子項目明細
+                          </h4>
+                          <div className="space-y-4">
+                            {(sortedLevel3 || []).map(([cCat, amt]) => {
+                               const pct = (amt / level2SelectedTotal) * 100;
+                               return (
+                                 <div key={cCat}>
+                                    <div className="flex justify-between text-xs font-bold mb-1.5 text-white">
+                                       <span>{cCat}</span>
+                                       <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
+                                    </div>
+                                    <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
+                                       <div className="h-full bg-pink-500 rounded-full transition-all duration-1000 ease-out" style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                    </div>
+                                 </div>
+                               )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -1848,7 +2114,7 @@
                     <SvgIcon name="logout" size={20} /> 登出 / 切換使用者
                   </button>
                   
-                  {syncQueue.length > 0 && (
+                  {syncQueue && syncQueue.length > 0 && (
                     <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mt-4 flex justify-between items-center">
                       <div>
                         <p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none">異常排解</p>
@@ -1872,6 +2138,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修復陣列在特定情況下變成 undefined 導致的 forEach 崩潰錯誤 (V32.BALANCED_SYNC)</li>
                           <li>絕對不修改 UI 介面，僅針對底層同步邏輯進行優化 (V32.BALANCED_SYNC)</li>
                           <li>徹底拔除複雜的 sessionGhosts 過濾器，防衝突與刪除提示延遲至雲端確認 (V32.BALANCED_SYNC)</li>
                           <li>實作記憶體直通引擎 (Direct Override Queue)，徹底解決 React 非同步狀態更新導致「上傳時抓不到最新佇列，資料卡在待處理」的嚴重 Bug (V31.REALTIME_SYNC_FIX)</li>
