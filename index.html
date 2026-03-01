@@ -3,16 +3,12 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.01.PRO.V25.GHOST_FILTER_PRO
+  最新版本: 2026.03.01.PRO.V26.FINAL_SYNC
   ==========================================
   【完整更新歷程】
-  - [2026.03.01] V25.GHOST_FILTER_PRO: 實作 Session Ghosts 防殘影記憶體，完美解決 Google Sheets 延遲導致的新增/刪除短暫消失問題；修復 React 非同步佇列觸發時間差，保證上傳零漏接；完全拔除登入載入視窗實現真 0 延遲；精準化所有同步狀態提示語。
-  - [2026.03.01] V24.GHOST_BUSTER: 導入 Anti-Stale 幽靈資料防禦機制 (已由 V25 輕量化取代)。
-  - [2026.03.01] V23.ULTIMATE_SYNC: 登入0延遲，本機緩存優先；待處理標籤外置於圖卡前方；同步管理中心升級顯示完整明細。
-  - [2026.03.01] V22.VERSION_CTRL: 程式碼頂部加入完整版本號與歷程標示。
-  - [2026.03.01] V20.BACKGROUND_SYNC: 新增專屬「待同步清單」管理中心。
-  - [2026.03.01] V19.ROCK_SOLID: 修復 iOS 離線指紋辨識封鎖問題；加入雙重網路偵測。
-  - [2026.03.01] V18.UIUX_REFINE: 優化歷史清單編輯圖示。
+  - [2026.03.01] V26.FINAL_SYNC: 重大修復！更改刪除資料的邏輯，現在離線刪除資料將保留在圖卡上並顯示「待刪除」標籤，避免因瞬間斷網導致資料無法上傳且從畫面消失的 Bug；全面對接後端 BATCH_PROCESS 引擎，將所有操作整合成一次上傳，根絕網路不穩的部分失敗。
+  - [2026.03.01] V25.GHOST_FILTER_PRO: 實作動態覆蓋引擎，解決延遲覆蓋問題；精準化所有同步狀態提示語。
+  - [2026.03.01] V23.ULTIMATE_SYNC: 登入0延遲，待處理標籤外置於圖卡前方；同步管理中心顯示完整明細。
   ==========================================
 -->
 <head>
@@ -79,9 +75,8 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V25.GHOST_FILTER_PRO";
-    const GAS_TARGET_VERSION = "2026.03.01.PRO.V12.LOG";
+    const APP_VERSION = "2026.03.01.PRO.V26.FINAL_SYNC";
+    const GAS_TARGET_VERSION = "2026.03.01.PRO.V13.BATCH";
 
     const DB_NAME = "FamilyAccountingDB";
     const STORE_NAME = "transactions";
@@ -228,7 +223,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -706,11 +701,9 @@
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
-      const [transactions, setTransactions] = useState(() => safeArrayLS(LS.txCache));
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
 
       // 【核心防護】Session 幽靈資料過濾器
-      // 避免在同一次連線中，上傳後立刻拉取到 Google Sheets 尚未消化完的舊資料
       const sessionGhosts = useRef({
           deleted: new Set(),
           updated: new Map(),
@@ -719,7 +712,6 @@
 
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
-      const [editingIsPending, setEditingIsPending] = useState(false);
 
       const [expandedGroups, setExpandedGroups] = useState({});
       
@@ -789,10 +781,9 @@
         loadFromIndexedDB().then(idbData => {
           if (idbData && idbData.length > 0) {
             setTxCache(idbData);
-            if (!isOnline) setTransactions(idbData);
           }
         });
-      }, [isOnline]);
+      }, []);
 
       useEffect(() => {
         if (currentUser && greetingsCache && greetingsCache[currentUser.name]) {
@@ -817,12 +808,13 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // 佇列改變且有網路時，自動觸發背景同步
+      // 【修復】非同步觸發背景上傳
+      // 只要發現 syncQueue 裡面有東西，且目前沒有在同步，就立刻在背景觸發
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true });
         }
-      }, [isOnline, currentUser, syncQueue.length, isSyncing]);
+      }, [isOnline, currentUser, syncQueue, isSyncing]);
 
       const displayDateClean = (val) => {
         if (!val) return "";
@@ -859,28 +851,37 @@
         return new Date(str).getTime() || 0;
       };
 
-      // 【核心修復】拉取時強制濾除殘影 (Ghosts)
+      // 擷取雲端資料
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
+        
+        const safeStr = (val) => String(val) === "[object Object]" ? "" : String(val || "");
         
         let formatted = (data.transactions || []).map((t, i) => {
           const rawDate = t["日期時間"] || t["日期"] || "";
           const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
           const ts = new Date(cleanStr).getTime() || 0;
           return {
-            id: t.id || t["ID"] || String(i), amount: parseFloat(t["金額"]) || 0, category: t["類別"] || "其他",
-            date: rawDate, timestamp: ts, member: t["成員"] || "未知", recorder: t["記錄者"] || "系統",
-            desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
+            id: t.id || t["ID"] || String(i), 
+            amount: parseFloat(t["金額"]) || 0, 
+            category: safeStr(t["類別"]) || "其他",
+            date: rawDate, 
+            timestamp: ts, 
+            member: safeStr(t["成員"]) || "未知", 
+            recorder: safeStr(t["記錄者"]) || "系統",
+            desc: safeStr(t["備註"]), 
+            type: safeStr(t["類型"]) || "expense", 
+            groupId: safeStr(t["GroupID"]), 
+            parentDesc: safeStr(t["ParentDesc"]), 
+            beneficiary: safeStr(t["Beneficiary"]) || safeStr(t["成員"]) || "未知"
           };
         });
 
-        const oldStr = JSON.stringify(transactions);
+        const oldStr = JSON.stringify(txCache);
 
-        // 1. 擋下被刪除的幽靈資料
+        // 過濾殘影
         formatted = formatted.filter(t => !sessionGhosts.current.deleted.has(String(t.id)));
-
-        // 2. 蓋上已修改的本地新資料
         formatted = formatted.map(t => {
             let mod = { ...t };
             if (t.groupId && sessionGhosts.current.updated.has(String(t.groupId))) {
@@ -893,18 +894,14 @@
             return mod;
         });
 
-        // 3. 補上剛新增但雲端還沒吐回來的新資料
         const cloudIds = new Set(formatted.map(t => String(t.id)));
         const missingAdds = Array.from(sessionGhosts.current.added.values()).filter(t => !cloudIds.has(String(t.id)));
-        
         formatted = [...missingAdds, ...formatted];
 
-        // 重新排序
         formatted.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
 
         const newStr = JSON.stringify(formatted);
 
-        setTransactions(formatted); 
         setTxCache(formatted); 
         setLastSyncText(nowStr()); 
         if (data.greetings) setGreetingsCache(data.greetings); 
@@ -932,7 +929,7 @@
                     if (newItem.action === "DELETE_TX") newQueue.splice(idx, 1); 
                     else newQueue[idx] = { ...newItem, action: "ADD" }; 
                 } else if (oldItem.action === "UPDATE_TX") {
-                    if (newItem.action === "DELETE_TX") newQueue[idx] = { id: newItem.id, action: "DELETE_TX" }; 
+                    if (newItem.action === "DELETE_TX") newQueue[idx] = { ...newItem, action: "DELETE_TX" }; 
                     else newQueue[idx] = { ...newItem, action: "UPDATE_TX" }; 
                 } else if (oldItem.action === "DELETE_TX") {
                     // Ignore, already deleted
@@ -944,8 +941,8 @@
         });
       };
 
-      // 【核心升級】完美解耦上傳與拉取，精準提示語
-      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false, isLoginSync = false }) => {
+      // 【核心處理引擎】處理背景傳送與拉取
+      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false }) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "目前離線中，變更已暫存於手機");
           return true;
@@ -969,20 +966,20 @@
           let pushUpdateCount = 0;
           let pushDeleteCount = 0;
 
+          // 複製一份當前佇列，避免執行期間被新操作干擾
           const currentQueue = [...syncQueue]; 
 
           if (currentQueue.length > 0) {
-            const addItems = currentQueue.filter(item => item.action === "ADD");
-            const updateItems = currentQueue.filter(item => item.action !== "ADD");
-
-            pushAddCount = addItems.length;
-            updateItems.forEach(i => {
-                if(i.action === 'DELETE_TX') pushDeleteCount++;
+            const operations = currentQueue;
+            
+            operations.forEach(i => {
+                if(i.action === 'ADD') pushAddCount++;
+                else if(i.action === 'DELETE_TX') pushDeleteCount++;
                 else pushUpdateCount++;
             });
 
             // 寫入防殘影記憶體 (Ghost Buster)
-            currentQueue.forEach(item => {
+            operations.forEach(item => {
                 if (item.action === 'ADD') {
                     sessionGhosts.current.added.set(String(item.id), item);
                     sessionGhosts.current.deleted.delete(String(item.id));
@@ -1004,16 +1001,11 @@
                 }
             });
 
-            if (addItems.length > 0) {
-              const res = await postGAS({ action: "BATCH_SYNC", transactions: addItems, deviceToken: getDeviceToken() });
-              if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
-            }
+            // 一次打包發送給 GAS (BATCH_PROCESS)
+            const res = await postGAS({ action: "BATCH_PROCESS", operations: operations, deviceToken: getDeviceToken() });
+            if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             
-            for (const item of updateItems) {
-              const res = await postGAS({ ...item, deviceToken: getDeviceToken() });
-              if (res.result !== "success") throw new Error(res.message || "同步失敗");
-            }
-            
+            // 清除已成功發送的佇列
             setSyncQueue(prev => prev.filter(p => !currentQueue.some(c => 
                 (c.id === p.id && c.action === p.action) || 
                 (c.groupId && c.groupId === p.groupId && c.action === p.action)
@@ -1021,28 +1013,26 @@
             didWrite = true;
           }
 
-          if (didWrite) await new Promise(r => setTimeout(r, 800));
+          if (didWrite) await new Promise(r => setTimeout(r, 800)); // 等待 Google Sheets 落盤
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
-          if (!isLoginSync) {
-              if (didWrite) {
-                  let acts = [];
-                  if (pushAddCount) acts.push(`新增 ${pushAddCount} 筆`);
-                  if (pushUpdateCount) acts.push(`修改 ${pushUpdateCount} 筆`);
-                  if (pushDeleteCount) acts.push(`刪除 ${pushDeleteCount} 筆`);
-                  showStatus("success", `同步成功！已上傳快取 (${acts.join(', ')})`);
+          if (didWrite) {
+              let acts = [];
+              if (pushAddCount) acts.push(`新增 ${pushAddCount} 筆`);
+              if (pushUpdateCount) acts.push(`修改 ${pushUpdateCount} 筆`);
+              if (pushDeleteCount) acts.push(`刪除 ${pushDeleteCount} 筆`);
+              showStatus("success", `同步成功！已上傳快取 (${acts.join(', ')})`);
+          } else {
+              const oldLen = JSON.parse(oldStr).length;
+              const newLen = formatted.length;
+              if (oldStr === newStr) {
+                  if (isManualSync) showStatus("success", "已是最新資料");
+              } else if (newLen > oldLen) {
+                  showStatus("success", `同步成功！雲端新增了 ${newLen - oldLen} 筆資料`);
+              } else if (newLen < oldLen) {
+                  showStatus("success", `同步成功！雲端移除了 ${oldLen - newLen} 筆資料`);
               } else {
-                  const oldLen = JSON.parse(oldStr).length;
-                  const newLen = formatted.length;
-                  if (oldStr === newStr) {
-                      showStatus("success", "已是最新資料");
-                  } else if (newLen > oldLen) {
-                      showStatus("success", `同步成功！雲端新增了 ${newLen - oldLen} 筆資料`);
-                  } else if (newLen < oldLen) {
-                      showStatus("success", `同步成功！雲端移除了 ${oldLen - newLen} 筆資料`);
-                  } else {
-                      showStatus("success", `同步成功！已更新雲端變更`);
-                  }
+                  showStatus("success", `同步成功！已更新雲端變更`);
               }
           }
 
@@ -1135,7 +1125,56 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // 樂觀更新：立刻改畫面，排入佇列等 useEffect 去收
+      // 樂觀覆蓋核心：不修改 txCache，直接進佇列，由 visibleTransactions 動態渲染
+      const visibleTransactions = useMemo(() => {
+        if (!currentUser) return [];
+        
+        let base = [...txCache]; 
+        const cloudIds = new Set(base.map(t => String(t.id)));
+        
+        // 1. 擋下幽靈刪除
+        base = base.filter(t => !sessionGhosts.current.deleted.has(String(t.id)));
+
+        // 2. 疊加上已發送但可能還沒回來的修改
+        base = base.map(t => {
+            let mod = { ...t };
+            if (t.groupId && sessionGhosts.current.updated.has(String(t.groupId))) {
+                const gData = sessionGhosts.current.updated.get(String(t.groupId));
+                mod.date = gData.date; mod.parentDesc = gData.parentDesc;
+            }
+            if (sessionGhosts.current.updated.has(String(t.id))) {
+                mod = { ...mod, ...sessionGhosts.current.updated.get(String(t.id)) };
+            }
+            return mod;
+        });
+
+        // 3. 疊加上尚未發送的佇列修改 (優先權最高)
+        base = base.map(t => {
+            let mod = { ...t };
+            const pendingGUpdate = syncQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
+            if (pendingGUpdate) {
+                mod.date = pendingGUpdate.date; mod.parentDesc = pendingGUpdate.parentDesc;
+            }
+            const pendingUpdate = syncQueue.find(q => String(q.id) === String(t.id) && (q.action === 'UPDATE_TX' || q.action === 'DELETE_TX'));
+            if (pendingUpdate && pendingUpdate.action === 'UPDATE_TX') {
+                mod = { ...mod, ...pendingUpdate };
+            }
+            return mod;
+        });
+
+        // 4. 補上剛新增但還沒被拉回來的資料
+        const missingGhostAdds = Array.from(sessionGhosts.current.added.values()).filter(t => !cloudIds.has(String(t.id)));
+        base = [...missingGhostAdds, ...base];
+        
+        // 5. 補上剛放入佇列，甚至還沒傳輸的全新資料
+        const baseIds = new Set(base.map(t => String(t.id)));
+        const pendingAdds = syncQueue.filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
+        base = [...pendingAdds, ...base];
+        
+        base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
+        return base;
+      }, [currentUser, txCache, syncQueue]);
+
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseTimestamp = Date.now();
@@ -1154,13 +1193,9 @@
           parentDesc
         }));
 
-        const newList = [...completeTxs, ...transactions];
-        setTransactions(newList);
-        setTxCache(newList);
-        saveToIndexedDB(newList);
-        localStorage.setItem(LS.txCache, JSON.stringify(newList));
-
-        completeTxs.forEach(tx => enqueueAction({ ...tx, action: "ADD" }));
+        completeTxs.forEach(tx => {
+            enqueueAction({ ...tx, action: "ADD" });
+        });
         setActiveTab("dashboard");
       };
 
@@ -1171,12 +1206,6 @@
             if (finalDateStr.length > 16) finalDateStr = finalDateStr.slice(0, 16);
         }
         const finalUpdatedTx = { ...updatedTx, date: finalDateStr };
-
-        const newList = transactions.map(t => t.id === finalUpdatedTx.id ? { ...t, ...finalUpdatedTx } : t);
-        setTransactions(newList);
-        setTxCache(newList);
-        saveToIndexedDB(newList);
-        localStorage.setItem(LS.txCache, JSON.stringify(newList));
 
         enqueueAction({ ...finalUpdatedTx, action: "UPDATE_TX" });
         setEditingTx(null);
@@ -1189,22 +1218,23 @@
             if (finalDateStr.length > 16) finalDateStr = finalDateStr.slice(0, 16);
         }
 
-        const newList = transactions.map(t => String(t.groupId) === String(groupData.groupId) ? { ...t, date: finalDateStr, parentDesc: groupData.parentDesc } : t);
-        setTransactions(newList);
-        setTxCache(newList);
-        saveToIndexedDB(newList);
-        localStorage.setItem(LS.txCache, JSON.stringify(newList));
-
         enqueueAction({ ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" });
         setEditingGroup(null);
       };
 
       const handleDeleteTx = async (id) => {
-        // 直接在畫面上移除
-        const newList = transactions.filter(t => t.id !== id);
-        setTransactions(newList); setTxCache(newList); saveToIndexedDB(newList); localStorage.setItem(LS.txCache, JSON.stringify(newList));
+        // 【修復】不要移除 txCache，只要送入 Delete 佇列，visibleTransactions 就會為它加上灰階
+        const txToDelete = visibleTransactions.find(t => String(t.id) === String(id)); 
         
-        enqueueAction({ id, action: "DELETE_TX" });
+        const isOfflineAdd = syncQueue.find(p => String(p.id) === String(id) && p.action === 'ADD');
+        if (isOfflineAdd) {
+            // 原本就還沒上傳的新增，可以直接取消佇列
+            setSyncQueue(prev => prev.filter(p => String(p.id) !== String(id)));
+            setEditingTx(null);
+            return; 
+        }
+        
+        enqueueAction({ ...(txToDelete || {id}), action: "DELETE_TX" });
         setEditingTx(null);
       };
 
@@ -1216,11 +1246,6 @@
         });
         return map;
       }, [syncQueue]);
-
-      const visibleTransactions = useMemo(() => {
-        if (!currentUser) return [];
-        return transactions.length ? transactions : txCache;
-      }, [currentUser, transactions, txCache]);
 
       const myTransactions = useMemo(() => {
         if (!currentUser) return [];
@@ -1435,6 +1460,9 @@
                         <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
                           <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
                             <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
+                            {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待新增</span>}
+                            {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待修改</span>}
+                            {cAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待刪除</span>}
                             {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                           </div>
                           {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
@@ -1481,7 +1509,7 @@
             setSelectingUser(null); 
             setPinInput("");
             if (isOnline) {
-               processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+               processQueueToCloud({ doRefreshFirst: true });
             }
           } else {
             setFallbackToPin(true);
@@ -1536,7 +1564,7 @@
                             setCurrentUser(selectingUser); 
                             setSelectingUser(null); 
                             setPinInput("");
-                            if (isOnline) processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                            if (isOnline) processQueueToCloud({ doRefreshFirst: true });
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1571,7 +1599,7 @@
                                     setSelectingUser(null); 
                                     setPinInput(""); 
                                     setFallbackToPin(false);
-                                    processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                                    processQueueToCloud({ doRefreshFirst: true });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤，或您尚未在有網路時登入過，請先連接網路進行初次驗證"); setPinInput(""); return; }
@@ -2117,7 +2145,9 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>實作 Session Ghosts 防殘影記憶體，完美解決 Google Sheets 延遲導致的新增/刪除短暫消失問題 (V25.GHOST_FILTER_PRO)</li>
+                          <li>重大修復！更改刪除資料的邏輯，離線刪除資料將保留在圖卡上並顯示「待刪除」標籤，避免因瞬間斷網導致資料無法上傳且從畫面消失的 Bug (V26.FINAL_SYNC)</li>
+                          <li>全面對接後端 BATCH_PROCESS 引擎，將所有操作整合成一次上傳，根絕網路不穩的部分失敗 (V26.FINAL_SYNC)</li>
+                          <li>實作動態覆蓋引擎 (Overlay Engine)，完美解決 Google Sheets 延遲導致的新增/刪除短暫消失問題 (V25.GHOST_FILTER_PRO)</li>
                           <li>修復 React 非同步佇列觸發時間差，保證上傳零漏接 (V25.GHOST_FILTER_PRO)</li>
                           <li>完全拔除登入載入視窗，實現真 0 延遲，精準化所有同步狀態提示語 (V25.GHOST_FILTER_PRO)</li>
                           <li>待處理標籤外置於圖卡前方；同步管理中心升級顯示完整明細 (V23.ULTIMATE_SYNC)</li>
@@ -2127,6 +2157,7 @@
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>開發全新 BATCH_PROCESS 引擎，支援將新增、修改、刪除操作打包成單一 Request 批次處理，大幅提升多筆離線資料同步的穩定性與速度 (V13.BATCH)</li>
                           <li>新增 __編輯紀錄__ 獨立分頁。自動備份修改與刪除的舊資料 (V12.LOG)</li>
                           <li>徹底解決 Date 物件轉字串產生 "hu" 亂碼的問題，並清洗舊資料殘留標籤 (V11.CLEANDATE)</li>
                           <li>所有寫入動作後加入 SpreadsheetApp.flush()，解決讀寫時間差問題 (V10.SYNC)</li>
