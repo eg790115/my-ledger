@@ -1,5 +1,21 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+<!--
+  ==========================================
+  家庭記帳前端 (React + Tailwind + PWA)
+  最新版本: 2026.03.01.PRO.V23.ULTIMATE_SYNC
+  ==========================================
+  【完整更新歷程】
+  - [2026.03.01] V23.ULTIMATE_SYNC: 登入0延遲，本機緩存優先；待處理標籤外置於圖卡前方；同步管理中心升級顯示完整明細；精準的同步訊息回報 (新增/更新/已是最新)；解耦 Push/Pull 徹底解決資料短暫消失的問題。
+  - [2026.03.01] V22.VERSION_CTRL: 程式碼頂部加入完整版本號與歷程標示，修復載入狀態 (loadingCard) 異常與按鈕防呆機制。
+  - [2026.03.01] V21.LOGIN_FIX: 修復登入時 PIN 碼驗證遺漏解除載入畫面的問題，確保樂觀 UI 狀態下操作流暢。
+  - [2026.03.01] V20.BACKGROUND_SYNC: 登入 0 延遲，以本機緩存優先顯示，背景自動完成同步；新增專屬「待同步清單」管理中心。
+  - [2026.03.01] V19.ROCK_SOLID: 修復 iOS/Safari 離線時因延遲封鎖指紋辨識的問題；加入雙重網路偵測確保秒切上線。
+  - [2026.03.01] V18.UIUX_REFINE: 優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版。
+  - [2026.03.01] V17.UIUX: 優化登入體驗，點擊頭像直接喚起指紋驗證，無須二次點擊。
+  - [2026.03.01] V16.PERFECTMERGE: 實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備新資料；拔除舊有 (已編輯) 標記邏輯。
+  ==========================================
+-->
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -65,7 +81,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V21.LOGIN_FIX";
+    const APP_VERSION = "2026.03.01.PRO.V23.ULTIMATE_SYNC";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V12.LOG";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -213,7 +229,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -262,6 +278,7 @@
       const inputRef = useRef(null);
       const [isFocused, setIsFocused] = useState(false);
       const [isSplit, setIsSplit] = useState(false);
+      const [isSubmitting, setIsSubmitting] = useState(false);
       
       const [formData, setFormData] = useState({
         amount: "", parentCat: "食", childCat: "晚餐", member: loginUser, beneficiary: [loginUser],
@@ -321,9 +338,11 @@
       const updateSubItem = (id, updates) => { setSubItems(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s)); };
 
       const submitForm = () => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         if (isSplit) {
           const validSubs = subItems.filter(s => Number(s.amount) > 0);
-          if (validSubs.length === 0) return;
+          if (validSubs.length === 0) { setIsSubmitting(false); return; }
           const combinedParentDesc = `${formData.parentTitle.trim() || "多筆紀錄"}|||${formData.parentDesc.trim()}`;
           const multipleTxs = validSubs.map(s => ({
             amount: s.amount, category: `${s.parentCat}/${s.childCat}`,
@@ -336,7 +355,7 @@
         }
       };
 
-      const isSubmitDisabled = isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
+      const isSubmitDisabled = isSubmitting || isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
       return (
         <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black pb-8">
@@ -474,8 +493,8 @@
           <button disabled={isSubmitDisabled} onClick={submitForm}
             className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2"
           >
-            {isLoading ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : null}
-            {isLoading ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
+            {isSubmitting ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : null}
+            {isSubmitting ? "儲存中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
           </button>
         </div>
       );
@@ -487,6 +506,7 @@
         beneficiary: tx.beneficiary ? tx.beneficiary.split(",").filter(Boolean) : [tx.member]
       });
       const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+      const [isSubmitting, setIsSubmitting] = useState(false);
 
       useEffect(() => {
         let formattedDate = "";
@@ -505,7 +525,15 @@
         } else setFormData({...formData, beneficiary: [...formData.beneficiary, b]});
       };
 
-      const handleSave = () => onSave({ ...formData, category: `${formData.parentCat}/${formData.childCat}`, beneficiary: formData.beneficiary.join(",") });
+      const handleSave = () => {
+        setIsSubmitting(true);
+        onSave({ ...formData, category: `${formData.parentCat}/${formData.childCat}`, beneficiary: formData.beneficiary.join(",") });
+      };
+
+      const handleDelete = () => {
+        setIsSubmitting(true);
+        onDelete(tx.id);
+      }
 
       return (
         <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) onCancel(); }}>
@@ -565,11 +593,11 @@
               <div className="flex gap-3 mt-8">
                 {!showConfirmDelete ? (
                   <>
-                    <button disabled={isLoading} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
+                    <button disabled={isLoading || isSubmitting} onClick={() => setShowConfirmDelete(true)} className="flex-1 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1 disabled:opacity-30">
                       <SvgIcon name="trash" size={18} /> 刪除
                     </button>
-                    <button disabled={!formData.amount || formData.amount === "0" || isLoading} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
-                      {isLoading ? <SvgIcon name="spinner" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "儲存變更"}
+                    <button disabled={!formData.amount || formData.amount === "0" || isLoading || isSubmitting} onClick={handleSave} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-30 flex justify-center items-center gap-2">
+                      {isSubmitting ? <SvgIcon name="spinner" size={16} className="animate-spin" /> : null} {isSubmitting ? "處理中..." : "儲存變更"}
                     </button>
                   </>
                 ) : (
@@ -577,7 +605,7 @@
                     <p className="text-red-600 font-black text-xs mb-3">確定永久刪除此紀錄？</p>
                     <div className="flex gap-2 flex-wrap">
                       <button onClick={() => setShowConfirmDelete(false)} className="flex-1 min-w-[100px] py-3 bg-white text-gray-600 rounded-xl font-black active:scale-95 border border-gray-200">保留</button>
-                      <button disabled={isLoading} onClick={() => onDelete(tx.id)} className="flex-1 min-w-[100px] py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
+                      <button disabled={isLoading || isSubmitting} onClick={handleDelete} className="flex-1 min-w-[100px] py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/20 disabled:opacity-30">確認刪除</button>
                     </div>
                   </div>
                 )}
@@ -590,6 +618,7 @@
 
     const EditGroupParentModal = ({ group, onSave, onCancel, isLoading }) => {
       const [formData, setFormData] = useState({ parentTitle: group.parentTitle, parentDesc: group.parentDesc, date: group.date });
+      const [isSubmitting, setIsSubmitting] = useState(false);
 
       useEffect(() => {
         let formattedDate = "";
@@ -601,6 +630,7 @@
       }, [group]);
 
       const handleSave = () => {
+        setIsSubmitting(true);
         const combinedParentDesc = `${formData.parentTitle.trim() || "拆分紀錄"}|||${formData.parentDesc.trim()}`;
         onSave({ groupId: group.groupId, parentDesc: combinedParentDesc, date: formData.date });
       };
@@ -635,8 +665,8 @@
               </div>
 
               <div className="mt-8">
-                <button disabled={isLoading} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
-                  {isLoading ? <SvgIcon name="spinner" size={16} className="animate-spin" /> : null} {isLoading ? "處理中..." : "批次更新所有子項目"}
+                <button disabled={isLoading || isSubmitting} onClick={handleSave} className="w-full py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg disabled:opacity-30 flex justify-center items-center gap-2">
+                  {isSubmitting ? <SvgIcon name="spinner" size={16} className="animate-spin" /> : null} {isSubmitting ? "處理中..." : "批次更新所有子項目"}
                 </button>
               </div>
             </div>
@@ -672,7 +702,6 @@
       const [isSyncing, setIsSyncing] = useState(false);
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
       
-      // 【修復】解除背景同步對 UI 的阻塞，確保操作流暢
       const isLoading = loadingCard.show;
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
@@ -781,7 +810,6 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // 【優化】監聽佇列長度，有新資料時確保背景接續同步
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true });
@@ -815,6 +843,7 @@
         if (res.result !== "success") throw new Error(res.message || "PIN 錯誤"); return true;
       };
 
+      // 【優化】拉取雲端資料並回傳字串供比對
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
@@ -828,6 +857,10 @@
             desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
           };
         });
+        
+        const oldStr = JSON.stringify(transactions);
+        const newStr = JSON.stringify(formatted);
+
         setTransactions(formatted); 
         setTxCache(formatted); 
         setLastSyncText(nowStr()); 
@@ -836,10 +869,9 @@
         saveToIndexedDB(formatted);
         localStorage.setItem(LS.txCache, JSON.stringify(formatted));
 
-        return formatted;
+        return { formatted, oldStr, newStr };
       };
 
-      // 佇列合併管理器
       const enqueueAction = (newItem) => {
         setSyncQueue(prev => {
             let newQueue = [...prev];
@@ -869,30 +901,25 @@
         });
       };
 
-      // 背景同步處理核心
-      const processQueueToCloud = async ({ doRefreshFirst, isLoginSync = false }) => {
-        if (!isOnline) {
-          if (isLoginSync) setLoadingCard({ show: false, text: "" });
-          return true;
-        }
+      // 【核心升級】解耦 Push / Pull，精準回報同步狀態
+      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false }) => {
+        if (!isOnline) return true;
         if (!deviceValid()) { 
            showStatus("error", "雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
-           if (isLoginSync) setLoadingCard({ show: false, text: "" });
            return false; 
         }
         if (isSyncing) return true;
         
         try {
           setIsSyncing(true);
-          if (doRefreshFirst) await refreshDeviceToken();
+          if (doRefreshFirst || isManualSync) await refreshDeviceToken();
           
-          if (isLoginSync) setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
-          
-          let didWrite = false;
           const currentQueue = [...syncQueue]; 
+          let pushedCount = currentQueue.length;
 
-          if (currentQueue.length > 0) {
+          // 階段 1：處理上傳 (Push)
+          if (pushedCount > 0) {
             const addItems = currentQueue.filter(item => item.action === "ADD");
             const updateItems = currentQueue.filter(item => item.action !== "ADD");
 
@@ -910,14 +937,27 @@
                 (c.id === p.id && c.action === p.action) || 
                 (c.groupId && c.groupId === p.groupId && c.action === p.action)
             )));
-            didWrite = true;
+            
+            showStatus("success", `同步成功！已上傳 ${pushedCount} 筆緩存資料`);
+            return true; // 【防消失機制】如果是上傳剛記的帳，就不立刻拉取雲端，保留本地畫面
           }
 
-          if (didWrite) await new Promise(r => setTimeout(r, 800));
-          await fetchCloudTx();
-          
-          if (!isLoginSync && didWrite) showStatus("success", "同步完成");
-          else if (!isLoginSync && !didWrite) showStatus("success", "資料已是最新");
+          // 階段 2：處理拉取 (Pull) - 只有當沒有東西要傳，且是手動或剛登入時才拉取
+          if (pushedCount === 0 && (isManualSync || doRefreshFirst)) {
+              const { formatted, oldStr, newStr } = await fetchCloudTx();
+              
+              if (oldStr === newStr) {
+                  if (isManualSync) showStatus("success", "已是最新資料");
+              } else {
+                  const newLength = formatted.length;
+                  const oldLength = JSON.parse(oldStr).length;
+                  if (newLength > oldLength) {
+                      showStatus("success", `同步成功！新增了 ${newLength - oldLength} 筆資料`);
+                  } else {
+                      showStatus("success", `同步成功！更新了雲端資料`);
+                  }
+              }
+          }
 
           return true; 
         } catch (e) {
@@ -930,16 +970,15 @@
           return true; 
         } finally { 
           setIsSyncing(false);
-          // 【修復】確保登入流程結束後解除載入畫面
-          if (isLoginSync) setLoadingCard({ show: false, text: "" });
         }
       };
 
+      // 【優化】點擊同步按鈕邏輯
       const handleSyncClick = () => {
           if (syncQueue.length > 0) {
               setShowPendingModal(true);
           } else {
-              processQueueToCloud({ doRefreshFirst: true });
+              processQueueToCloud({ isManualSync: true });
           }
       };
 
@@ -1036,7 +1075,6 @@
 
         completeTxs.forEach(tx => enqueueAction({ ...tx, action: "ADD" }));
         setActiveTab("dashboard");
-        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const handleUpdateTx = async (updatedTx) => {
@@ -1055,7 +1093,6 @@
 
         enqueueAction({ ...finalUpdatedTx, action: "UPDATE_TX" });
         setEditingTx(null);
-        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const handleUpdateGroupParent = async (groupData) => {
@@ -1073,7 +1110,6 @@
 
         enqueueAction({ ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" });
         setEditingGroup(null);
-        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const handleDeleteTx = async (id) => {
@@ -1084,7 +1120,6 @@
         }
         enqueueAction({ id, action: "DELETE_TX" });
         setEditingTx(null);
-        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const pendingMap = useMemo(() => {
@@ -1195,14 +1230,19 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // 【UI 優化】將獨立卡片的編輯按鈕融入右下角
+      // 【UI 優化】外置待處理標籤
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benTag = formatBen(tx.beneficiary, tx.member);
         const showBenTag = benTag && benTag !== "";
         const pAction = pendingMap[tx.id];
         return (
-          <div key={tx.id} className={`mb-3 transition-opacity ${pAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-            <div className="w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
+          <div key={tx.id} className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+            {pAction && (
+                <div className={`shrink-0 w-6 flex items-center justify-center rounded-2xl shadow-sm border ${pAction==='ADD'?'bg-green-50 border-green-200 text-green-700':pAction==='UPDATE_TX'?'bg-blue-50 border-blue-200 text-blue-700':'bg-red-50 border-red-200 text-red-700'}`}>
+                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{pAction==='ADD'?'待新增':pAction==='UPDATE_TX'?'待修改':'待刪除'}</span>
+                </div>
+            )}
+            <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
               <div className="relative shrink-0">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
                   {tx.type==="income" ? "收入" : "支出"}
@@ -1216,9 +1256,6 @@
               <div className="flex-1 min-w-0 pl-1">
                 <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                   <span className="truncate max-w-full">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
-                  {pAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[9px] px-1.5 py-0.5 rounded-md border border-green-200 font-black tracking-widest">待新增</span>}
-                  {pAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black tracking-widest">待修改</span>}
-                  {pAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded-md border border-red-200 font-black tracking-widest">待刪除</span>}
                   {showBenTag && <span className="shrink-0 bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{benTag}</span>}
                 </div>
                 <div className="flex flex-col gap-1 mt-1.5 w-full">
@@ -1246,17 +1283,22 @@
         );
       };
 
-      // 【UI 優化】將母項目卡片的編輯按鈕融入右下角
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
         group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
         const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
         const gAction = pendingMap[group.groupId];
+        const hasChildAction = group.children.some(c => pendingMap[c.id]);
 
         return (
-          <div key={group.groupId} className="mb-3">
-            <div className="w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
+          <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${gAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+            {(gAction || hasChildAction) && (
+                <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{gAction==='UPDATE_GROUP_PARENT'?'待改母項': '待處理明細'}</span>
+                </div>
+            )}
+            <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
               <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
                 <div className="relative shrink-0">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
@@ -1274,7 +1316,6 @@
                 <div className="flex-1 min-w-0 pl-1">
                   <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                     <span className="truncate max-w-full">{group.parentTitle}</span>
-                    {gAction === 'UPDATE_GROUP_PARENT' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black tracking-widest">待修改</span>}
                     {parentBenTag && <span className="shrink-0 bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{parentBenTag}</span>}
                     <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 ${isExp ? 'rotate-180' : ''}`}>▼</span>
                   </div>
@@ -1307,6 +1348,9 @@
                     const cAction = pendingMap[child.id];
                     return (
                       <div key={child.id} className={`w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden transition-opacity ${cAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+                        {cAction && (
+                            <div className={`absolute left-0 top-0 h-full w-1 ${cAction==='ADD'?'bg-green-400':cAction==='UPDATE_TX'?'bg-blue-400':'bg-red-400'}`}></div>
+                        )}
                         <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
                           {idx + 1}
                         </div>
@@ -1350,7 +1394,6 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      // 【修復】拔除延遲，確保 Safari 離線指紋可正常運作
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1363,7 +1406,7 @@
             setSelectingUser(null); 
             setPinInput("");
             if (isOnline) {
-               processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+               processQueueToCloud({ doRefreshFirst: true }); // 取消 isLoginSync 防止出現 loadingCard
             }
           } else {
             setFallbackToPin(true);
@@ -1382,11 +1425,6 @@
                   </div>
                   <h1 className="text-4xl font-black italic tracking-tighter">家庭記帳</h1>
                   <p className="text-gray-500 text-[10px] font-mono mt-4 opacity-50 uppercase tracking-[0.3em]">v{APP_VERSION}</p>
-                  <div className="mt-5 flex items-center justify-center">
-                    <span className={`px-4 py-1.5 text-sm font-bold tracking-widest rounded-xl shadow-sm ${isOnline ? "bg-green-600/20 text-green-300 border border-green-500/20" : "bg-red-600/20 text-red-300 border border-red-500/20"}`}>
-                      {isOnline ? "線上" : "離線"}
-                    </span>
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white animate-in">
@@ -1423,7 +1461,7 @@
                             setCurrentUser(selectingUser); 
                             setSelectingUser(null); 
                             setPinInput("");
-                            if (isOnline) processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                            if (isOnline) processQueueToCloud({ doRefreshFirst: true });
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1452,13 +1490,13 @@
                                     setLoadingCard({ show:true, text:"正在驗證..." }); 
                                     await verifyPinOnline(selectingUser.name, n);
                                     await saveLocalPinHash(selectingUser.name, n);
-                                    setLoadingCard({ show:false, text:"" }); // 【修復】驗證完成後確保解除載入狀態
+                                    setLoadingCard({ show:false, text:"" });
                                     
                                     setCurrentUser(selectingUser); 
                                     setSelectingUser(null); 
                                     setPinInput(""); 
                                     setFallbackToPin(false);
-                                    processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+                                    processQueueToCloud({ doRefreshFirst: true });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤，或您尚未在有網路時登入過，請先連接網路進行初次驗證"); setPinInput(""); return; }
@@ -1550,7 +1588,7 @@
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} />}
           
-          {/* 【專屬待同步清單視窗】 */}
+          {/* 【全新專屬待同步清單視窗】顯示完整明細資訊 */}
           {showPendingModal && (
             <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in text-left">
               <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[80vh]">
@@ -1561,24 +1599,29 @@
                   </h3>
                   <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2 scrollbar-hide">
                       {syncQueue.map((item, idx) => (
-                          <div key={idx} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex items-center justify-between">
-                              <div className="flex-1 min-w-0 pr-2">
+                          <div key={idx} className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex items-stretch gap-3 relative overflow-hidden">
+                              <div className={`absolute top-0 left-0 w-1.5 h-full ${item.action==='ADD'?'bg-green-500':item.action==='DELETE_TX'?'bg-red-500':'bg-blue-500'}`}></div>
+                              <div className="flex-1 min-w-0 pl-1">
                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                      {item.action === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">待新增</span>}
-                                      {item.action === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">待修改</span>}
-                                      {item.action === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">待刪除</span>}
-                                      {item.action === 'UPDATE_GROUP_PARENT' && <span className="shrink-0 bg-purple-100 text-purple-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">改母項目</span>}
-                                      <span className="text-xs font-bold text-gray-700 truncate block">{item.category || item.parentTitle || item.id}</span>
+                                      {item.type && <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-black text-white ${item.type==='income'?'bg-green-500':'bg-red-500'}`}>
+                                          {item.type==='income'?'收入':'支出'}
+                                      </span>}
+                                      {!item.type && <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-black text-white bg-purple-500">母項目</span>}
+                                      <span className="text-[12px] font-black text-gray-800 truncate">{item.category || item.parentTitle || '未知項目'}</span>
+                                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${item.action==='ADD'?'text-green-600 border-green-200 bg-green-50':item.action==='DELETE_TX'?'text-red-600 border-red-200 bg-red-50':'text-blue-600 border-blue-200 bg-blue-50'}`}>
+                                          {item.action==='ADD'?'待新增':item.action==='DELETE_TX'?'待刪除':'待修改'}
+                                      </span>
                                   </div>
-                                  <div className="text-[10px] text-gray-400 truncate w-full">{item.desc || item.parentDesc || ""}</div>
+                                  <div className="text-[10px] text-gray-400 font-bold mb-0.5">{displayDateClean(item.date)}</div>
+                                  {(item.desc || item.parentDesc) ? <div className="text-[10px] text-gray-600 truncate w-full mt-1 bg-gray-50 px-2 py-1 rounded-lg">{item.desc || item.parentDesc}</div> : null}
                               </div>
-                              <div className="font-black text-sm text-gray-800 shrink-0">${item.amount || 0}</div>
+                              {item.amount !== undefined && <div className={`font-black flex items-center text-sm shrink-0 ${item.type==='income'?'text-green-600':'text-red-600'}`}>${Number(item.amount||0).toLocaleString()}</div>}
                           </div>
                       ))}
                   </div>
                   <button onClick={() => {
                       setShowPendingModal(false);
-                      processQueueToCloud({ doRefreshFirst: true });
+                      processQueueToCloud({ isManualSync: true });
                   }} disabled={isSyncing} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2 disabled:opacity-50">
                       {isSyncing ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : <SvgIcon name="cloudSync" size={20} />}
                       {isSyncing ? "同步中..." : "立即同步至雲端"}
@@ -1636,17 +1679,7 @@
             </div>
           )}
 
-          {loadingCard?.show && (
-            <div className="fixed inset-0 z-[900] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-8">
-              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 shadow-2xl animate-in flex flex-col items-center justify-center text-center">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4"><SvgIcon name="spinner" size={28} className="animate-spin text-blue-600"/></div>
-                <div className="font-black text-lg">處理中</div>
-                <div className="text-xs text-gray-500 mt-2 font-bold">{loadingCard.text || "請稍候..."}</div>
-              </div>
-            </div>
-          )}
-
-          <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 shadow-sm">
+          <header className="px-6 pt-12 pb-4 bg-white/90 backdrop-blur-md sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 shadow-sm">
             <div className="flex items-center gap-3 text-left">
               <div className={`${currentUser.color || (currentUser.name==="媽媽"?"bg-pink-600":"bg-blue-600")} w-11 h-11 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-500/30`}>
                 {currentUser.name.charAt(0)}
@@ -1656,15 +1689,13 @@
                 <p className="text-[10px] text-gray-400 font-bold tracking-widest leading-none">{customSubtitle.replace(/{name}/g, currentUser.name)}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right leading-none">
-                <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
-                <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
-              </div>
-              <button onClick={handleSyncClick} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
+            {/* 【UI 優化】線上/離線文字標示移至此處 */}
+            <div className="flex flex-col items-center gap-1 mt-1">
+              <button onClick={handleSyncClick} className="relative p-2 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
                 <SvgIcon name="cloudSync" size={20} className={isSyncing ? "animate-spin" : ""} />
                 {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
               </button>
+              <span className={`text-[8px] font-black tracking-widest uppercase ${isOnline ? 'text-green-500' : 'text-red-500'}`}>{isOnline ? '線上' : '離線'}</span>
             </div>
           </header>
 
@@ -1945,7 +1976,7 @@
               </div>
             )}
 
-            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
+            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} isLoading={isLoading} />}
 
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
@@ -2011,10 +2042,27 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>修復登入時 PIN 碼驗證遺漏解除載入畫面的問題，防止登入畫面卡死 (V21.LOGIN_FIX)</li>
-                          <li>解除背景同步對操作介面的阻塞，確保樂觀 UI 狀態下使用者可流暢進行連續新增與編輯 (V21.LOGIN_FIX)</li>
-                          <li>加入同步完成後防呆清空載入狀態之雙重保險 (V21.LOGIN_FIX)</li>
+                          <li>登入 0 延遲，以本機緩存優先顯示後再背景同步 (V23.ULTIMATE_SYNC)</li>
+                          <li>圖卡待處理資訊外置，以獨立標籤呈現在圖卡左側前方 (V23.ULTIMATE_SYNC)</li>
+                          <li>右上角同步圖示下方增加線上/離線文字標示 (V23.ULTIMATE_SYNC)</li>
+                          <li>重新設計同步狀態提示語：顯示更新/新增筆數或已是最新資料 (V23.ULTIMATE_SYNC)</li>
+                          <li>完善待同步清單視窗，顯示完整明細資訊 (V23.ULTIMATE_SYNC)</li>
+                          <li>解決同步時的畫面閃爍與暫存資料消失問題 (V23.ULTIMATE_SYNC)</li>
+                          <li>程式碼頂部加入完整版本號與歷程標示，修復載入狀態 (loadingCard) 異常與按鈕防呆機制 (V22.VERSION_CTRL)</li>
+                          <li>修復登入時 PIN 碼驗證遺漏解除載入畫面的問題，確保樂觀 UI 狀態下操作流暢 (V21.LOGIN_FIX)</li>
                           <li>登入 0 延遲，以本機緩存優先顯示，並在背景自動完成同步 (V20.BACKGROUND_SYNC)</li>
+                          <li>操作 0 延遲，新增/編輯/刪除直接反映於畫面不需等待，並在圖卡增加專屬「待同步標籤」 (V20.BACKGROUND_SYNC)</li>
+                          <li>新增專屬「待同步清單」管理中心，點擊同步圖示即可查看所有排隊中任務 (V20.BACKGROUND_SYNC)</li>
+                          <li>修復 iOS/Safari 離線時因延遲封鎖指紋辨識的問題，拔除 setTimeout 實現無縫驗證 (V19.ROCK_SOLID)</li>
+                          <li>加入雙重網路偵測 (visibilitychange & focus)，確保背景切回前景時能秒切上線狀態 (V19.ROCK_SOLID)</li>
+                          <li>優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版 (V18.UIUX_REFINE)</li>
+                          <li>優化登入體驗，點擊頭像即可直接喚起指紋驗證，無須二次點擊 (V17.UIUX)</li>
+                          <li>實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備的新資料 (V16.PERFECTMERGE)</li>
+                          <li>拔除舊有的 (已編輯) 標記邏輯，恢復純淨時間格式，解決解析錯亂 (V16.PERFECTMERGE)</li>
+                          <li>修復 Google Sheet 讀寫時間差導致的新增不顯示問題，加入安全等待機制 (V14.DELAY)</li>
+                          <li>徹底優化 PWA 離線偵測機制，動態即時監聽網路狀態 (V13.OFFLINE)</li>
+                          <li>導入 UUID 複合式防撞機制，確保離線產生的 ID 全球唯一不衝突 (V12.ID)</li>
+                          <li>實作雙重本地資料庫緩存 (IndexedDB 效能優化 + LocalStorage 備胎) (V9.DB)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
@@ -2023,6 +2071,9 @@
                           <li>新增 __編輯紀錄__ 獨立分頁。自動將所有修改與刪除的舊資料 JSON 備份至該分頁 (V12.LOG)</li>
                           <li>實作 safeFormatDate，徹底解決 Google Sheet 產生 "Thu" 等英文字串導致前端解析出 "hu" 亂碼的問題 (V11.CLEANDATE)</li>
                           <li>自動清洗舊資料殘留的 (已編輯) 標籤 (V11.CLEANDATE)</li>
+                          <li>所有寫入動作後加入 SpreadsheetApp.flush()，解決讀寫時間差問題 (V10.SYNC)</li>
+                          <li>確立「雲端絕對優先」原則。UPDATE 若找不到資料不再 Upsert，直接放行作廢 (V9.STRICT)</li>
+                          <li>記帳時間絕對信任前端手機時間，不混用伺服器時區 (V9.STRICT)</li>
                         </ul>
                       </div>
                     </div>
