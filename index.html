@@ -3,11 +3,12 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.01.PRO.V26.FINAL_SYNC
+  最新版本: 2026.03.01.PRO.V27.CLEANUP
   ==========================================
   【完整更新歷程】
-  - [2026.03.01] V26.FINAL_SYNC: 重大修復！更改刪除資料的邏輯，現在離線刪除資料將保留在圖卡上並顯示「待刪除」標籤，避免因瞬間斷網導致資料無法上傳且從畫面消失的 Bug；全面對接後端 BATCH_PROCESS 引擎，將所有操作整合成一次上傳，根絕網路不穩的部分失敗。
-  - [2026.03.01] V25.GHOST_FILTER_PRO: 實作動態覆蓋引擎，解決延遲覆蓋問題；精準化所有同步狀態提示語。
+  - [2026.03.01] V27.CLEANUP: 確認欄位破圖僅為 Google Sheet 視覺溢出，移除不必要的防呆清洗邏輯，保持系統輕量乾淨。
+  - [2026.03.01] V26.FINAL_SYNC: 更改刪除資料邏輯，離線刪除資料將保留在圖卡上並顯示「待刪除」標籤；全面對接後端 BATCH_PROCESS 引擎。
+  - [2026.03.01] V25.GHOST_FILTER_PRO: 實作動態覆蓋引擎，解決延遲覆蓋問題；精準化所有同步狀態提示語；完全拔除登入載入視窗。
   - [2026.03.01] V23.ULTIMATE_SYNC: 登入0延遲，待處理標籤外置於圖卡前方；同步管理中心顯示完整明細。
   ==========================================
 -->
@@ -75,7 +76,8 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.01.PRO.V26.FINAL_SYNC";
+    // 版號同步
+    const APP_VERSION = "2026.03.01.PRO.V27.CLEANUP";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V13.BATCH";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -690,7 +692,6 @@
       const [biometricAvailable, setBiometricAvailable] = useState(false);
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
-      // 同步與暫存狀態
       const [showClearQueueModal, setShowClearQueueModal] = useState(false);
       const [showPendingModal, setShowPendingModal] = useState(false);
       const [isSyncing, setIsSyncing] = useState(false);
@@ -701,6 +702,7 @@
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
+      
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
 
       // 【核心防護】Session 幽靈資料過濾器
@@ -808,8 +810,6 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // 【修復】非同步觸發背景上傳
-      // 只要發現 syncQueue 裡面有東西，且目前沒有在同步，就立刻在背景觸發
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true });
@@ -856,8 +856,6 @@
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
         
-        const safeStr = (val) => String(val) === "[object Object]" ? "" : String(val || "");
-        
         let formatted = (data.transactions || []).map((t, i) => {
           const rawDate = t["日期時間"] || t["日期"] || "";
           const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
@@ -865,16 +863,16 @@
           return {
             id: t.id || t["ID"] || String(i), 
             amount: parseFloat(t["金額"]) || 0, 
-            category: safeStr(t["類別"]) || "其他",
+            category: String(t["類別"] || "其他"),
             date: rawDate, 
             timestamp: ts, 
-            member: safeStr(t["成員"]) || "未知", 
-            recorder: safeStr(t["記錄者"]) || "系統",
-            desc: safeStr(t["備註"]), 
-            type: safeStr(t["類型"]) || "expense", 
-            groupId: safeStr(t["GroupID"]), 
-            parentDesc: safeStr(t["ParentDesc"]), 
-            beneficiary: safeStr(t["Beneficiary"]) || safeStr(t["成員"]) || "未知"
+            member: String(t["成員"] || "未知"), 
+            recorder: String(t["記錄者"] || "系統"),
+            desc: String(t["備註"] || ""), 
+            type: String(t["類型"] || "expense"), 
+            groupId: String(t["GroupID"] || ""), 
+            parentDesc: String(t["ParentDesc"] || ""), 
+            beneficiary: String(t["Beneficiary"] || t["成員"] || "未知")
           };
         });
 
@@ -941,8 +939,7 @@
         });
       };
 
-      // 【核心處理引擎】處理背景傳送與拉取
-      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false }) => {
+      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false, isLoginSync = false }) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "目前離線中，變更已暫存於手機");
           return true;
@@ -966,7 +963,6 @@
           let pushUpdateCount = 0;
           let pushDeleteCount = 0;
 
-          // 複製一份當前佇列，避免執行期間被新操作干擾
           const currentQueue = [...syncQueue]; 
 
           if (currentQueue.length > 0) {
@@ -978,7 +974,6 @@
                 else pushUpdateCount++;
             });
 
-            // 寫入防殘影記憶體 (Ghost Buster)
             operations.forEach(item => {
                 if (item.action === 'ADD') {
                     sessionGhosts.current.added.set(String(item.id), item);
@@ -1001,11 +996,9 @@
                 }
             });
 
-            // 一次打包發送給 GAS (BATCH_PROCESS)
             const res = await postGAS({ action: "BATCH_PROCESS", operations: operations, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             
-            // 清除已成功發送的佇列
             setSyncQueue(prev => prev.filter(p => !currentQueue.some(c => 
                 (c.id === p.id && c.action === p.action) || 
                 (c.groupId && c.groupId === p.groupId && c.action === p.action)
@@ -1013,7 +1006,7 @@
             didWrite = true;
           }
 
-          if (didWrite) await new Promise(r => setTimeout(r, 800)); // 等待 Google Sheets 落盤
+          if (didWrite) await new Promise(r => setTimeout(r, 800)); 
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
           if (didWrite) {
@@ -1125,17 +1118,14 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // 樂觀覆蓋核心：不修改 txCache，直接進佇列，由 visibleTransactions 動態渲染
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         
         let base = [...txCache]; 
         const cloudIds = new Set(base.map(t => String(t.id)));
         
-        // 1. 擋下幽靈刪除
         base = base.filter(t => !sessionGhosts.current.deleted.has(String(t.id)));
 
-        // 2. 疊加上已發送但可能還沒回來的修改
         base = base.map(t => {
             let mod = { ...t };
             if (t.groupId && sessionGhosts.current.updated.has(String(t.groupId))) {
@@ -1148,7 +1138,6 @@
             return mod;
         });
 
-        // 3. 疊加上尚未發送的佇列修改 (優先權最高)
         base = base.map(t => {
             let mod = { ...t };
             const pendingGUpdate = syncQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
@@ -1162,11 +1151,9 @@
             return mod;
         });
 
-        // 4. 補上剛新增但還沒被拉回來的資料
         const missingGhostAdds = Array.from(sessionGhosts.current.added.values()).filter(t => !cloudIds.has(String(t.id)));
         base = [...missingGhostAdds, ...base];
         
-        // 5. 補上剛放入佇列，甚至還沒傳輸的全新資料
         const baseIds = new Set(base.map(t => String(t.id)));
         const pendingAdds = syncQueue.filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
         base = [...pendingAdds, ...base];
@@ -1223,12 +1210,10 @@
       };
 
       const handleDeleteTx = async (id) => {
-        // 【修復】不要移除 txCache，只要送入 Delete 佇列，visibleTransactions 就會為它加上灰階
         const txToDelete = visibleTransactions.find(t => String(t.id) === String(id)); 
         
         const isOfflineAdd = syncQueue.find(p => String(p.id) === String(id) && p.action === 'ADD');
         if (isOfflineAdd) {
-            // 原本就還沒上傳的新增，可以直接取消佇列
             setSyncQueue(prev => prev.filter(p => String(p.id) !== String(id)));
             setEditingTx(null);
             return; 
@@ -1333,7 +1318,6 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // 【UI 優化】外置待處理標籤
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benTag = formatBen(tx.beneficiary, tx.member);
         const showBenTag = benTag && benTag !== "";
@@ -2145,6 +2129,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>確認欄位破圖僅為 Google Sheet 視覺溢出，移除不必要的防呆清洗邏輯，保持系統輕量乾淨 (V27.CLEANUP)</li>
                           <li>重大修復！更改刪除資料的邏輯，離線刪除資料將保留在圖卡上並顯示「待刪除」標籤，避免因瞬間斷網導致資料無法上傳且從畫面消失的 Bug (V26.FINAL_SYNC)</li>
                           <li>全面對接後端 BATCH_PROCESS 引擎，將所有操作整合成一次上傳，根絕網路不穩的部分失敗 (V26.FINAL_SYNC)</li>
                           <li>實作動態覆蓋引擎 (Overlay Engine)，完美解決 Google Sheets 延遲導致的新增/刪除短暫消失問題 (V25.GHOST_FILTER_PRO)</li>
