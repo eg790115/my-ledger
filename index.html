@@ -3,12 +3,12 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V34.CHAIN_SYNC
+  最新版本: 2026.03.02.PRO.V35.SMART_TOASTS
   ==========================================
   【完整更新歷程】
-  - [2026.03.02] V34.CHAIN_SYNC: 實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖 (isSyncing) 導致後續操作卡在本地的問題。現在只要 Queue 內有資料，引擎會自動進行連鎖上傳直到清空為止。
-  - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗。
-  - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器。新增登入後自動背景同步機制，並補回遺失的分析圖表模組。修正陣列為 undefined 導致的 forEach 崩潰錯誤。
+  - [2026.03.02] V35.SMART_TOASTS: 重新設計所有 Toast 提示語機制。離線操作給予明確「暫存」提示；連線同步成功後整合單一提示（自動統計新增/修改/緩存筆數）；並將所有同步錯誤/API 失敗詳細原因顯示於提示語中，確保異常狀態透明化。且嚴格維持 UI 樣式不變。
+  - [2026.03.02] V34.CHAIN_SYNC: 實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖導致後續操作卡在本地的問題。
+  - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示。
   ==========================================
 -->
 <head>
@@ -47,7 +47,6 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- 補回遺失的圖表套件依賴 -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
 
@@ -80,8 +79,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    // 版號同步
-    const APP_VERSION = "2026.03.02.PRO.V34.CHAIN_SYNC";
+    const APP_VERSION = "2026.03.02.PRO.V35.SMART_TOASTS";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -769,9 +767,9 @@
       useEffect(() => {
           if (prevOnline.current !== isOnline) {
               if (isOnline) {
-                  showStatus("success", "網路已恢復連線");
+                  showStatus("success", "✅ 網路已恢復連線");
               } else {
-                  showStatus("info", "已進入離線模式");
+                  showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
               }
               prevOnline.current = isOnline;
           }
@@ -926,20 +924,20 @@
       };
 
       // ==========================================
-      // 🚀 背景同步引擎 (實作：重試解鎖機制 Unlock-and-Check)
+      // 🚀 背景同步引擎 (完美 Toast 整合與錯誤回報版)
       // ==========================================
       const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
-          if (isManualSync) showStatus("info", "目前離線中，變更已暫存於手機");
+          if (isManualSync) showStatus("info", "⚠️ 目前離線中，變更已暫存於手機");
           return true;
         }
         if (!deviceValid()) { 
-           showStatus("error", "雲端憑證已過期，請重新綁定"); 
+           showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
            return false; 
         }
         if (isSyncing) {
-           if (isManualSync) showStatus("info", "同步中請稍候...");
+           if (isManualSync) showStatus("info", "⏳ 同步中請稍候...");
            return true;
         }
         
@@ -949,13 +947,18 @@
           
           let didWrite = false;
           const currentQueue = overrideQueue || safeParse(localStorage.getItem(LS.pending), []); 
-          const hasDelete = (currentQueue || []).some(op => op.action === "DELETE_TX" || op.action === "DELETE_PARENT");
+          const queueLengthBeforeSync = currentQueue.length;
+          
+          // ★ 統計本次上傳的各種操作數量，用於最終精準的提示語
+          const addCount = currentQueue.filter(q => q.action === 'ADD').length;
+          const updateCount = currentQueue.filter(q => q.action.includes('UPDATE')).length;
+          const deleteCount = currentQueue.filter(q => q.action.includes('DELETE')).length;
 
           setProcessingQueue(currentQueue);
 
           if (currentQueue && currentQueue.length > 0) {
             const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken() });
-            if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
+            if (res.result !== "success") throw new Error(res.message || "批次同步處理失敗");
             
             setSyncQueue(prev => {
                 const nextQ = (prev || []).filter(p => !(currentQueue || []).some(c => 
@@ -972,43 +975,54 @@
           
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
-          if (isManualSync) {
-              if (didWrite) {
-                  showStatus("success", `手動同步完成！已上傳暫存資料`);
+          // ★ 完美整合的提示語邏輯
+          if (didWrite) {
+              let summaryParts = [];
+              if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
+              if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
+              if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
+              const summaryText = summaryParts.join('、');
+
+              if (isManualSync) {
+                  showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
+              } else if (isAutoRecover) {
+                  showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
               } else {
-                  if (oldStr === newStr) {
-                      showStatus("success", "已是最新資料");
+                  // 一般連線操作
+                  if (queueLengthBeforeSync > 1) {
+                      showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
                   } else {
-                      showStatus("success", `同步成功！已更新雲端變更`);
+                      if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
+                      else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
+                      else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
                   }
               }
-          } else if (isAutoRecover && didWrite) {
-              showStatus("success", `✅ 網路已恢復，已將暫存資料同步至雲端`);
-          } else if (isLoginSync) {
-              if (oldStr !== newStr) {
-                  showStatus("success", `✅ 已自動同步雲端最新資料`);
+          } else {
+              // 沒上傳東西 (單純拉取更新)
+              if (isManualSync) {
+                   showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
+              } else if (isLoginSync && oldStr !== newStr) {
+                   showStatus("success", "✅ 已自動拉取雲端最新資料");
               }
-          } else if (didWrite && hasDelete && !isManualSync && !isAutoRecover) {
-              showStatus("success", "🗑️ 已刪除紀錄");
           }
 
           return true; 
         } catch (e) {
-          const msg = e.message || "同步失敗"; 
-          showStatus("error", msg);
+          // ★ 錯誤詳細提示，並安撫使用者資料還在
+          const msg = e.message || "未知錯誤"; 
           if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
+             showStatus("error", `❌ 驗證失效: ${msg}`);
              forceReloginForToken();
              return false; 
           }
+          showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
           return true; 
         } finally { 
           setProcessingQueue([]);
           setIsSyncing(false);
 
-          // ★ 解鎖回馬槍：下班前檢查有沒有手速太快遺留的 Queue
           const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
           if (leftoverQueue && leftoverQueue.length > 0) {
-              // 喘息 500ms 後再次觸發上傳
               setTimeout(() => {
                   if (navigator.onLine) processQueueToCloud({ isAutoRecover: true });
               }, 500);
@@ -1148,7 +1162,11 @@
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ)); // 立即寫入保護
         setActiveTab("dashboard");
-        showStatus("success", `✅ 已新增 ${completeTxs.length} 筆紀錄`);
+        
+        // ★ 若為離線狀態，給予明確的離線提示
+        if (!navigator.onLine) {
+            showStatus("info", `💾 離線暫存：新增 ${completeTxs.length} 筆`);
+        }
 
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
@@ -1167,7 +1185,10 @@
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
-        showStatus("success", `✅ 已儲存明細變更`);
+        
+        if (!navigator.onLine) {
+            showStatus("info", `💾 離線暫存：修改紀錄`);
+        }
 
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
@@ -1185,7 +1206,10 @@
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingGroup(null);
-        showStatus("success", `✅ 已批次修改母項目`);
+        
+        if (!navigator.onLine) {
+            showStatus("info", `💾 離線暫存：批次修改母項目`);
+        }
 
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
@@ -1197,7 +1221,7 @@
         if (isOfflineAdd) {
             setSyncQueue(prev => (prev || []).filter(p => String(p.id) !== String(id)));
             setEditingTx(null);
-            showStatus("success", `🗑️ 已刪除紀錄`);
+            showStatus("success", `🗑️ 已刪除暫存紀錄`);
             return; 
         }
         
@@ -1207,6 +1231,10 @@
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
+
+        if (!navigator.onLine) {
+            showStatus("info", `💾 離線暫存：已排程刪除`);
+        }
 
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
@@ -2142,6 +2170,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>重新設計所有 Toast 提示語機制。離線操作給予明確「暫存」提示；連線同步成功後整合單一提示 (V35.SMART_TOASTS)</li>
                           <li>實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖 (isSyncing) 導致後續操作卡在本地的問題。現在只要 Queue 內有資料，引擎會自動進行連鎖上傳直到清空為止 (V34.CHAIN_SYNC)</li>
                           <li>實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗 (V33.ULTIMATE_SYNC)</li>
                           <li>修復陣列在特定情況下變成 undefined 導致的 forEach 崩潰錯誤 (V32.BALANCED_SYNC)</li>
