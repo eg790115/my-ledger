@@ -3,17 +3,16 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.01.PRO.V23.ULTIMATE_SYNC
+  最新版本: 2026.03.01.PRO.V25.GHOST_FILTER_PRO
   ==========================================
   【完整更新歷程】
-  - [2026.03.01] V23.ULTIMATE_SYNC: 登入0延遲，本機緩存優先；待處理標籤外置於圖卡前方；同步管理中心升級顯示完整明細；精準的同步訊息回報 (新增/更新/已是最新)；解耦 Push/Pull 徹底解決資料短暫消失的問題。
-  - [2026.03.01] V22.VERSION_CTRL: 程式碼頂部加入完整版本號與歷程標示，修復載入狀態 (loadingCard) 異常與按鈕防呆機制。
-  - [2026.03.01] V21.LOGIN_FIX: 修復登入時 PIN 碼驗證遺漏解除載入畫面的問題，確保樂觀 UI 狀態下操作流暢。
-  - [2026.03.01] V20.BACKGROUND_SYNC: 登入 0 延遲，以本機緩存優先顯示，背景自動完成同步；新增專屬「待同步清單」管理中心。
-  - [2026.03.01] V19.ROCK_SOLID: 修復 iOS/Safari 離線時因延遲封鎖指紋辨識的問題；加入雙重網路偵測確保秒切上線。
-  - [2026.03.01] V18.UIUX_REFINE: 優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版。
-  - [2026.03.01] V17.UIUX: 優化登入體驗，點擊頭像直接喚起指紋驗證，無須二次點擊。
-  - [2026.03.01] V16.PERFECTMERGE: 實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備新資料；拔除舊有 (已編輯) 標記邏輯。
+  - [2026.03.01] V25.GHOST_FILTER_PRO: 實作 Session Ghosts 防殘影記憶體，完美解決 Google Sheets 延遲導致的新增/刪除短暫消失問題；修復 React 非同步佇列觸發時間差，保證上傳零漏接；完全拔除登入載入視窗實現真 0 延遲；精準化所有同步狀態提示語。
+  - [2026.03.01] V24.GHOST_BUSTER: 導入 Anti-Stale 幽靈資料防禦機制 (已由 V25 輕量化取代)。
+  - [2026.03.01] V23.ULTIMATE_SYNC: 登入0延遲，本機緩存優先；待處理標籤外置於圖卡前方；同步管理中心升級顯示完整明細。
+  - [2026.03.01] V22.VERSION_CTRL: 程式碼頂部加入完整版本號與歷程標示。
+  - [2026.03.01] V20.BACKGROUND_SYNC: 新增專屬「待同步清單」管理中心。
+  - [2026.03.01] V19.ROCK_SOLID: 修復 iOS 離線指紋辨識封鎖問題；加入雙重網路偵測。
+  - [2026.03.01] V18.UIUX_REFINE: 優化歷史清單編輯圖示。
   ==========================================
 -->
 <head>
@@ -81,7 +80,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V23.ULTIMATE_SYNC";
+    const APP_VERSION = "2026.03.01.PRO.V25.GHOST_FILTER_PRO";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V12.LOG";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -229,7 +228,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -710,6 +709,14 @@
       const [transactions, setTransactions] = useState(() => safeArrayLS(LS.txCache));
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
 
+      // 【核心防護】Session 幽靈資料過濾器
+      // 避免在同一次連線中，上傳後立刻拉取到 Google Sheets 尚未消化完的舊資料
+      const sessionGhosts = useRef({
+          deleted: new Set(),
+          updated: new Map(),
+          added: new Map()
+      });
+
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
       const [editingIsPending, setEditingIsPending] = useState(false);
@@ -810,6 +817,7 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
+      // 佇列改變且有網路時，自動觸發背景同步
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true });
@@ -843,11 +851,20 @@
         if (res.result !== "success") throw new Error(res.message || "PIN 錯誤"); return true;
       };
 
-      // 【優化】拉取雲端資料並回傳字串供比對
+      const parseDateForSort = (item) => {
+        if (!item) return 0;
+        if (item.timestamp) return item.timestamp;
+        if (!item.date) return 0;
+        let str = String(item.date).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
+        return new Date(str).getTime() || 0;
+      };
+
+      // 【核心修復】拉取時強制濾除殘影 (Ghosts)
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
-        const formatted = (data.transactions || []).map((t, i) => {
+        
+        let formatted = (data.transactions || []).map((t, i) => {
           const rawDate = t["日期時間"] || t["日期"] || "";
           const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
           const ts = new Date(cleanStr).getTime() || 0;
@@ -857,8 +874,34 @@
             desc: t["備註"] || "", type: t["類型"] || "expense", groupId: t["GroupID"] || "", parentDesc: t["ParentDesc"] || "", beneficiary: t["Beneficiary"] || ""
           };
         });
-        
+
         const oldStr = JSON.stringify(transactions);
+
+        // 1. 擋下被刪除的幽靈資料
+        formatted = formatted.filter(t => !sessionGhosts.current.deleted.has(String(t.id)));
+
+        // 2. 蓋上已修改的本地新資料
+        formatted = formatted.map(t => {
+            let mod = { ...t };
+            if (t.groupId && sessionGhosts.current.updated.has(String(t.groupId))) {
+                const gData = sessionGhosts.current.updated.get(String(t.groupId));
+                mod.date = gData.date; mod.parentDesc = gData.parentDesc;
+            }
+            if (sessionGhosts.current.updated.has(String(t.id))) {
+                mod = { ...mod, ...sessionGhosts.current.updated.get(String(t.id)) };
+            }
+            return mod;
+        });
+
+        // 3. 補上剛新增但雲端還沒吐回來的新資料
+        const cloudIds = new Set(formatted.map(t => String(t.id)));
+        const missingAdds = Array.from(sessionGhosts.current.added.values()).filter(t => !cloudIds.has(String(t.id)));
+        
+        formatted = [...missingAdds, ...formatted];
+
+        // 重新排序
+        formatted.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
+
         const newStr = JSON.stringify(formatted);
 
         setTransactions(formatted); 
@@ -901,27 +944,65 @@
         });
       };
 
-      // 【核心升級】解耦 Push / Pull，精準回報同步狀態
-      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false }) => {
-        if (!isOnline) return true;
+      // 【核心升級】完美解耦上傳與拉取，精準提示語
+      const processQueueToCloud = async ({ doRefreshFirst, isManualSync = false, isLoginSync = false }) => {
+        if (!isOnline) {
+          if (isManualSync) showStatus("info", "目前離線中，變更已暫存於手機");
+          return true;
+        }
         if (!deviceValid()) { 
            showStatus("error", "雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
            return false; 
         }
-        if (isSyncing) return true;
+        if (isSyncing) {
+           if (isManualSync) showStatus("info", "同步中請稍候...");
+           return true;
+        }
         
         try {
           setIsSyncing(true);
           if (doRefreshFirst || isManualSync) await refreshDeviceToken();
           
-          const currentQueue = [...syncQueue]; 
-          let pushedCount = currentQueue.length;
+          let didWrite = false;
+          let pushAddCount = 0;
+          let pushUpdateCount = 0;
+          let pushDeleteCount = 0;
 
-          // 階段 1：處理上傳 (Push)
-          if (pushedCount > 0) {
+          const currentQueue = [...syncQueue]; 
+
+          if (currentQueue.length > 0) {
             const addItems = currentQueue.filter(item => item.action === "ADD");
             const updateItems = currentQueue.filter(item => item.action !== "ADD");
+
+            pushAddCount = addItems.length;
+            updateItems.forEach(i => {
+                if(i.action === 'DELETE_TX') pushDeleteCount++;
+                else pushUpdateCount++;
+            });
+
+            // 寫入防殘影記憶體 (Ghost Buster)
+            currentQueue.forEach(item => {
+                if (item.action === 'ADD') {
+                    sessionGhosts.current.added.set(String(item.id), item);
+                    sessionGhosts.current.deleted.delete(String(item.id));
+                }
+                if (item.action === 'DELETE_TX') {
+                    sessionGhosts.current.deleted.add(String(item.id));
+                    sessionGhosts.current.added.delete(String(item.id));
+                    sessionGhosts.current.updated.delete(String(item.id));
+                }
+                if (item.action === 'UPDATE_TX') {
+                    if (sessionGhosts.current.added.has(String(item.id))) {
+                        sessionGhosts.current.added.set(String(item.id), { ...sessionGhosts.current.added.get(String(item.id)), ...item });
+                    } else {
+                        sessionGhosts.current.updated.set(String(item.id), item);
+                    }
+                }
+                if (item.action === 'UPDATE_GROUP_PARENT') {
+                    sessionGhosts.current.updated.set(String(item.groupId), item);
+                }
+            });
 
             if (addItems.length > 0) {
               const res = await postGAS({ action: "BATCH_SYNC", transactions: addItems, deviceToken: getDeviceToken() });
@@ -937,24 +1018,30 @@
                 (c.id === p.id && c.action === p.action) || 
                 (c.groupId && c.groupId === p.groupId && c.action === p.action)
             )));
-            
-            showStatus("success", `同步成功！已上傳 ${pushedCount} 筆緩存資料`);
-            return true; // 【防消失機制】如果是上傳剛記的帳，就不立刻拉取雲端，保留本地畫面
+            didWrite = true;
           }
 
-          // 階段 2：處理拉取 (Pull) - 只有當沒有東西要傳，且是手動或剛登入時才拉取
-          if (pushedCount === 0 && (isManualSync || doRefreshFirst)) {
-              const { formatted, oldStr, newStr } = await fetchCloudTx();
-              
-              if (oldStr === newStr) {
-                  if (isManualSync) showStatus("success", "已是最新資料");
+          if (didWrite) await new Promise(r => setTimeout(r, 800));
+          const { formatted, oldStr, newStr } = await fetchCloudTx();
+          
+          if (!isLoginSync) {
+              if (didWrite) {
+                  let acts = [];
+                  if (pushAddCount) acts.push(`新增 ${pushAddCount} 筆`);
+                  if (pushUpdateCount) acts.push(`修改 ${pushUpdateCount} 筆`);
+                  if (pushDeleteCount) acts.push(`刪除 ${pushDeleteCount} 筆`);
+                  showStatus("success", `同步成功！已上傳快取 (${acts.join(', ')})`);
               } else {
-                  const newLength = formatted.length;
-                  const oldLength = JSON.parse(oldStr).length;
-                  if (newLength > oldLength) {
-                      showStatus("success", `同步成功！新增了 ${newLength - oldLength} 筆資料`);
+                  const oldLen = JSON.parse(oldStr).length;
+                  const newLen = formatted.length;
+                  if (oldStr === newStr) {
+                      showStatus("success", "已是最新資料");
+                  } else if (newLen > oldLen) {
+                      showStatus("success", `同步成功！雲端新增了 ${newLen - oldLen} 筆資料`);
+                  } else if (newLen < oldLen) {
+                      showStatus("success", `同步成功！雲端移除了 ${oldLen - newLen} 筆資料`);
                   } else {
-                      showStatus("success", `同步成功！更新了雲端資料`);
+                      showStatus("success", `同步成功！已更新雲端變更`);
                   }
               }
           }
@@ -973,7 +1060,6 @@
         }
       };
 
-      // 【優化】點擊同步按鈕邏輯
       const handleSyncClick = () => {
           if (syncQueue.length > 0) {
               setShowPendingModal(true);
@@ -1049,6 +1135,7 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
+      // 樂觀更新：立刻改畫面，排入佇列等 useEffect 去收
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseTimestamp = Date.now();
@@ -1113,11 +1200,10 @@
       };
 
       const handleDeleteTx = async (id) => {
-        const isOfflineAdd = syncQueue.find(p => p.id === id && p.action === 'ADD');
-        if (isOfflineAdd) {
-            const newList = transactions.filter(t => t.id !== id);
-            setTransactions(newList); setTxCache(newList); saveToIndexedDB(newList); localStorage.setItem(LS.txCache, JSON.stringify(newList));
-        }
+        // 直接在畫面上移除
+        const newList = transactions.filter(t => t.id !== id);
+        setTransactions(newList); setTxCache(newList); saveToIndexedDB(newList); localStorage.setItem(LS.txCache, JSON.stringify(newList));
+        
         enqueueAction({ id, action: "DELETE_TX" });
         setEditingTx(null);
       };
@@ -1168,14 +1254,6 @@
           }
         }
         return grouped;
-      };
-
-      const parseDateForSort = (item) => {
-        if (!item) return 0;
-        if (item.timestamp) return item.timestamp;
-        if (!item.date) return 0;
-        let str = String(item.date).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
-        return new Date(str).getTime() || 0;
       };
 
       const allGroupedAndSorted = useMemo(() => {
@@ -1357,9 +1435,6 @@
                         <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
                           <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
                             <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
-                            {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待新增</span>}
-                            {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待修改</span>}
-                            {cAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待刪除</span>}
                             {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                           </div>
                           {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
@@ -1406,7 +1481,7 @@
             setSelectingUser(null); 
             setPinInput("");
             if (isOnline) {
-               processQueueToCloud({ doRefreshFirst: true }); // 取消 isLoginSync 防止出現 loadingCard
+               processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
             }
           } else {
             setFallbackToPin(true);
@@ -1461,7 +1536,7 @@
                             setCurrentUser(selectingUser); 
                             setSelectingUser(null); 
                             setPinInput("");
-                            if (isOnline) processQueueToCloud({ doRefreshFirst: true });
+                            if (isOnline) processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1496,7 +1571,7 @@
                                     setSelectingUser(null); 
                                     setPinInput(""); 
                                     setFallbackToPin(false);
-                                    processQueueToCloud({ doRefreshFirst: true });
+                                    processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤，或您尚未在有網路時登入過，請先連接網路進行初次驗證"); setPinInput(""); return; }
@@ -1588,15 +1663,16 @@
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} />}
           
-          {/* 【全新專屬待同步清單視窗】顯示完整明細資訊 */}
+          {/* 【專屬待同步清單視窗】顯示完整明細資訊 */}
           {showPendingModal && (
             <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in text-left">
               <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[80vh]">
                   <button onClick={() => setShowPendingModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
-                  <h3 className="font-black text-xl mb-6 text-gray-800 flex items-center gap-2">
+                  <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
                       <SvgIcon name="cloudSync" size={24} className="text-blue-500" />
                       待同步清單 ({syncQueue.length})
                   </h3>
+                  <p className="text-[10px] text-gray-500 font-bold mb-4">以下清單為暫存於手機尚未上傳的操作（包含待刪除項目），點擊下方按鈕即可一併同步至雲端。</p>
                   <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2 scrollbar-hide">
                       {syncQueue.map((item, idx) => (
                           <div key={idx} className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex items-stretch gap-3 relative overflow-hidden">
@@ -1689,7 +1765,6 @@
                 <p className="text-[10px] text-gray-400 font-bold tracking-widest leading-none">{customSubtitle.replace(/{name}/g, currentUser.name)}</p>
               </div>
             </div>
-            {/* 【UI 優化】線上/離線文字標示移至此處 */}
             <div className="flex flex-col items-center gap-1 mt-1">
               <button onClick={handleSyncClick} className="relative p-2 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
                 <SvgIcon name="cloudSync" size={20} className={isSyncing ? "animate-spin" : ""} />
@@ -1976,7 +2051,7 @@
               </div>
             )}
 
-            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} isLoading={isLoading} />}
+            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
 
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
@@ -2042,38 +2117,20 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>登入 0 延遲，以本機緩存優先顯示後再背景同步 (V23.ULTIMATE_SYNC)</li>
-                          <li>圖卡待處理資訊外置，以獨立標籤呈現在圖卡左側前方 (V23.ULTIMATE_SYNC)</li>
-                          <li>右上角同步圖示下方增加線上/離線文字標示 (V23.ULTIMATE_SYNC)</li>
-                          <li>重新設計同步狀態提示語：顯示更新/新增筆數或已是最新資料 (V23.ULTIMATE_SYNC)</li>
-                          <li>完善待同步清單視窗，顯示完整明細資訊 (V23.ULTIMATE_SYNC)</li>
-                          <li>解決同步時的畫面閃爍與暫存資料消失問題 (V23.ULTIMATE_SYNC)</li>
-                          <li>程式碼頂部加入完整版本號與歷程標示，修復載入狀態 (loadingCard) 異常與按鈕防呆機制 (V22.VERSION_CTRL)</li>
-                          <li>修復登入時 PIN 碼驗證遺漏解除載入畫面的問題，確保樂觀 UI 狀態下操作流暢 (V21.LOGIN_FIX)</li>
-                          <li>登入 0 延遲，以本機緩存優先顯示，並在背景自動完成同步 (V20.BACKGROUND_SYNC)</li>
-                          <li>操作 0 延遲，新增/編輯/刪除直接反映於畫面不需等待，並在圖卡增加專屬「待同步標籤」 (V20.BACKGROUND_SYNC)</li>
-                          <li>新增專屬「待同步清單」管理中心，點擊同步圖示即可查看所有排隊中任務 (V20.BACKGROUND_SYNC)</li>
-                          <li>修復 iOS/Safari 離線時因延遲封鎖指紋辨識的問題，拔除 setTimeout 實現無縫驗證 (V19.ROCK_SOLID)</li>
-                          <li>加入雙重網路偵測 (visibilitychange & focus)，確保背景切回前景時能秒切上線狀態 (V19.ROCK_SOLID)</li>
-                          <li>優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版 (V18.UIUX_REFINE)</li>
-                          <li>優化登入體驗，點擊頭像即可直接喚起指紋驗證，無須二次點擊 (V17.UIUX)</li>
-                          <li>實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備的新資料 (V16.PERFECTMERGE)</li>
-                          <li>拔除舊有的 (已編輯) 標記邏輯，恢復純淨時間格式，解決解析錯亂 (V16.PERFECTMERGE)</li>
-                          <li>修復 Google Sheet 讀寫時間差導致的新增不顯示問題，加入安全等待機制 (V14.DELAY)</li>
-                          <li>徹底優化 PWA 離線偵測機制，動態即時監聽網路狀態 (V13.OFFLINE)</li>
-                          <li>導入 UUID 複合式防撞機制，確保離線產生的 ID 全球唯一不衝突 (V12.ID)</li>
-                          <li>實作雙重本地資料庫緩存 (IndexedDB 效能優化 + LocalStorage 備胎) (V9.DB)</li>
+                          <li>實作 Session Ghosts 防殘影記憶體，完美解決 Google Sheets 延遲導致的新增/刪除短暫消失問題 (V25.GHOST_FILTER_PRO)</li>
+                          <li>修復 React 非同步佇列觸發時間差，保證上傳零漏接 (V25.GHOST_FILTER_PRO)</li>
+                          <li>完全拔除登入載入視窗，實現真 0 延遲，精準化所有同步狀態提示語 (V25.GHOST_FILTER_PRO)</li>
+                          <li>待處理標籤外置於圖卡前方；同步管理中心升級顯示完整明細 (V23.ULTIMATE_SYNC)</li>
+                          <li>程式碼頂部加入完整版本號與歷程標示 (V22.VERSION_CTRL)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>新增 __編輯紀錄__ 獨立分頁。自動將所有修改與刪除的舊資料 JSON 備份至該分頁 (V12.LOG)</li>
-                          <li>實作 safeFormatDate，徹底解決 Google Sheet 產生 "Thu" 等英文字串導致前端解析出 "hu" 亂碼的問題 (V11.CLEANDATE)</li>
-                          <li>自動清洗舊資料殘留的 (已編輯) 標籤 (V11.CLEANDATE)</li>
+                          <li>新增 __編輯紀錄__ 獨立分頁。自動備份修改與刪除的舊資料 (V12.LOG)</li>
+                          <li>徹底解決 Date 物件轉字串產生 "hu" 亂碼的問題，並清洗舊資料殘留標籤 (V11.CLEANDATE)</li>
                           <li>所有寫入動作後加入 SpreadsheetApp.flush()，解決讀寫時間差問題 (V10.SYNC)</li>
-                          <li>確立「雲端絕對優先」原則。UPDATE 若找不到資料不再 Upsert，直接放行作廢 (V9.STRICT)</li>
-                          <li>記帳時間絕對信任前端手機時間，不混用伺服器時區 (V9.STRICT)</li>
+                          <li>確立「雲端絕對優先」原則。UPDATE 若找不到資料直接放行作廢 (V9.STRICT)</li>
                         </ul>
                       </div>
                     </div>
