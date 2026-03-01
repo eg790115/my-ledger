@@ -3,9 +3,10 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V35.SMART_TOASTS
+  最新版本: 2026.03.02.PRO.V36.OFFLINE_TAGS
   ==========================================
   【完整更新歷程】
+  - [2026.03.02] V36.OFFLINE_TAGS: 導入操作當下的「離線標記 (isOffline)」。只有在斷網狀態下進行的操作，才會顯示「待新增/待修改/待刪除」的視覺標籤；連線狀態下的快速連續操作，將保持乾淨的樂觀 UI。新增背景 5 秒自動輪詢機制，靜默上傳遺漏的佇列且不干擾使用者。
   - [2026.03.02] V35.SMART_TOASTS: 重新設計所有 Toast 提示語機制。離線操作給予明確「暫存」提示；連線同步成功後整合單一提示（自動統計新增/修改/緩存筆數）；並將所有同步錯誤/API 失敗詳細原因顯示於提示語中，確保異常狀態透明化。且嚴格維持 UI 樣式不變。
   - [2026.03.02] V34.CHAIN_SYNC: 實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖導致後續操作卡在本地的問題。
   - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示。
@@ -74,12 +75,12 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useEffect, useMemo, useRef, useState } = React;
+    const { useEffect, useMemo, useRef, useState, useCallback } = React;
     const { PieChart, Pie, Cell, ResponsiveContainer, Tooltip: RechartsTooltip, Legend } = window.Recharts || {};
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V35.SMART_TOASTS";
+    const APP_VERSION = "2026.03.02.PRO.V36.OFFLINE_TAGS";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -742,6 +743,9 @@
       const [isLogOpen, setIsLogOpen] = useState(false);
 
       const [isOnline, setIsOnline] = useState(navigator.onLine);
+      
+      // 引入計時器 Ref 用於輪詢重置
+      const pollingTimerRef = useRef(null);
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
@@ -923,16 +927,28 @@
         return newQueue;
       };
 
+      // ★ 啟動 5 秒倒數計時器發動靜默同步
+      const resetPollingTimer = useCallback(() => {
+        if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = setTimeout(() => {
+            const currentQ = safeParse(localStorage.getItem(LS.pending), []);
+            if (navigator.onLine && currentQ.length > 0 && !isSyncing) {
+                // 靜默上傳，不顯示 Toast
+                processQueueToCloud({ isSilentPolling: true });
+            }
+        }, 5000); 
+      }, [isSyncing]);
+
       // ==========================================
-      // 🚀 背景同步引擎 (完美 Toast 整合與錯誤回報版)
+      // 🚀 背景同步引擎
       // ==========================================
-      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
+      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, isSilentPolling = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "⚠️ 目前離線中，變更已暫存於手機");
           return true;
         }
         if (!deviceValid()) { 
-           showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
+           if (!isSilentPolling) showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
            return false; 
         }
@@ -949,7 +965,6 @@
           const currentQueue = overrideQueue || safeParse(localStorage.getItem(LS.pending), []); 
           const queueLengthBeforeSync = currentQueue.length;
           
-          // ★ 統計本次上傳的各種操作數量，用於最終精準的提示語
           const addCount = currentQueue.filter(q => q.action === 'ADD').length;
           const updateCount = currentQueue.filter(q => q.action.includes('UPDATE')).length;
           const deleteCount = currentQueue.filter(q => q.action.includes('DELETE')).length;
@@ -975,47 +990,48 @@
           
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
-          // ★ 完美整合的提示語邏輯
-          if (didWrite) {
-              let summaryParts = [];
-              if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
-              if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
-              if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
-              const summaryText = summaryParts.join('、');
+          // 如果是靜默輪詢 (isSilentPolling)，絕對不彈出任何 Toast
+          if (!isSilentPolling) {
+              if (didWrite) {
+                  let summaryParts = [];
+                  if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
+                  if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
+                  if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
+                  const summaryText = summaryParts.join('、');
 
-              if (isManualSync) {
-                  showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
-              } else if (isAutoRecover) {
-                  showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
-              } else {
-                  // 一般連線操作
-                  if (queueLengthBeforeSync > 1) {
-                      showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
+                  if (isManualSync) {
+                      showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
+                  } else if (isAutoRecover) {
+                      showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
                   } else {
-                      if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
-                      else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
-                      else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
+                      if (queueLengthBeforeSync > 1) {
+                          showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
+                      } else {
+                          if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
+                          else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
+                          else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
+                      }
                   }
-              }
-          } else {
-              // 沒上傳東西 (單純拉取更新)
-              if (isManualSync) {
-                   showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
-              } else if (isLoginSync && oldStr !== newStr) {
-                   showStatus("success", "✅ 已自動拉取雲端最新資料");
+              } else {
+                  if (isManualSync) {
+                       showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
+                  } else if (isLoginSync && oldStr !== newStr) {
+                       showStatus("success", "✅ 已自動拉取雲端最新資料");
+                  }
               }
           }
 
           return true; 
         } catch (e) {
-          // ★ 錯誤詳細提示，並安撫使用者資料還在
-          const msg = e.message || "未知錯誤"; 
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
-             showStatus("error", `❌ 驗證失效: ${msg}`);
-             forceReloginForToken();
-             return false; 
+          if (!isSilentPolling) {
+              const msg = e.message || "未知錯誤"; 
+              if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
+                 showStatus("error", `❌ 驗證失效: ${msg}`);
+                 forceReloginForToken();
+                 return false; 
+              }
+              showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
           }
-          showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
           return true; 
         } finally { 
           setProcessingQueue([]);
@@ -1023,8 +1039,9 @@
 
           const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
           if (leftoverQueue && leftoverQueue.length > 0) {
+              // 解鎖回馬槍，用靜默方式清理
               setTimeout(() => {
-                  if (navigator.onLine) processQueueToCloud({ isAutoRecover: true });
+                  if (navigator.onLine) processQueueToCloud({ isSilentPolling: true });
               }, 500);
           }
         }
@@ -1105,11 +1122,10 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
+      // 樂觀 UI 渲染：提供給 UI 渲染用
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
-        
         let base = [...(txCache || [])]; 
-        
         const queueMap = new Map();
         (processingQueue || []).forEach(q => queueMap.set(q.action === "UPDATE_GROUP_PARENT" ? q.groupId : q.id, q));
         (syncQueue || []).forEach(q => queueMap.set(q.action === "UPDATE_GROUP_PARENT" ? q.groupId : q.id, q));
@@ -1136,6 +1152,20 @@
         return base;
       }, [currentUser, txCache, syncQueue, processingQueue]);
 
+      // 提供給 UI 視覺判定是否需要加上標籤 (只標記 isOffline 的項目)
+      const pendingMap = useMemo(() => {
+        const map = {};
+        const combinedQueue = [...(syncQueue || []), ...(processingQueue || [])];
+        combinedQueue.forEach(item => {
+            // ★ 只針對 isOffline 的操作提供 UI 標籤標記
+            if (item.isOffline) {
+                if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
+                if (item.groupId && item.action === "UPDATE_GROUP_PARENT") map[item.groupId] = item.action;
+            }
+        });
+        return map;
+      }, [syncQueue, processingQueue]);
+
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseTimestamp = Date.now();
@@ -1144,6 +1174,7 @@
         
         const groupId = isMulti ? `G_${baseTimestamp}_${currentUser.name}_${randomSuffix()}` : ""; 
         const parentDesc = isMulti ? newTxs[0].parentDesc : "";
+        const isOfflineOp = !navigator.onLine; // ★ 紀錄當下是否斷網
 
         const completeTxs = newTxs.map((tx, idx) => ({ 
           ...tx, 
@@ -1151,7 +1182,8 @@
           recorder: currentUser.name, 
           id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`, 
           groupId, 
-          parentDesc
+          parentDesc,
+          isOffline: isOfflineOp 
         }));
 
         let currentQ = syncQueue || [];
@@ -1160,16 +1192,13 @@
         });
         
         setSyncQueue(currentQ);
-        localStorage.setItem(LS.pending, JSON.stringify(currentQ)); // 立即寫入保護
+        localStorage.setItem(LS.pending, JSON.stringify(currentQ)); 
         setActiveTab("dashboard");
         
-        // ★ 若為離線狀態，給予明確的離線提示
-        if (!navigator.onLine) {
+        if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：新增 ${completeTxs.length} 筆`);
-        }
-
-        if (isOnline && deviceValid()) {
-            await processQueueToCloud({ overrideQueue: currentQ });
+        } else {
+            resetPollingTimer(); // 有網路時重置 5 秒倒數
         }
       };
 
@@ -1179,19 +1208,19 @@
             finalDateStr = finalDateStr.replace("T"," ").replace(/-/g,"/");
             if (finalDateStr.length > 16) finalDateStr = finalDateStr.slice(0, 16);
         }
-        const finalUpdatedTx = { ...updatedTx, date: finalDateStr };
+        
+        const isOfflineOp = !navigator.onLine;
+        const finalUpdatedTx = { ...updatedTx, date: finalDateStr, isOffline: isOfflineOp };
 
         const currentQ = getMergedQueue(syncQueue, { ...finalUpdatedTx, action: "UPDATE_TX" });
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
         
-        if (!navigator.onLine) {
+        if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：修改紀錄`);
-        }
-
-        if (isOnline && deviceValid()) {
-            await processQueueToCloud({ overrideQueue: currentQ });
+        } else {
+            resetPollingTimer();
         }
       };
 
@@ -1202,21 +1231,21 @@
             if (finalDateStr.length > 16) finalDateStr = finalDateStr.slice(0, 16);
         }
 
-        const currentQ = getMergedQueue(syncQueue, { ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" });
+        const isOfflineOp = !navigator.onLine;
+        const currentQ = getMergedQueue(syncQueue, { ...groupData, date: finalDateStr, isOffline: isOfflineOp, action: "UPDATE_GROUP_PARENT" });
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingGroup(null);
         
-        if (!navigator.onLine) {
+        if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：批次修改母項目`);
-        }
-
-        if (isOnline && deviceValid()) {
-            await processQueueToCloud({ overrideQueue: currentQ });
+        } else {
+            resetPollingTimer();
         }
       };
 
       const handleDeleteTx = async (id) => {
+        const isOfflineOp = !navigator.onLine;
         const isOfflineAdd = (syncQueue || []).find(p => String(p.id) === String(id) && p.action === 'ADD');
         if (isOfflineAdd) {
             setSyncQueue(prev => (prev || []).filter(p => String(p.id) !== String(id)));
@@ -1226,30 +1255,18 @@
         }
         
         const txToDelete = (visibleTransactions || []).find(t => String(t.id) === String(id)); 
-        const currentQ = getMergedQueue(syncQueue, { ...(txToDelete || {id}), action: "DELETE_TX" });
+        const currentQ = getMergedQueue(syncQueue, { ...(txToDelete || {id}), isOffline: isOfflineOp, action: "DELETE_TX" });
         
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
 
-        if (!navigator.onLine) {
+        if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：已排程刪除`);
-        }
-
-        if (isOnline && deviceValid()) {
-            await processQueueToCloud({ overrideQueue: currentQ });
+        } else {
+            resetPollingTimer();
         }
       };
-
-      const pendingMap = useMemo(() => {
-        const map = {};
-        const combinedQueue = [...(syncQueue || []), ...(processingQueue || [])];
-        combinedQueue.forEach(item => {
-            if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
-            if (item.groupId && item.action === "UPDATE_GROUP_PARENT") map[item.groupId] = item.action;
-        });
-        return map;
-      }, [syncQueue, processingQueue]);
 
       const myTransactions = useMemo(() => {
         if (!currentUser) return [];
@@ -1682,7 +1699,7 @@
             
             {statusMsg.text && (
               <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
-                <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : "bg-blue-600 text-white"}`}>
+                <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
                   <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
                 </div>
               </div>
@@ -2170,6 +2187,8 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>導入操作當下的「離線標記 (isOffline)」。只有在斷網狀態下進行的操作，才會顯示待處理標籤；連線狀態下的操作將保持乾淨的樂觀 UI (V36.OFFLINE_TAGS)</li>
+                          <li>新增背景 5 秒自動輪詢機制，靜默上傳遺漏的佇列且不干擾使用者 (V36.OFFLINE_TAGS)</li>
                           <li>重新設計所有 Toast 提示語機制。離線操作給予明確「暫存」提示；連線同步成功後整合單一提示 (V35.SMART_TOASTS)</li>
                           <li>實作「重試解鎖機制 (Unlock-and-Check)」。解決快速連續操作時，因防重入鎖 (isSyncing) 導致後續操作卡在本地的問題。現在只要 Queue 內有資料，引擎會自動進行連鎖上傳直到清空為止 (V34.CHAIN_SYNC)</li>
                           <li>實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗 (V33.ULTIMATE_SYNC)</li>
@@ -2208,7 +2227,7 @@
 
           {statusMsg.text && (
             <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
-              <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : "bg-blue-600 text-white"}`}>
+              <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
                 <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
               </div>
             </div>
