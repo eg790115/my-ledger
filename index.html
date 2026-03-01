@@ -65,7 +65,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V19.ROCK_SOLID";
+    const APP_VERSION = "2026.03.01.PRO.V20.BACKGROUND_SYNC";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V12.LOG";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -491,7 +491,6 @@
       useEffect(() => {
         let formattedDate = "";
         if (tx.date) {
-          // 清除任何奇怪字元或舊有標記，確保能放入 input
           formattedDate = String(tx.date).replace(" (已編輯)", "").replace("(已編輯)", "").replace(/\//g, "-").replace(" ", "T");
           if (formattedDate.length > 16) formattedDate = formattedDate.slice(0, 16);
         }
@@ -665,11 +664,14 @@
       const [fallbackToPin, setFallbackToPin] = useState(false);
 
       const [biometricAvailable, setBiometricAvailable] = useState(false);
-      const [isLoading, setIsLoading] = useState(false);
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
-      const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
 
+      // 同步與暫存狀態
       const [showClearQueueModal, setShowClearQueueModal] = useState(false);
+      const [showPendingModal, setShowPendingModal] = useState(false);
+      const [isSyncing, setIsSyncing] = useState(false);
+      const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
+      const isLoading = loadingCard.show || isSyncing;
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
@@ -710,7 +712,6 @@
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
-      // 【優化】更穩固的網路狀態偵測
       useEffect(() => {
         const handleNetworkChange = () => {
           setIsOnline(navigator.onLine);
@@ -778,9 +779,8 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // 網路恢復後自動同步
       useEffect(() => {
-        if (isOnline && currentUser && syncQueue.length > 0) {
+        if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true });
         }
       }, [isOnline, currentUser]);
@@ -836,6 +836,37 @@
         return formatted;
       };
 
+      // 佇列合併管理器
+      const enqueueAction = (newItem) => {
+        setSyncQueue(prev => {
+            let newQueue = [...prev];
+            if (newItem.action === "UPDATE_GROUP_PARENT") {
+                const idx = newQueue.findIndex(p => p.action === "UPDATE_GROUP_PARENT" && String(p.groupId) === String(newItem.groupId));
+                if (idx >= 0) newQueue[idx] = newItem;
+                else newQueue.push(newItem);
+                return newQueue;
+            }
+            
+            const idx = newQueue.findIndex(p => p.id === newItem.id && p.action !== "UPDATE_GROUP_PARENT");
+            if (idx >= 0) {
+                const oldItem = newQueue[idx];
+                if (oldItem.action === "ADD") {
+                    if (newItem.action === "DELETE_TX") newQueue.splice(idx, 1); 
+                    else newQueue[idx] = { ...newItem, action: "ADD" }; 
+                } else if (oldItem.action === "UPDATE_TX") {
+                    if (newItem.action === "DELETE_TX") newQueue[idx] = { id: newItem.id, action: "DELETE_TX" }; 
+                    else newQueue[idx] = { ...newItem, action: "UPDATE_TX" }; 
+                } else if (oldItem.action === "DELETE_TX") {
+                    // Ignore, already deleted
+                }
+            } else {
+                newQueue.push(newItem);
+            }
+            return newQueue;
+        });
+      };
+
+      // 背景同步處理核心
       const processQueueToCloud = async ({ doRefreshFirst, isLoginSync = false }) => {
         if (!isOnline) return true;
         if (!deviceValid()) { 
@@ -843,16 +874,18 @@
            forceReloginForToken(); 
            return false; 
         }
+        if (isSyncing) return true;
+        
         try {
+          setIsSyncing(true);
           if (doRefreshFirst) await refreshDeviceToken();
           
-          if (isLoginSync) setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
-          else if (syncQueue.length > 0) setLoadingCard({ show: true, text: "正在同步暫存..." });
-
           let didWrite = false;
-          if (syncQueue.length > 0) {
-            const addItems = syncQueue.filter(item => !item.action || item.action === "ADD");
-            const updateItems = syncQueue.filter(item => item.action && item.action !== "ADD");
+          const currentQueue = [...syncQueue]; 
+
+          if (currentQueue.length > 0) {
+            const addItems = currentQueue.filter(item => item.action === "ADD");
+            const updateItems = currentQueue.filter(item => item.action !== "ADD");
 
             if (addItems.length > 0) {
               const res = await postGAS({ action: "BATCH_SYNC", transactions: addItems, deviceToken: getDeviceToken() });
@@ -863,38 +896,51 @@
               const res = await postGAS({ ...item, deviceToken: getDeviceToken() });
               if (res.result !== "success") throw new Error(res.message || "同步失敗");
             }
-            setSyncQueue([]);
+            
+            setSyncQueue(prev => prev.filter(p => !currentQueue.some(c => 
+                (c.id === p.id && c.action === p.action) || 
+                (c.groupId && c.groupId === p.groupId && c.action === p.action)
+            )));
             didWrite = true;
           }
 
-          if (didWrite) {
-              await new Promise(r => setTimeout(r, 800));
-          }
+          if (didWrite) await new Promise(r => setTimeout(r, 800));
           await fetchCloudTx();
+          
           if (!isLoginSync && didWrite) showStatus("success", "同步完成");
+          else if (!isLoginSync && !didWrite) showStatus("success", "資料已是最新");
 
           return true; 
         } catch (e) {
-          const msg = e.message || "同步失敗"; showStatus("error", msg);
+          const msg = e.message || "同步失敗"; 
+          showStatus("error", msg);
           if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
              forceReloginForToken();
              return false; 
           }
           return true; 
         } finally { 
-          if (!isLoginSync) setLoadingCard({ show: false, text: "" }); 
+          setIsSyncing(false);
         }
+      };
+
+      const handleSyncClick = () => {
+          if (syncQueue.length > 0) {
+              setShowPendingModal(true);
+          } else {
+              processQueueToCloud({ doRefreshFirst: true });
+          }
       };
 
       const handleSaveGreeting = async () => {
          if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
          try {
-            setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken();
+            setIsSyncing(true); await refreshDeviceToken();
             const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message);
             setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle}));
             showStatus("success", "問候語已更新");
-         } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
+         } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setIsSyncing(false); }
       };
 
       const saveLocalPinHash = async (name, pin) => { const h = await sha256Base64(`${name}::${pin}::local`); localStorage.setItem(LS.pinHashPrefix + name, h); };
@@ -921,12 +967,12 @@
       const bindDeviceBio = async () => {
         if (!window.PublicKeyCredential) { showStatus("error","不支援生物辨識"); return; }
         try {
-          setLoadingCard({ show:true, text:"正在綁定設備..." });
+          setIsSyncing(true);
           const challenge = new Uint8Array(32); crypto.getRandomValues(challenge); const userID = new Uint8Array(16); crypto.getRandomValues(userID);
           const cred = await navigator.credentials.create({ publicKey: { challenge, rp: { name:"家庭記帳" }, user: { id:userID, name: currentUser.name, displayName: currentUser.name }, pubKeyCredParams: [{ type:"public-key", alg:-7 }, { type:"public-key", alg:-257 }], authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required" }, timeout: 60000 } });
           localStorage.setItem(getBioKey(currentUser.name), btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(cred.rawId)))));
           clearBioFail(currentUser.name); showStatus("success","設備已綁定");
-        } catch { showStatus("error","綁定失敗或已取消"); } finally { setLoadingCard({ show:false, text:"" }); }
+        } catch { showStatus("error","綁定失敗或已取消"); } finally { setIsSyncing(false); }
       };
 
       const unbindDeviceBio = async () => {
@@ -934,9 +980,9 @@
         if (!isOnline) { showStatus("error","需連線驗證 PIN 才能解除"); return; }
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
         try {
-          setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(currentUser.name, unbindPin);
+          setIsSyncing(true); await verifyPinOnline(currentUser.name, unbindPin);
           localStorage.removeItem(getBioKey(currentUser.name)); clearBioFail(currentUser.name); setShowUnbindModal(false); setUnbindPin(""); showStatus("success","已解除綁定");
-        } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
+        } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setIsSyncing(false); }
       };
 
       const changePin = async () => {
@@ -945,12 +991,12 @@
         if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { showStatus("error","請輸入 6 位 PIN"); return; }
         if (newPin !== newPin2) { showStatus("error","兩次輸入不一致"); return; }
         try {
-          setLoadingCard({ show:true, text:"正在更新密碼..." });
+          setIsSyncing(true);
           const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name); setShowChangePinModal(false);
           showStatus("success","密碼更新成功，請重新登入"); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard");
-        } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
+        } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setIsSyncing(false); }
       };
 
       const handleAdd = async (newTxs) => {
@@ -968,8 +1014,7 @@
           recorder: currentUser.name, 
           id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`, 
           groupId, 
-          parentDesc, 
-          action: "ADD" 
+          parentDesc
         }));
 
         const newList = [...completeTxs, ...transactions];
@@ -978,37 +1023,9 @@
         saveToIndexedDB(newList);
         localStorage.setItem(LS.txCache, JSON.stringify(newList));
 
-        if (!isOnline || !deviceValid()) {
-          setSyncQueue(prev => [...prev, ...completeTxs]); showStatus("info", `已暫存 ${completeTxs.length} 筆（待同步）`);
-          setActiveTab("dashboard"); if (isOnline && !deviceValid()) forceReloginForToken(); return;
-        }
-
-        try {
-          setLoadingCard({ show:true, text: isMulti ? `寫入 ${completeTxs.length} 筆明細...` : "正在寫入..." }); await refreshDeviceToken();
-          
-          if (isMulti) {
-             const res = await postGAS({ action: "BATCH_SYNC", transactions: completeTxs, deviceToken: getDeviceToken() });
-             if (res.result !== "success") throw new Error(res.message || "批次寫入失敗");
-          } else {
-             const res = await postGAS({ ...completeTxs[0], deviceToken: getDeviceToken() });
-             if (res.result !== "success") throw new Error(res.message || "寫入失敗");
-          }
-          
-          await new Promise(r => setTimeout(r, 800));
-          await fetchCloudTx(); 
-          showStatus("success", isMulti ? `已同步 ${completeTxs.length} 筆紀錄` : "已同步");
-        } catch (e) {
-          const msg = e.message || "寫入失敗"; 
-          setSyncQueue(prev => [...prev, ...completeTxs]);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) { 
-             showStatus("error", "憑證已過期，紀錄已暫存"); forceReloginForToken();
-          } else { 
-             showStatus("error", msg + "，已暫存"); 
-          }
-        } finally { 
-          setLoadingCard({ show:false, text:"" }); 
-          setActiveTab("dashboard"); 
-        }
+        completeTxs.forEach(tx => enqueueAction({ ...tx, action: "ADD" }));
+        setActiveTab("dashboard");
+        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const handleUpdateTx = async (updatedTx) => {
@@ -1017,7 +1034,6 @@
             finalDateStr = finalDateStr.replace("T"," ").replace(/-/g,"/");
             if (finalDateStr.length > 16) finalDateStr = finalDateStr.slice(0, 16);
         }
-        
         const finalUpdatedTx = { ...updatedTx, date: finalDateStr };
 
         const newList = transactions.map(t => t.id === finalUpdatedTx.id ? { ...t, ...finalUpdatedTx } : t);
@@ -1026,33 +1042,9 @@
         saveToIndexedDB(newList);
         localStorage.setItem(LS.txCache, JSON.stringify(newList));
 
-        if (editingIsPending) {
-          setSyncQueue(prev => prev.map(p => p.id === finalUpdatedTx.id ? { ...p, ...finalUpdatedTx } : p));
-          setEditingTx(null); setEditingIsPending(false); showStatus("success","暫存已更新"); return;
-        }
-        if (!isOnline || !deviceValid()) { 
-           showStatus("error","已離線，更新將暫存於手機"); 
-           setSyncQueue(prev => [...prev, { ...finalUpdatedTx, action: "UPDATE_TX" }]); 
-           setEditingTx(null); setEditingIsPending(false); 
-           if (isOnline && !deviceValid()) forceReloginForToken(); 
-           return; 
-        }
-        try {
-          setLoadingCard({ show:true, text:"正在更新..." }); await refreshDeviceToken();
-          const res = await postGAS({ ...finalUpdatedTx, action:"UPDATE_TX", deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "更新失敗");
-          
-          await new Promise(r => setTimeout(r, 800));
-          await fetchCloudTx();
-          showStatus("success","已更新");
-        } catch (e) {
-          const msg = e.message || "更新失敗"; showStatus("error", msg);
-          setSyncQueue(prev => [...prev, { ...finalUpdatedTx, action: "UPDATE_TX" }]); 
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { 
-          setLoadingCard({ show:false, text:"" }); 
-          setEditingTx(null); setEditingIsPending(false); 
-        }
+        enqueueAction({ ...finalUpdatedTx, action: "UPDATE_TX" });
+        setEditingTx(null);
+        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const handleUpdateGroupParent = async (groupData) => {
@@ -1068,64 +1060,30 @@
         saveToIndexedDB(newList);
         localStorage.setItem(LS.txCache, JSON.stringify(newList));
 
-        if (!isOnline || !deviceValid()) { 
-           showStatus("error","已離線，更新將暫存於手機"); 
-           setSyncQueue(prev => [...prev, { ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" }]); 
-           setEditingGroup(null); 
-           if (isOnline && !deviceValid()) forceReloginForToken(); 
-           return; 
-        }
-        try {
-          setLoadingCard({ show:true, text:"正在更新母項目..." }); await refreshDeviceToken();
-          const res = await postGAS({ action:"UPDATE_GROUP_PARENT", groupId: groupData.groupId, parentDesc: groupData.parentDesc, date: finalDateStr, deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "更新失敗");
-          
-          await new Promise(r => setTimeout(r, 800));
-          await fetchCloudTx();
-          showStatus("success","母項目已更新");
-        } catch (e) {
-          const msg = e.message || "更新失敗"; showStatus("error", msg);
-          setSyncQueue(prev => [...prev, { ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" }]);
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { 
-          setLoadingCard({ show:false, text:"" }); setEditingGroup(null); 
-        }
+        enqueueAction({ ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" });
+        setEditingGroup(null);
+        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
 
       const handleDeleteTx = async (id) => {
-        const newList = transactions.filter(t => t.id !== id);
-        setTransactions(newList);
-        setTxCache(newList);
-        saveToIndexedDB(newList);
-        localStorage.setItem(LS.txCache, JSON.stringify(newList));
-
-        if (editingIsPending) {
-          setSyncQueue(prev => prev.filter(p => p.id !== id)); 
-          setEditingTx(null); setEditingIsPending(false); showStatus("success","暫存已刪除"); return;
+        const isOfflineAdd = syncQueue.find(p => p.id === id && p.action === 'ADD');
+        if (isOfflineAdd) {
+            const newList = transactions.filter(t => t.id !== id);
+            setTransactions(newList); setTxCache(newList); saveToIndexedDB(newList); localStorage.setItem(LS.txCache, JSON.stringify(newList));
         }
-        if (!isOnline || !deviceValid()) { 
-           showStatus("error","已離線，刪除將暫存於手機"); 
-           setSyncQueue(prev => [...prev, { id, action: "DELETE_TX" }]); 
-           setEditingTx(null); setEditingIsPending(false); 
-           if (isOnline && !deviceValid()) forceReloginForToken(); 
-           return; 
-        }
-        try {
-          setLoadingCard({ show:true, text:"正在刪除..." }); await refreshDeviceToken();
-          const res = await postGAS({ action:"DELETE_TX", id, deviceToken: getDeviceToken() });
-          if (res.result !== "success") throw new Error(res.message || "刪除失敗");
-          
-          await new Promise(r => setTimeout(r, 800));
-          await fetchCloudTx();
-          showStatus("success","已刪除");
-        } catch (e) {
-          const msg = e.message || "刪除失敗"; showStatus("error", msg);
-          setSyncQueue(prev => [...prev, { id, action: "DELETE_TX" }]); 
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證")) forceReloginForToken();
-        } finally { 
-          setLoadingCard({ show:false, text:"" }); setEditingTx(null); setEditingIsPending(false); 
-        }
+        enqueueAction({ id, action: "DELETE_TX" });
+        setEditingTx(null);
+        if (isOnline && deviceValid()) processQueueToCloud({ doRefreshFirst: false });
       };
+
+      const pendingMap = useMemo(() => {
+        const map = {};
+        syncQueue.forEach(item => {
+            if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
+            if (item.groupId && item.action === "UPDATE_GROUP_PARENT") map[item.groupId] = item.action;
+        });
+        return map;
+      }, [syncQueue]);
 
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
@@ -1138,10 +1096,10 @@
       }, [visibleTransactions, currentUser]);
 
       const stats = useMemo(() => {
-        const income = myTransactions.filter(t => t.type === "income").reduce((s,t)=>s+(Number(t.amount)||0),0);
-        const expense = myTransactions.filter(t => t.type === "expense").reduce((s,t)=>s+(Number(t.amount)||0),0);
+        const income = myTransactions.filter(t => t.type === "income" && pendingMap[t.id] !== 'DELETE_TX').reduce((s,t)=>s+(Number(t.amount)||0),0);
+        const expense = myTransactions.filter(t => t.type === "expense" && pendingMap[t.id] !== 'DELETE_TX').reduce((s,t)=>s+(Number(t.amount)||0),0);
         return { income, expense, balance: income - expense };
-      }, [myTransactions]);
+      }, [myTransactions, pendingMap]);
 
       const groupTransactions = (list) => {
         const grouped = []; const groupMap = {};
@@ -1158,7 +1116,7 @@
               grouped.push(groupMap[tx.groupId]);
             }
             groupMap[tx.groupId].children.push(tx);
-            groupMap[tx.groupId].amount += Number(tx.amount || 0);
+            if(pendingMap[tx.id] !== 'DELETE_TX') groupMap[tx.groupId].amount += Number(tx.amount || 0);
           } else {
             grouped.push({ ...tx, isGroup: false });
           }
@@ -1226,12 +1184,12 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // 【UI 優化】將獨立卡片的編輯按鈕融入右下角
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benTag = formatBen(tx.beneficiary, tx.member);
         const showBenTag = benTag && benTag !== "";
+        const pAction = pendingMap[tx.id];
         return (
-          <div key={tx.id} className="mb-3">
+          <div key={tx.id} className={`mb-3 transition-opacity ${pAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
             <div className="w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
               <div className="relative shrink-0">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
@@ -1246,6 +1204,9 @@
               <div className="flex-1 min-w-0 pl-1">
                 <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                   <span className="truncate max-w-full">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
+                  {pAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[9px] px-1.5 py-0.5 rounded-md border border-green-200 font-black tracking-widest">待新增</span>}
+                  {pAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black tracking-widest">待修改</span>}
+                  {pAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded-md border border-red-200 font-black tracking-widest">待刪除</span>}
                   {showBenTag && <span className="shrink-0 bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{benTag}</span>}
                 </div>
                 <div className="flex flex-col gap-1 mt-1.5 w-full">
@@ -1273,12 +1234,12 @@
         );
       };
 
-      // 【UI 優化】將母項目卡片的編輯按鈕融入右下角
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
         group.children.forEach(c => { if(c.beneficiary) c.beneficiary.split(",").filter(Boolean).forEach(b => allBens.add(b)); });
         const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
+        const gAction = pendingMap[group.groupId];
 
         return (
           <div key={group.groupId} className="mb-3">
@@ -1300,6 +1261,7 @@
                 <div className="flex-1 min-w-0 pl-1">
                   <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                     <span className="truncate max-w-full">{group.parentTitle}</span>
+                    {gAction === 'UPDATE_GROUP_PARENT' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black tracking-widest">待修改</span>}
                     {parentBenTag && <span className="shrink-0 bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{parentBenTag}</span>}
                     <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 ${isExp ? 'rotate-180' : ''}`}>▼</span>
                   </div>
@@ -1329,14 +1291,18 @@
                 <div className="bg-gray-50/80 p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
                   {group.children.map((child, idx) => {
                     const childBen = formatBen(child.beneficiary, group.member);
+                    const cAction = pendingMap[child.id];
                     return (
-                      <div key={child.id} className="w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden">
+                      <div key={child.id} className={`w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden transition-opacity ${cAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
                         <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">
                           {idx + 1}
                         </div>
                         <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
                           <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
                             <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
+                            {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待新增</span>}
+                            {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待修改</span>}
+                            {cAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待刪除</span>}
                             {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                           </div>
                           {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
@@ -1371,7 +1337,6 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
-      // 【修復】拔除延遲，確保 Safari 離線指紋可正常運作
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1380,18 +1345,12 @@
         if (biometricAvailable && isDeviceBioBound(user.name)) {
           const ok = await handleBioLoginLocal(user.name);
           if (ok) {
-            if (isOnline) {
-               setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
-               const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
-               if (!syncOk) {
-                   setLoadingCard({ show: false, text: "" });
-                   return; 
-               }
-            }
-            setLoadingCard({ show: false, text: "" });
             setCurrentUser(user); 
             setSelectingUser(null); 
             setPinInput("");
+            if (isOnline) {
+               processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
+            }
           } else {
             setFallbackToPin(true);
           }
@@ -1447,18 +1406,10 @@
                       <button onClick={async () => {
                           const ok = await handleBioLoginLocal(selectingUser.name);
                           if (ok) {
-                            if (isOnline) {
-                               setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
-                               const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
-                               if (!syncOk) {
-                                   setLoadingCard({ show: false, text: "" });
-                                   return; 
-                               }
-                            }
-                            setLoadingCard({ show: false, text: "" });
                             setCurrentUser(selectingUser); 
                             setSelectingUser(null); 
                             setPinInput("");
+                            if (isOnline) processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
                           } else {
                             setFallbackToPin(true);
                           }
@@ -1488,22 +1439,19 @@
                                     await verifyPinOnline(selectingUser.name, n);
                                     await saveLocalPinHash(selectingUser.name, n);
                                     
-                                    setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
-                                    const syncOk = await processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
-                                    if (!syncOk) {
-                                        setLoadingCard({ show: false, text: "" });
-                                        setPinInput("");
-                                        return; 
-                                    }
-                                    setLoadingCard({ show: false, text: "" });
+                                    setCurrentUser(selectingUser); 
+                                    setSelectingUser(null); 
+                                    setPinInput(""); 
+                                    setFallbackToPin(false);
+                                    processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
                                   } else {
                                     const ok = await unlockWithPinLocal(selectingUser.name, n);
                                     if (!ok) { showStatus("error", "PIN 錯誤，或您尚未在有網路時登入過，請先連接網路進行初次驗證"); setPinInput(""); return; }
+                                    setCurrentUser(selectingUser); 
+                                    setSelectingUser(null); 
+                                    setPinInput(""); 
+                                    setFallbackToPin(false);
                                   }
-                                  setCurrentUser(selectingUser); 
-                                  setSelectingUser(null); 
-                                  setPinInput(""); 
-                                  setFallbackToPin(false);
                                 } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "PIN 錯誤"); setPinInput(""); }
                               }
                             }} className="bg-white/5 h-16 rounded-2xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white shadow-sm hover:bg-white/10">
@@ -1587,6 +1535,43 @@
           {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
           
+          {/* 【專屬待同步清單視窗】 */}
+          {showPendingModal && (
+            <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in text-left">
+              <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[80vh]">
+                  <button onClick={() => setShowPendingModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
+                  <h3 className="font-black text-xl mb-6 text-gray-800 flex items-center gap-2">
+                      <SvgIcon name="cloudSync" size={24} className="text-blue-500" />
+                      待同步清單 ({syncQueue.length})
+                  </h3>
+                  <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2 scrollbar-hide">
+                      {syncQueue.map((item, idx) => (
+                          <div key={idx} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex items-center justify-between">
+                              <div className="flex-1 min-w-0 pr-2">
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                      {item.action === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">待新增</span>}
+                                      {item.action === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">待修改</span>}
+                                      {item.action === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">待刪除</span>}
+                                      {item.action === 'UPDATE_GROUP_PARENT' && <span className="shrink-0 bg-purple-100 text-purple-600 text-[9px] px-1.5 py-0.5 rounded-md font-black tracking-widest">改母項目</span>}
+                                      <span className="text-xs font-bold text-gray-700 truncate block">{item.category || item.parentTitle || item.id}</span>
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 truncate w-full">{item.desc || item.parentDesc || ""}</div>
+                              </div>
+                              <div className="font-black text-sm text-gray-800 shrink-0">${item.amount || 0}</div>
+                          </div>
+                      ))}
+                  </div>
+                  <button onClick={() => {
+                      setShowPendingModal(false);
+                      processQueueToCloud({ doRefreshFirst: true });
+                  }} disabled={isSyncing} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2 disabled:opacity-50">
+                      {isSyncing ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : <SvgIcon name="cloudSync" size={20} />}
+                      {isSyncing ? "同步中..." : "立即同步至雲端"}
+                  </button>
+              </div>
+            </div>
+          )}
+
           {showUnbindModal && (
             <div className="fixed inset-0 z-[350] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) {setShowUnbindModal(false); setUnbindPin("");} }}>
               <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
@@ -1661,8 +1646,8 @@
                 <p className="text-[7px] text-gray-300 uppercase font-black tracking-tighter mb-0.5">Last Sync</p>
                 <p className="text-[11px] text-blue-500 font-mono font-black">{lastSyncText}</p>
               </div>
-              <button onClick={() => processQueueToCloud({ doRefreshFirst: true })} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
-                <SvgIcon name="cloudSync" size={20}/>
+              <button onClick={handleSyncClick} className="relative p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-90 transition-all flex items-center justify-center border border-blue-100">
+                <SvgIcon name="cloudSync" size={20} className={isSyncing ? "animate-spin" : ""} />
                 {syncQueue.length > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full border-2 border-white leading-none shadow-sm min-w-[20px] text-center">{syncQueue.length}</span>}
               </button>
             </div>
@@ -1958,7 +1943,7 @@
                     <div className="flex gap-2">
                       <input type="text" className="flex-1 bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm"
                         placeholder="例如：{name}，你好！" value={customSubtitle} onChange={(e) => setCustomSubtitle(e.target.value)} />
-                      <button onClick={handleSaveGreeting} disabled={isLoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black shadow-sm active:scale-95 disabled:opacity-50">儲存</button>
+                      <button onClick={handleSaveGreeting} disabled={isSyncing} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black shadow-sm active:scale-95 disabled:opacity-50">儲存</button>
                     </div>
                   </div>
                 </div>
@@ -2011,9 +1996,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>修復 iOS/Safari 離線時因延遲封鎖指紋辨識的問題，拔除 setTimeout 實現無縫驗證 (V19.ROCK_SOLID)</li>
-                          <li>加入雙重網路偵測 (visibilitychange & focus)，確保背景切回前景時能秒切上線狀態 (V19.ROCK_SOLID)</li>
                           <li>優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版 (V18.UIUX_REFINE)</li>
+                          <li>優化登入體驗，點擊頭像即可直接喚起指紋驗證，無須二次點擊 (V17.UIUX)</li>
+                          <li>實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備的新資料 (V16.PERFECTMERGE)</li>
+                          <li>拔除舊有的 (已編輯) 標記邏輯，恢復純淨時間格式，解決解析錯亂 (V16.PERFECTMERGE)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
