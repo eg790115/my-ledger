@@ -3,10 +3,11 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.01.PRO.V32.BALANCED_SYNC
+  最新版本: 2026.03.01.PRO.V33.ULTIMATE_SYNC
   ==========================================
   【完整更新歷程】
-  - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器，並將刪除的提示 Toast 延遲到雲端確認卡片消失後才彈出，解決認知失調。新增登入後自動背景同步機制，並補回遺失的分析圖表模組。修正陣列為 undefined 導致的 forEach 崩潰錯誤。
+  - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗。
+  - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器。新增登入後自動背景同步機制，並補回遺失的分析圖表模組。修正陣列為 undefined 導致的 forEach 崩潰錯誤。
   - [2026.03.01] V31.REALTIME_SYNC_FIX: 實作記憶體直通引擎 (Direct Override Queue)。
   ==========================================
 -->
@@ -80,7 +81,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V32.BALANCED_SYNC";
+    const APP_VERSION = "2026.03.01.PRO.V33.ULTIMATE_SYNC";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -710,8 +711,10 @@
       
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
       
-      // ★ 直接對齊 localStorage 的原生 Queue
+      // ★ 真正的本地待處理佇列
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
+      // ★ 新增：用於 UI 視覺扣留的「處理中佇列」
+      const [processingQueue, setProcessingQueue] = useState([]);
 
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
@@ -724,7 +727,7 @@
       const [historyDateFilter, setHistoryDateFilter] = useState("all");
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
 
-      // ★ 圖表分析所需狀態
+      // 圖表分析所需狀態
       const [analysisDateFilter, setAnalysisDateFilter] = useState("1m");
       const [analysisCustomStart, setAnalysisCustomStart] = useState("");
       const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
@@ -814,13 +817,11 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // ★ 登入後自動背景同步機制
       useEffect(() => {
         if (isOnline && currentUser && !isSyncing) {
           if (syncQueue && syncQueue.length > 0) {
              processQueueToCloud({ doRefreshFirst: true, isAutoRecover: true });
           } else {
-             // 若無待上傳資料，依然向雲端抓取一次最新資料
              processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
           }
         }
@@ -861,7 +862,6 @@
         return new Date(str).getTime() || 0;
       };
 
-      // 擷取雲端資料 (已拔除 sessionGhosts 邏輯)
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
@@ -928,7 +928,7 @@
       };
 
       // ==========================================
-      // 🚀 背景同步引擎 (混合平衡模式：防衝突鎖 + 刪除延遲提示)
+      // 🚀 背景同步引擎 (完美 UI 解耦版)
       // ==========================================
       const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
@@ -950,15 +950,18 @@
           if (doRefreshFirst || isManualSync) await refreshDeviceToken();
           
           let didWrite = false;
-          // 強制從 localStorage 讀取或使用傳入的最新 Queue 確保絕對同步
+          // 取得這次要上傳的真實資料
           const currentQueue = overrideQueue || safeParse(localStorage.getItem(LS.pending), []); 
           const hasDelete = (currentQueue || []).some(op => op.action === "DELETE_TX" || op.action === "DELETE_PARENT");
+
+          // ★ 1. 將上傳中的資料丟進 processingQueue，用來「鎖住」畫面上的待處理/灰階標籤
+          setProcessingQueue(currentQueue);
 
           if (currentQueue && currentQueue.length > 0) {
             const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             
-            // 精準移除已上傳的佇列
+            // ★ 2. 雲端寫入成功後，立刻從真實的 syncQueue 拔除，確保不會因為網路中斷而重複上傳
             setSyncQueue(prev => {
                 const nextQ = (prev || []).filter(p => !(currentQueue || []).some(c => 
                     (c.id === p.id && c.action === p.action) || 
@@ -970,7 +973,10 @@
             didWrite = true;
           }
 
+          // 此時畫面依然有 processingQueue 撐場，所以 UI 不會閃爍或突然恢復正常
           if (didWrite) await new Promise(r => setTimeout(r, 800)); 
+          
+          // 抓取最新資料
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
           if (isManualSync) {
@@ -986,12 +992,11 @@
           } else if (isAutoRecover && didWrite) {
               showStatus("success", `✅ 網路已恢復，已將暫存資料同步至雲端`);
           } else if (isLoginSync) {
-              // 登入後若發現雲端有新資料，輕微提示
               if (oldStr !== newStr) {
                   showStatus("success", `✅ 已自動同步雲端最新資料`);
               }
           } else if (didWrite && hasDelete && !isManualSync && !isAutoRecover) {
-              // ★ 平衡模式精髓：在背景同步完成、卡片確實消失後，才精準彈出刪除提示
+              // 在抓取資料完成後，才精準彈出刪除提示
               showStatus("success", "🗑️ 已刪除紀錄");
           }
 
@@ -1005,6 +1010,8 @@
           }
           return true; 
         } finally { 
+          // ★ 3. 雲朵停止轉動的瞬間，清空 processingQueue，正式解除 UI 視覺標籤
+          setProcessingQueue([]);
           setIsSyncing(false);
         }
       };
@@ -1084,20 +1091,26 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // ★ 樂觀 UI 渲染：直接用 syncQueue 覆蓋 txCache，維持畫面最新且無閃爍
+      // ★ 樂觀 UI 渲染引擎：包含處理中的佇列與尚未上傳的佇列
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         
         let base = [...(txCache || [])]; 
+        
+        // 結合 syncQueue (尚未上傳) 與 processingQueue (正在上傳)，並利用 Map 去重
+        const queueMap = new Map();
+        (processingQueue || []).forEach(q => queueMap.set(q.action === "UPDATE_GROUP_PARENT" ? q.groupId : q.id, q));
+        (syncQueue || []).forEach(q => queueMap.set(q.action === "UPDATE_GROUP_PARENT" ? q.groupId : q.id, q));
+        const combinedQueue = Array.from(queueMap.values()).reverse();
 
         // 1. 覆蓋 UPDATEs
         base = base.map(t => {
             let mod = { ...t };
-            const pendingGUpdate = (syncQueue || []).find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
+            const pendingGUpdate = combinedQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
             if (pendingGUpdate) {
                 mod.date = pendingGUpdate.date; mod.parentDesc = pendingGUpdate.parentDesc;
             }
-            const pendingUpdate = (syncQueue || []).find(q => String(q.id) === String(t.id) && (q.action === 'UPDATE_TX' || q.action === 'DELETE_TX'));
+            const pendingUpdate = combinedQueue.find(q => String(q.id) === String(t.id) && (q.action === 'UPDATE_TX' || q.action === 'DELETE_TX'));
             if (pendingUpdate && pendingUpdate.action === 'UPDATE_TX') {
                 mod = { ...mod, ...pendingUpdate };
             }
@@ -1106,13 +1119,13 @@
 
         // 2. 加入 ADDs
         const baseIds = new Set(base.map(t => String(t.id)));
-        const pendingAdds = (syncQueue || []).filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
+        const pendingAdds = combinedQueue.filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
         base = [...pendingAdds, ...base];
         
         // 3. 排序
         base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
         return base;
-      }, [currentUser, txCache, syncQueue]);
+      }, [currentUser, txCache, syncQueue, processingQueue]);
 
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
@@ -1199,35 +1212,33 @@
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
-        
-        // ★ 核心體驗：此時不彈出 Toast 說謊，讓畫面平滑反灰，等待雲端處理完成。
 
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
         }
       };
 
+      // ★ 提供給 UI 標籤判斷用的 pendingMap 
       const pendingMap = useMemo(() => {
         const map = {};
-        // 嚴格防止 syncQueue 為 undefined
-        (syncQueue || []).forEach(item => {
+        // 結合 syncQueue 與 processingQueue，確保資料真正刷新前 UI 標籤不會消失
+        const combinedQueue = [...(syncQueue || []), ...(processingQueue || [])];
+        combinedQueue.forEach(item => {
             if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
             if (item.groupId && item.action === "UPDATE_GROUP_PARENT") map[item.groupId] = item.action;
         });
         return map;
-      }, [syncQueue]);
+      }, [syncQueue, processingQueue]);
 
       const myTransactions = useMemo(() => {
         if (!currentUser) return [];
         return (visibleTransactions || []).filter(t => t.member === currentUser.name);
       }, [visibleTransactions, currentUser]);
 
-      // ★ 圖表運算邏輯
       const analyzeData = useMemo(() => {
         let totalExpense = 0; let totalIncome = 0;
         const catMap = {};
         
-        // 嚴格防止 myTransactions 為 undefined
         (myTransactions || []).forEach(tx => {
           const pendingOp = pendingMap[tx.id] || pendingMap[tx.groupId];
           if (pendingOp === "DELETE_TX" || pendingOp === "DELETE_PARENT") return;
@@ -2138,6 +2149,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>實作「資料層與 UI 層分離」，新增 processingQueue。上傳成功時立刻清空資料確保不重複，但 UI 標籤會繼續保留直到雲朵停止轉動、資料更新完畢後才一起消失並彈出提示，達成極致滑順的體驗 (V33.ULTIMATE_SYNC)</li>
                           <li>修復陣列在特定情況下變成 undefined 導致的 forEach 崩潰錯誤 (V32.BALANCED_SYNC)</li>
                           <li>絕對不修改 UI 介面，僅針對底層同步邏輯進行優化 (V32.BALANCED_SYNC)</li>
                           <li>徹底拔除複雜的 sessionGhosts 過濾器，防衝突與刪除提示延遲至雲端確認 (V32.BALANCED_SYNC)</li>
