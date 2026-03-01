@@ -65,7 +65,7 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V20.BACKGROUND_SYNC";
+    const APP_VERSION = "2026.03.01.PRO.V21.LOGIN_FIX";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V12.LOG";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -671,7 +671,9 @@
       const [showPendingModal, setShowPendingModal] = useState(false);
       const [isSyncing, setIsSyncing] = useState(false);
       const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
-      const isLoading = loadingCard.show || isSyncing;
+      
+      // 【修復】解除背景同步對 UI 的阻塞，確保操作流暢
+      const isLoading = loadingCard.show;
 
       const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
       
@@ -779,11 +781,12 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
+      // 【優化】監聽佇列長度，有新資料時確保背景接續同步
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true });
         }
-      }, [isOnline, currentUser]);
+      }, [isOnline, currentUser, syncQueue.length, isSyncing]);
 
       const displayDateClean = (val) => {
         if (!val) return "";
@@ -868,10 +871,14 @@
 
       // 背景同步處理核心
       const processQueueToCloud = async ({ doRefreshFirst, isLoginSync = false }) => {
-        if (!isOnline) return true;
+        if (!isOnline) {
+          if (isLoginSync) setLoadingCard({ show: false, text: "" });
+          return true;
+        }
         if (!deviceValid()) { 
            showStatus("error", "雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
+           if (isLoginSync) setLoadingCard({ show: false, text: "" });
            return false; 
         }
         if (isSyncing) return true;
@@ -879,6 +886,8 @@
         try {
           setIsSyncing(true);
           if (doRefreshFirst) await refreshDeviceToken();
+          
+          if (isLoginSync) setLoadingCard({ show: true, text: "登入成功，正在下載最新帳本..." });
           
           let didWrite = false;
           const currentQueue = [...syncQueue]; 
@@ -921,6 +930,8 @@
           return true; 
         } finally { 
           setIsSyncing(false);
+          // 【修復】確保登入流程結束後解除載入畫面
+          if (isLoginSync) setLoadingCard({ show: false, text: "" });
         }
       };
 
@@ -935,12 +946,12 @@
       const handleSaveGreeting = async () => {
          if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
          try {
-            setIsSyncing(true); await refreshDeviceToken();
+            setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken();
             const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message);
             setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle}));
             showStatus("success", "問候語已更新");
-         } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setIsSyncing(false); }
+         } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const saveLocalPinHash = async (name, pin) => { const h = await sha256Base64(`${name}::${pin}::local`); localStorage.setItem(LS.pinHashPrefix + name, h); };
@@ -967,12 +978,12 @@
       const bindDeviceBio = async () => {
         if (!window.PublicKeyCredential) { showStatus("error","不支援生物辨識"); return; }
         try {
-          setIsSyncing(true);
+          setLoadingCard({ show:true, text:"正在綁定設備..." });
           const challenge = new Uint8Array(32); crypto.getRandomValues(challenge); const userID = new Uint8Array(16); crypto.getRandomValues(userID);
           const cred = await navigator.credentials.create({ publicKey: { challenge, rp: { name:"家庭記帳" }, user: { id:userID, name: currentUser.name, displayName: currentUser.name }, pubKeyCredParams: [{ type:"public-key", alg:-7 }, { type:"public-key", alg:-257 }], authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required" }, timeout: 60000 } });
           localStorage.setItem(getBioKey(currentUser.name), btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(cred.rawId)))));
           clearBioFail(currentUser.name); showStatus("success","設備已綁定");
-        } catch { showStatus("error","綁定失敗或已取消"); } finally { setIsSyncing(false); }
+        } catch { showStatus("error","綁定失敗或已取消"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const unbindDeviceBio = async () => {
@@ -980,9 +991,9 @@
         if (!isOnline) { showStatus("error","需連線驗證 PIN 才能解除"); return; }
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
         try {
-          setIsSyncing(true); await verifyPinOnline(currentUser.name, unbindPin);
+          setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(currentUser.name, unbindPin);
           localStorage.removeItem(getBioKey(currentUser.name)); clearBioFail(currentUser.name); setShowUnbindModal(false); setUnbindPin(""); showStatus("success","已解除綁定");
-        } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setIsSyncing(false); }
+        } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const changePin = async () => {
@@ -991,12 +1002,12 @@
         if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { showStatus("error","請輸入 6 位 PIN"); return; }
         if (newPin !== newPin2) { showStatus("error","兩次輸入不一致"); return; }
         try {
-          setIsSyncing(true);
+          setLoadingCard({ show:true, text:"正在更新密碼..." });
           const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name); setShowChangePinModal(false);
           showStatus("success","密碼更新成功，請重新登入"); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard");
-        } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setIsSyncing(false); }
+        } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const handleAdd = async (newTxs) => {
@@ -1184,6 +1195,7 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
+      // 【UI 優化】將獨立卡片的編輯按鈕融入右下角
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benTag = formatBen(tx.beneficiary, tx.member);
         const showBenTag = benTag && benTag !== "";
@@ -1234,6 +1246,7 @@
         );
       };
 
+      // 【UI 優化】將母項目卡片的編輯按鈕融入右下角
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
@@ -1337,6 +1350,7 @@
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
       }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
 
+      // 【修復】拔除延遲，確保 Safari 離線指紋可正常運作
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1438,6 +1452,7 @@
                                     setLoadingCard({ show:true, text:"正在驗證..." }); 
                                     await verifyPinOnline(selectingUser.name, n);
                                     await saveLocalPinHash(selectingUser.name, n);
+                                    setLoadingCard({ show:false, text:"" }); // 【修復】驗證完成後確保解除載入狀態
                                     
                                     setCurrentUser(selectingUser); 
                                     setSelectingUser(null); 
@@ -1478,7 +1493,7 @@
                         setLoadingCard({ show:true, text:"正在綁定雲端..." }); await bootstrapDevice();
                         setShowBootstrapModal(false); setBootstrapSecret(""); showStatus("success","雲端已綁定");
                       } catch (e) { showStatus("error", e.message || "雲端密碼錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
-                    }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40" disabled={isLoading}>
+                    }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">
                     確認
                   </button>
                 </div>
@@ -1532,8 +1547,8 @@
 
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
-          {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} isLoading={isLoading} />}
-          {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} isLoading={isLoading} />}
+          {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} />}
+          {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} />}
           
           {/* 【專屬待同步清單視窗】 */}
           {showPendingModal && (
@@ -1863,7 +1878,7 @@
                                   <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
                                     {analysisType === "beneficiary" ? `👦 ${cat}` : cat}
                                   </span>
-                                </div>
+                                 </div>
                                 <div className="flex items-center gap-3">
                                   <span className="text-xs text-gray-400 font-bold w-10 text-right">{((amt/grandTotal)*100).toFixed(1)}%</span>
                                   <span className={`font-black w-16 text-right ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>${Math.round(amt).toLocaleString()}</span>
@@ -1930,7 +1945,7 @@
               </div>
             )}
 
-            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} isLoading={isLoading} />}
+            {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
 
             {activeTab === "settings" && (
               <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
@@ -1996,10 +2011,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>優化歷史清單編輯圖示，絕對定位於卡片右下角並縮小，恢復代記標籤的原本獨立排版 (V18.UIUX_REFINE)</li>
-                          <li>優化登入體驗，點擊頭像即可直接喚起指紋驗證，無須二次點擊 (V17.UIUX)</li>
-                          <li>實作樂觀 UI 更新並完美銜接雲端拉取，自動合併其他設備的新資料 (V16.PERFECTMERGE)</li>
-                          <li>拔除舊有的 (已編輯) 標記邏輯，恢復純淨時間格式，解決解析錯亂 (V16.PERFECTMERGE)</li>
+                          <li>修復登入時 PIN 碼驗證遺漏解除載入畫面的問題，防止登入畫面卡死 (V21.LOGIN_FIX)</li>
+                          <li>解除背景同步對操作介面的阻塞，確保樂觀 UI 狀態下使用者可流暢進行連續新增與編輯 (V21.LOGIN_FIX)</li>
+                          <li>加入同步完成後防呆清空載入狀態之雙重保險 (V21.LOGIN_FIX)</li>
+                          <li>登入 0 延遲，以本機緩存優先顯示，並在背景自動完成同步 (V20.BACKGROUND_SYNC)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
