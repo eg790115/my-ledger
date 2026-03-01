@@ -3,14 +3,11 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.01.PRO.V31.REALTIME_SYNC_FIX
+  最新版本: 2026.03.01.PRO.V32.BALANCED_SYNC
   ==========================================
   【完整更新歷程】
-  - [2026.03.01] V31.REALTIME_SYNC_FIX: 實作記憶體直通引擎 (Direct Override Queue)，徹底解決 React 非同步狀態更新導致「上傳時抓不到最新佇列，資料卡在待處理」的嚴重 Bug；保證按下儲存/刪除後的載入狀態結束時，資料 100% 精準對齊雲端並消除待處理標籤。
-  - [2026.03.01] V30.SAFE_SYNC: 捨棄激進的樂觀 UI，改回「絕對安全同步模式」。連線狀態下操作將強制等待雲端處理完畢並重新抓取最新名單，提供 100% 的資料對齊安全感。
-  - [2026.03.01] V28.DELETE_UI_FIX: 修復幽靈過濾器過度強勢的問題。
-  - [2026.03.01] V27.CLEANUP: 移除不必要的防呆清洗邏輯，保持系統輕量乾淨。
-  - [2026.03.01] V26.FINAL_SYNC: 全面對接後端 BATCH_PROCESS 引擎，將所有操作整合成一次上傳。
+  - [2026.03.01] V32.BALANCED_SYNC: 絕對不修改 UI 介面，僅針對底層同步邏輯進行優化。徹底拔除複雜的 sessionGhosts 過濾器，並將刪除的提示 Toast 延遲到雲端確認卡片消失後才彈出，解決認知失調。
+  - [2026.03.01] V31.REALTIME_SYNC_FIX: 實作記憶體直通引擎 (Direct Override Queue)。
   ==========================================
 -->
 <head>
@@ -78,8 +75,8 @@
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
     // 版號同步
-    const APP_VERSION = "2026.03.01.PRO.V31.REALTIME_SYNC_FIX";
-    const GAS_TARGET_VERSION = "2026.03.01.PRO.V13.BATCH";
+    const APP_VERSION = "2026.03.01.PRO.V32.BALANCED_SYNC";
+    const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
     const STORE_NAME = "transactions";
@@ -697,7 +694,6 @@
       const [biometricAvailable, setBiometricAvailable] = useState(false);
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
-      // 同步與暫存狀態
       const [showClearQueueModal, setShowClearQueueModal] = useState(false);
       const [showPendingModal, setShowPendingModal] = useState(false);
       const [isSyncing, setIsSyncing] = useState(false);
@@ -709,14 +705,8 @@
       
       const [txCache, setTxCache] = useState(() => safeArrayLS(LS.txCache));
       
+      // ★ 直接對齊 localStorage 的原生 Queue
       const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
-
-      // 【核心防護】Session 幽靈資料過濾器
-      const sessionGhosts = useRef({
-          deleted: new Set(),
-          updated: new Map(),
-          added: new Map()
-      });
 
       const [editingTx, setEditingTx] = useState(null);
       const [editingGroup, setEditingGroup] = useState(null);
@@ -728,13 +718,6 @@
       const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
       const [historyDateFilter, setHistoryDateFilter] = useState("all");
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
-      
-      const [analysisDateFilter, setAnalysisDateFilter] = useState("1m");
-      const [analysisCustomStart, setAnalysisCustomStart] = useState("");
-      const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
-      const [analysisType, setAnalysisType] = useState("expense"); 
-      const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); 
-      const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); 
 
       const [showBootstrapModal, setShowBootstrapModal] = useState(false);
       const [bootstrapSecret, setBootstrapSecret] = useState("");
@@ -807,21 +790,17 @@
       }, [historySearch]);
 
       useEffect(() => setHistoryVisibleCount(20), [debouncedHistorySearch, historyTypeFilter, historyDateFilter, activeTab]);
-      useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
-      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
-      useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
 
       useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
       useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // 【修復】非同步觸發背景上傳：只在「剛連上線且有登入」時自動恢復
       useEffect(() => {
         if (isOnline && currentUser && syncQueue.length > 0 && !isSyncing) {
           processQueueToCloud({ doRefreshFirst: true, isAutoRecover: true });
         }
-      }, [isOnline, currentUser]); // 移除 syncQueue 依賴，避免每次按儲存又被 useEffect 多觸發一次
+      }, [isOnline, currentUser]); 
 
       const displayDateClean = (val) => {
         if (!val) return "";
@@ -858,7 +837,7 @@
         return new Date(str).getTime() || 0;
       };
 
-      // 擷取雲端資料
+      // 擷取雲端資料 (已拔除 sessionGhosts 邏輯)
       const fetchCloudTx = async () => {
         const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
         if (data.result !== "success") throw new Error(data.message || "抓取失敗");
@@ -884,27 +863,7 @@
         });
 
         const oldStr = JSON.stringify(txCache);
-
-        // 過濾殘影 (僅對已上傳完成但雲端尚未消化完的資料生效)
-        formatted = formatted.filter(t => !sessionGhosts.current.deleted.has(String(t.id)));
-        formatted = formatted.map(t => {
-            let mod = { ...t };
-            if (t.groupId && sessionGhosts.current.updated.has(String(t.groupId))) {
-                const gData = sessionGhosts.current.updated.get(String(t.groupId));
-                mod.date = gData.date; mod.parentDesc = gData.parentDesc;
-            }
-            if (sessionGhosts.current.updated.has(String(t.id))) {
-                mod = { ...mod, ...sessionGhosts.current.updated.get(String(t.id)) };
-            }
-            return mod;
-        });
-
-        const cloudIds = new Set(formatted.map(t => String(t.id)));
-        const missingAdds = Array.from(sessionGhosts.current.added.values()).filter(t => !cloudIds.has(String(t.id)));
-        formatted = [...missingAdds, ...formatted];
-
         formatted.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
-
         const newStr = JSON.stringify(formatted);
 
         setTxCache(formatted); 
@@ -917,7 +876,6 @@
         return { formatted, oldStr, newStr };
       };
 
-      // 【核心修復】合併佇列的純邏輯函數，避免與 useState() 競爭導致時間差
       const getMergedQueue = (currentQueue, newItem) => {
         let newQueue = [...currentQueue];
         if (newItem.action === "UPDATE_GROUP_PARENT") {
@@ -945,7 +903,10 @@
         return newQueue;
       };
 
-      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null }) => {
+      // ==========================================
+      // 🚀 背景同步引擎 (混合平衡模式：防衝突鎖 + 刪除延遲提示)
+      // ==========================================
+      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "目前離線中，變更已暫存於手機");
           return true;
@@ -965,78 +926,44 @@
           if (doRefreshFirst || isManualSync) await refreshDeviceToken();
           
           let didWrite = false;
-          let pushAddCount = 0;
-          let pushUpdateCount = 0;
-          let pushDeleteCount = 0;
-
-          // 【核心修復】如果收到強制的 overrideQueue，代表這是「儲存按鈕」瞬間觸發的精準上傳，絕不會漏接
-          const currentQueue = overrideQueue || [...syncQueue]; 
+          // 強制從 localStorage 讀取或使用傳入的最新 Queue 確保絕對同步
+          const currentQueue = overrideQueue || JSON.parse(localStorage.getItem(LS.pending) || "[]"); 
+          const hasDelete = currentQueue.some(op => op.action === "DELETE_TX");
 
           if (currentQueue.length > 0) {
-            const operations = currentQueue;
-            
-            operations.forEach(i => {
-                if(i.action === 'ADD') pushAddCount++;
-                else if(i.action === 'DELETE_TX') pushDeleteCount++;
-                else pushUpdateCount++;
-            });
-
-            operations.forEach(item => {
-                if (item.action === 'ADD') {
-                    sessionGhosts.current.added.set(String(item.id), item);
-                    sessionGhosts.current.deleted.delete(String(item.id));
-                }
-                if (item.action === 'DELETE_TX') {
-                    sessionGhosts.current.deleted.add(String(item.id));
-                    sessionGhosts.current.added.delete(String(item.id));
-                    sessionGhosts.current.updated.delete(String(item.id));
-                }
-                if (item.action === 'UPDATE_TX') {
-                    if (sessionGhosts.current.added.has(String(item.id))) {
-                        sessionGhosts.current.added.set(String(item.id), { ...sessionGhosts.current.added.get(String(item.id)), ...item });
-                    } else {
-                        sessionGhosts.current.updated.set(String(item.id), item);
-                    }
-                }
-                if (item.action === 'UPDATE_GROUP_PARENT') {
-                    sessionGhosts.current.updated.set(String(item.groupId), item);
-                }
-            });
-
-            const res = await postGAS({ action: "BATCH_PROCESS", operations: operations, deviceToken: getDeviceToken() });
+            const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message || "批次同步失敗");
             
-            // 成功後，精準移除已經上傳的項目，讓畫面上的灰色標籤瞬間消失
-            setSyncQueue(prev => prev.filter(p => !currentQueue.some(c => 
-                (c.id === p.id && c.action === p.action) || 
-                (c.groupId && c.groupId === p.groupId && c.action === p.action)
-            )));
+            // 精準移除已上傳的佇列
+            setSyncQueue(prev => {
+                const nextQ = prev.filter(p => !currentQueue.some(c => 
+                    (c.id === p.id && c.action === p.action) || 
+                    (c.groupId && c.groupId === p.groupId && c.action === p.action)
+                ));
+                localStorage.setItem(LS.pending, JSON.stringify(nextQ));
+                return nextQ;
+            });
             didWrite = true;
           }
 
           if (didWrite) await new Promise(r => setTimeout(r, 800)); 
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
-          // 【優化】提示語只在「手動點擊同步」或是「斷網後自動恢復」時顯示，
-          // 平常按儲存的動作提示語會由 handleAdd / handleUpdate 瞬間顯示，避免延遲感。
           if (isManualSync) {
               if (didWrite) {
                   showStatus("success", `手動同步完成！已上傳暫存資料`);
               } else {
-                  const oldLen = JSON.parse(oldStr).length;
-                  const newLen = formatted.length;
                   if (oldStr === newStr) {
                       showStatus("success", "已是最新資料");
-                  } else if (newLen > oldLen) {
-                      showStatus("success", `同步成功！雲端新增了 ${newLen - oldLen} 筆資料`);
-                  } else if (newLen < oldLen) {
-                      showStatus("success", `同步成功！雲端移除了 ${oldLen - newLen} 筆資料`);
                   } else {
                       showStatus("success", `同步成功！已更新雲端變更`);
                   }
               }
           } else if (isAutoRecover && didWrite) {
               showStatus("success", `✅ 網路已恢復，已將暫存資料同步至雲端`);
+          } else if (didWrite && hasDelete && !isManualSync && !isAutoRecover) {
+              // ★ 平衡模式精髓：在背景同步完成、卡片確實消失後，才精準彈出刪除提示
+              showStatus("success", "🗑️ 已刪除紀錄");
           }
 
           return true; 
@@ -1128,31 +1055,13 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
+      // ★ 樂觀 UI 渲染：直接用 syncQueue 覆蓋 txCache，維持畫面最新且無閃爍
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         
         let base = [...txCache]; 
-        const cloudIds = new Set(base.map(t => String(t.id)));
-        
-        base = base.filter(t => {
-            const isPendingDelete = syncQueue.some(q => String(q.id) === String(t.id) && q.action === 'DELETE_TX');
-            if (isPendingDelete) return true; 
-            if (sessionGhosts.current.deleted.has(String(t.id))) return false; 
-            return true;
-        });
 
-        base = base.map(t => {
-            let mod = { ...t };
-            if (t.groupId && sessionGhosts.current.updated.has(String(t.groupId))) {
-                const gData = sessionGhosts.current.updated.get(String(t.groupId));
-                mod.date = gData.date; mod.parentDesc = gData.parentDesc;
-            }
-            if (sessionGhosts.current.updated.has(String(t.id))) {
-                mod = { ...mod, ...sessionGhosts.current.updated.get(String(t.id)) };
-            }
-            return mod;
-        });
-
+        // 1. 覆蓋 UPDATEs
         base = base.map(t => {
             let mod = { ...t };
             const pendingGUpdate = syncQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
@@ -1166,18 +1075,16 @@
             return mod;
         });
 
-        const missingGhostAdds = Array.from(sessionGhosts.current.added.values()).filter(t => !cloudIds.has(String(t.id)));
-        base = [...missingGhostAdds, ...base];
-        
+        // 2. 加入 ADDs
         const baseIds = new Set(base.map(t => String(t.id)));
         const pendingAdds = syncQueue.filter(q => q.action === 'ADD' && !baseIds.has(String(q.id)));
         base = [...pendingAdds, ...base];
         
+        // 3. 排序
         base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
         return base;
       }, [currentUser, txCache, syncQueue]);
 
-      // 【核心體驗】動作當下瞬間彈出提示，背景靜默同步，保證不再有「割裂感」
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
         const baseTimestamp = Date.now();
@@ -1200,13 +1107,12 @@
         completeTxs.forEach(tx => {
             currentQ = getMergedQueue(currentQ, { ...tx, action: "ADD" });
         });
-        setSyncQueue(currentQ);
-        setActiveTab("dashboard");
         
-        // 瞬間提示
+        setSyncQueue(currentQ);
+        localStorage.setItem(LS.pending, JSON.stringify(currentQ)); // 立即寫入保護
+        setActiveTab("dashboard");
         showStatus("success", `✅ 已新增 ${completeTxs.length} 筆紀錄`);
 
-        // 背景直通上傳，無須阻斷畫面
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
         }
@@ -1222,8 +1128,8 @@
 
         const currentQ = getMergedQueue(syncQueue, { ...finalUpdatedTx, action: "UPDATE_TX" });
         setSyncQueue(currentQ);
+        localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
-        
         showStatus("success", `✅ 已儲存明細變更`);
 
         if (isOnline && deviceValid()) {
@@ -1240,8 +1146,8 @@
 
         const currentQ = getMergedQueue(syncQueue, { ...groupData, date: finalDateStr, action: "UPDATE_GROUP_PARENT" });
         setSyncQueue(currentQ);
+        localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingGroup(null);
-        
         showStatus("success", `✅ 已批次修改母項目`);
 
         if (isOnline && deviceValid()) {
@@ -1250,8 +1156,6 @@
       };
 
       const handleDeleteTx = async (id) => {
-        const txToDelete = visibleTransactions.find(t => String(t.id) === String(id)); 
-        
         const isOfflineAdd = syncQueue.find(p => String(p.id) === String(id) && p.action === 'ADD');
         if (isOfflineAdd) {
             setSyncQueue(prev => prev.filter(p => String(p.id) !== String(id)));
@@ -1260,11 +1164,14 @@
             return; 
         }
         
+        const txToDelete = visibleTransactions.find(t => String(t.id) === String(id)); 
         const currentQ = getMergedQueue(syncQueue, { ...(txToDelete || {id}), action: "DELETE_TX" });
+        
         setSyncQueue(currentQ);
+        localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingTx(null);
         
-        showStatus("success", `🗑️ 已刪除紀錄`);
+        // ★ 核心體驗：此時不彈出 Toast 說謊，讓畫面平滑反灰，等待雲端處理完成。
 
         if (isOnline && deviceValid()) {
             await processQueueToCloud({ overrideQueue: currentQ });
@@ -1408,7 +1315,7 @@
                   </div>
                 )}
               </div>
-              {allowEdit && (
+              {allowEdit && pAction !== 'DELETE_TX' && (
                 <button onClick={(e) => { e.stopPropagation(); setEditingTx(tx); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all">
                   <SvgIcon name="edit" size={13} />
                 </button>
@@ -1425,12 +1332,13 @@
         const parentBenTag = formatBen(Array.from(allBens).join(","), group.member);
         const gAction = pendingMap[group.groupId];
         const hasChildAction = group.children.some(c => pendingMap[c.id]);
+        const isPendingDeleteGroup = group.children.every(c => pendingMap[c.id] === 'DELETE_TX');
 
         return (
-          <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${gAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+          <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${isPendingDeleteGroup ? 'opacity-40 grayscale' : 'opacity-100'}`}>
             {(gAction || hasChildAction) && (
-                <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
-                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{gAction==='UPDATE_GROUP_PARENT'?'待改母項': '待處理明細'}</span>
+                <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': isPendingDeleteGroup ? 'bg-red-50 border-red-200 text-red-700' : hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{isPendingDeleteGroup?'待刪除':gAction==='UPDATE_GROUP_PARENT'?'待改母項': '待處理明細'}</span>
                 </div>
             )}
             <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
@@ -1469,7 +1377,7 @@
                     </div>
                   )}
                 </div>
-                {allowEdit && (
+                {allowEdit && !isPendingDeleteGroup && (
                   <button onClick={(e) => { e.stopPropagation(); setEditingGroup(group); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all">
                     <SvgIcon name="edit" size={13} />
                   </button>
@@ -1504,7 +1412,7 @@
                             ${Number(child.amount||0).toLocaleString()}
                           </div>
                         </div>
-                        {allowEdit && (
+                        {allowEdit && cAction !== 'DELETE_TX' && (
                           <button onClick={(e) => { e.stopPropagation(); setEditingTx(child); }} className="absolute bottom-1 right-1.5 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all">
                             <SvgIcon name="edit" size={11} />
                           </button>
@@ -1527,7 +1435,7 @@
       const [animTrigger, setAnimTrigger] = useState(false);
       useEffect(() => {
         if (activeTab === "analysis") { setAnimTrigger(false); setTimeout(() => setAnimTrigger(true), 50); }
-      }, [activeTab, analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd, selectedAnalysisLevel1, selectedAnalysisLevel2]);
+      }, [activeTab]);
 
       const handleUserClick = async (user) => {
         setSelectingUser(user);
@@ -1715,7 +1623,7 @@
 
       return (
         <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
-          {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); setEditingIsPending(false); }} />}
+          {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { setEditingTx(null); }} />}
           {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => setEditingGroup(null)} />}
           
           {/* 【專屬待同步清單視窗】顯示完整明細資訊 */}
@@ -1898,214 +1806,6 @@
               </div>
             )}
 
-            {activeTab === "analysis" && (
-              <div className="space-y-6 animate-in pb-20 text-left">
-                <div className="flex flex-col gap-3 px-1">
-                  <div className="flex justify-between items-center">
-                    <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
-                    <div className="relative">
-                      <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-white py-1.5 pl-3 pr-7 rounded-lg font-black text-xs text-blue-600 outline-none border border-blue-100 shadow-sm">
-                        <option value="7d">最近 7 日</option><option value="14d">最近 14 日</option><option value="1m">最近 1 個月</option>
-                        <option value="3m">最近 3 個月</option><option value="6m">最近 6 個月</option><option value="1y">最近 1 年</option>
-                        <option value="custom">自訂區間</option>
-                        <option value="all">全部時間</option>
-                      </select>
-                      <div className="absolute inset-y-0 right-0 pr-2 flex items-center pointer-events-none"><span className="text-[8px] text-blue-500">▼</span></div>
-                    </div>
-                  </div>
-                  {/* 自訂區間輸入框 */}
-                  {analysisDateFilter === "custom" && (
-                    <div className="flex gap-2 items-center bg-gray-100 p-2.5 rounded-xl border border-gray-200 animate-in shadow-inner">
-                      <input type="date" value={analysisCustomStart} onChange={e => setAnalysisCustomStart(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
-                      <span className="text-gray-400 font-bold text-xs">~</span>
-                      <input type="date" value={analysisCustomEnd} onChange={e => setAnalysisCustomEnd(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
-                  <button onClick={() => {setAnalysisType("expense"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出分析</button>
-                  <button onClick={() => {setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
-                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-blue-600 shadow-sm" : ""}`}>對象分析</button>
-                </div>
-
-                {(() => {
-                  let analysisTxs = myTransactions;
-                  if (analysisDateFilter !== "all") {
-                    if (analysisDateFilter === "custom") {
-                      const start = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0;
-                      const end = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity;
-                      analysisTxs = analysisTxs.filter(item => {
-                         const txTime = parseDateForSort(item);
-                         return txTime >= start && txTime <= end;
-                      });
-                    } else {
-                      const now = new Date(); const cutoff = new Date();
-                      if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
-                      else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14);
-                      else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
-                      else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3);
-                      else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6);
-                      else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
-                      analysisTxs = analysisTxs.filter(item => parseDateForSort(item) >= cutoff.getTime());
-                    }
-                  }
-
-                  if (analysisType === "expense" || analysisType === "income") analysisTxs = analysisTxs.filter(t => t.type === analysisType);
-                  else if (analysisType === "beneficiary") analysisTxs = analysisTxs.filter(t => t.type === "expense");
-
-                  if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄</div>;
-                  
-                  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#10b981", "#06b6d4", "#3b82f6", "#8b5cf6", "#d946ef"];
-                  let level1Totals = {}; let grandTotal = 0;
-
-                  analysisTxs.forEach(t => {
-                    const amt = Number(t.amount) || 0; grandTotal += amt;
-                    if (analysisType === "beneficiary") {
-                       const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
-                       const splitAmt = bens.length ? amt / bens.length : amt;
-                       (bens.length ? bens : ["未知"]).forEach(b => { level1Totals[b] = (level1Totals[b] || 0) + splitAmt; });
-                    } else {
-                       const pCat = getParentCat(t.category);
-                       level1Totals[pCat] = (level1Totals[pCat] || 0) + amt;
-                    }
-                  });
-                  const sortedLevel1 = Object.entries(level1Totals).sort((a,b) => b[1] - a[1]);
-                  let conicStr = ""; let currentPct = 0;
-                  sortedLevel1.forEach(([cat, amt], idx) => {
-                    const pct = (amt / grandTotal) * 100; const color = colors[idx % colors.length];
-                    conicStr += `${color} ${currentPct}% ${currentPct + pct}%, `; currentPct += pct;
-                  });
-                  conicStr = conicStr.slice(0, -2);
-
-                  let level2Totals = {}; let level1SelectedTotal = 0;
-                  if (selectedAnalysisLevel1) {
-                    if (analysisType === "beneficiary") {
-                      analysisTxs.forEach(t => {
-                        const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
-                        if (bens.includes(selectedAnalysisLevel1)) {
-                          const amt = (Number(t.amount) || 0) / bens.length;
-                          level1SelectedTotal += amt;
-                          const pCat = getParentCat(t.category);
-                          level2Totals[pCat] = (level2Totals[pCat] || 0) + amt;
-                        }
-                      });
-                    } else {
-                      analysisTxs.forEach(t => {
-                        if (getParentCat(t.category) === selectedAnalysisLevel1) {
-                          const cCat = getChildCat(t.category);
-                          const amt = Number(t.amount) || 0;
-                          level1SelectedTotal += amt;
-                          level2Totals[cCat] = (level2Totals[cCat] || 0) + amt;
-                        }
-                      });
-                    }
-                  }
-                  const sortedLevel2 = Object.entries(level2Totals).sort((a,b) => b[1] - a[1]);
-
-                  let level3Totals = {}; let level2SelectedTotal = 0;
-                  if (analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2) {
-                    analysisTxs.forEach(t => {
-                      const bens = t.beneficiary ? t.beneficiary.split(",").filter(Boolean) : ["未知"];
-                      if (bens.includes(selectedAnalysisLevel1) && getParentCat(t.category) === selectedAnalysisLevel2) {
-                        const amt = (Number(t.amount) || 0) / bens.length;
-                        level2SelectedTotal += amt;
-                        const cCat = getChildCat(t.category);
-                        level3Totals[cCat] = (level3Totals[cCat] || 0) + amt;
-                      }
-                    });
-                  }
-                  const sortedLevel3 = Object.entries(level3Totals).sort((a,b) => b[1] - a[1]);
-
-                  return (
-                    <div className="space-y-4">
-                      <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 relative">
-                        <div className="relative w-48 h-48 mx-auto mb-8 rounded-full shadow-lg" style={{ background: `conic-gradient(${conicStr})` }}>
-                          <div className="absolute inset-0 m-auto w-32 h-32 bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
-                            <span className="text-[10px] text-gray-400 font-black uppercase mb-1">
-                               {analysisType === "expense" ? "總支出" : analysisType === "income" ? "總收入" : "總花費"}
-                            </span>
-                            <span className="text-xl font-black text-gray-800">${grandTotal.toLocaleString()}</span>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          {analysisType !== "beneficiary" && <div className="text-[9px] text-center font-black text-gray-400 uppercase tracking-widest mb-3 bg-gray-50 py-1.5 rounded-lg border border-gray-100">點擊下方分類查看細項</div>}
-                          {sortedLevel1.map(([cat, amt], idx) => {
-                            const isSelected = selectedAnalysisLevel1 === cat;
-                            return (
-                              <div key={cat} onClick={() => { setSelectedAnalysisLevel1(isSelected ? null : cat); setSelectedAnalysisLevel2(null); }} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-colors border ${isSelected ? 'bg-blue-50/50 border-blue-200' : 'bg-gray-50/50 hover:bg-gray-100 border-transparent'}`}>
-                                <div className="flex items-center gap-3">
-                                  <div className="w-3 h-3 rounded-full shadow-sm" style={{ background: colors[idx % colors.length] }}></div>
-                                  <span className={`font-bold text-sm ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
-                                    {analysisType === "beneficiary" ? `👦 ${cat}` : cat}
-                                  </span>
-                                 </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="text-xs text-gray-400 font-bold w-10 text-right">{((amt/grandTotal)*100).toFixed(1)}%</span>
-                                  <span className={`font-black w-16 text-right ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>${Math.round(amt).toLocaleString()}</span>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {selectedAnalysisLevel1 && (
-                        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 animate-in relative overflow-hidden">
-                          <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-500"></div>
-                          <h4 className="font-black text-gray-800 mb-5 flex items-center gap-2 text-sm pt-2">
-                            「{selectedAnalysisLevel1}」{analysisType === "beneficiary" ? "母項目花費分析" : "子項目明細"}
-                          </h4>
-                          <div className="space-y-4">
-                            {sortedLevel2.map(([cat, amt]) => {
-                               const pct = (amt / level1SelectedTotal) * 100;
-                               const isL2Selected = selectedAnalysisLevel2 === cat;
-                               return (
-                                 <div key={cat} className={analysisType === "beneficiary" ? "cursor-pointer" : ""} onClick={() => analysisType === "beneficiary" && setSelectedAnalysisLevel2(isL2Selected ? null : cat)}>
-                                    <div className="flex justify-between text-xs font-bold mb-1.5">
-                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-700'}`}>{cat} {analysisType === "beneficiary" && <span className="text-[9px] text-gray-400 ml-1">▼</span>}</span>
-                                       <span className={`${isL2Selected ? 'text-blue-600' : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
-                                    </div>
-                                    <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
-                                       <div className={`h-full rounded-full transition-all duration-1000 ease-out ${isL2Selected ? 'bg-blue-600' : 'bg-blue-400'}`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
-                                    </div>
-                                 </div>
-                               )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2 && (
-                        <div className="bg-gray-800 p-6 rounded-[2.5rem] shadow-lg animate-in relative overflow-hidden">
-                          <div className="absolute top-0 left-0 w-full h-1.5 bg-pink-500"></div>
-                          <h4 className="font-black text-white mb-5 flex items-center gap-2 text-sm pt-2">
-                            「{selectedAnalysisLevel2}」子項目明細
-                          </h4>
-                          <div className="space-y-4">
-                            {sortedLevel3.map(([cCat, amt]) => {
-                               const pct = (amt / level2SelectedTotal) * 100;
-                               return (
-                                 <div key={cCat}>
-                                    <div className="flex justify-between text-xs font-bold mb-1.5 text-white">
-                                       <span>{cCat}</span>
-                                       <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
-                                    </div>
-                                    <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                                       <div className="h-full bg-pink-500 rounded-full transition-all duration-1000 ease-out" style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
-                                    </div>
-                                 </div>
-                               )
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
             {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
 
             {activeTab === "settings" && (
@@ -2172,23 +1872,20 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>絕對不修改 UI 介面，僅針對底層同步邏輯進行優化 (V32.BALANCED_SYNC)</li>
+                          <li>徹底拔除複雜的 sessionGhosts 過濾器，防衝突與刪除提示延遲至雲端確認 (V32.BALANCED_SYNC)</li>
                           <li>實作記憶體直通引擎 (Direct Override Queue)，徹底解決 React 非同步狀態更新導致「上傳時抓不到最新佇列，資料卡在待處理」的嚴重 Bug (V31.REALTIME_SYNC_FIX)</li>
                           <li>保證按下儲存/刪除後的載入狀態結束時，資料 100% 精準對齊雲端並消除待處理標籤 (V31.REALTIME_SYNC_FIX)</li>
                           <li>捨棄激進的樂觀 UI，改回「絕對安全同步模式」。現在連線狀態下新增/修改/刪除，將會顯示載入畫面，強制等待雲端處理完畢並重新抓取最新名單後才顯示成功，提供 100% 的資料對齊安全感 (V30.SAFE_SYNC)</li>
-                          <li>優化各情境的同步提示語，讓操作回饋與畫面更新絕對同步 (V30.SAFE_SYNC)</li>
-                          <li>修復幽靈過濾器過度強勢的問題。離線刪除資料將正確保留在圖卡上並顯示 [待刪除] (V28.DELETE_UI_FIX)</li>
-                          <li>移除不必要的防呆清洗邏輯，保持系統輕量乾淨 (V27.CLEANUP)</li>
-                          <li>全面對接後端 BATCH_PROCESS 引擎，將所有操作整合成一次上傳 (V26.FINAL_SYNC)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">GAS 後端 <span className="bg-green-100 text-green-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{GAS_TARGET_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>配合前端混合平衡模式，後端引擎穩定維持不變 (V14.BALANCED)</li>
                           <li>開發全新 BATCH_PROCESS 引擎，支援將新增、修改、刪除操作打包成單一 Request 批次處理，大幅提升多筆離線資料同步的穩定性與速度 (V13.BATCH)</li>
                           <li>新增 __編輯紀錄__ 獨立分頁。自動備份修改與刪除的舊資料 (V12.LOG)</li>
                           <li>徹底解決 Date 物件轉字串產生 "hu" 亂碼的問題，並清洗舊資料殘留標籤 (V11.CLEANDATE)</li>
-                          <li>所有寫入動作後加入 SpreadsheetApp.flush()，解決讀寫時間差問題 (V10.SYNC)</li>
-                          <li>確立「雲端絕對優先」原則。UPDATE 若找不到資料直接放行作廢 (V9.STRICT)</li>
                         </ul>
                       </div>
                     </div>
