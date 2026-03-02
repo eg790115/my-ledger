@@ -3,16 +3,13 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.03.PRO.V63.FILTER_AND_TAGS
+  最新版本: 2026.03.03.PRO.V65.TAG_AND_MONTH_FIX
   ==========================================
   【完整更新歷程】
-  - [2026.03.03] V63.FILTER_AND_TAGS: 
-    1. 取消對象標籤的合併邏輯，改為獨立顯示文字標籤，並為爸爸、媽媽、兒子、其他設定專屬底色。
-    2. 優化歷史清單的統計圖卡為亮色系，並移除結餘顯示。
-    3. 統一歷史清單與圖表分析的時間篩選器，全面改用簡潔的下拉選單，新增「當月」並設為預設值。
+  - [2026.03.03] V65.TAG_AND_MONTH_FIX: 補回遺失的 getBenArray 與 getBenBadgeStyle 函數，徹底解決 ReferenceError 崩潰；確保「上月」篩選為精確的日曆月 (Calendar Month) 而非近 30 天。
+  - [2026.03.03] V64.UX_POLISH: 修復底部導覽列設定圖示變形問題；歷史與分析預設為全部；新增標題快捷篩選按鈕。
+  - [2026.03.03] V63.FILTER_AND_TAGS: 取消對象標籤合併，改為多色獨立標籤；優化歷史統計卡片；下拉選單統一。
   - [2026.03.03] V62.FINAL_CLEAN: 徹底移除了所有因生成錯誤導致的重複宣告，並補回 renderItemOrGroup 函數。
-  - [2026.03.03] V61.BIOBOUND_FIX: 修復登入畫面缺少 bioBound 變數的問題。
-  - [2026.03.03] V60.CLEAN_BUILD: 獨立鎖定視窗，為「更換密碼」實作專屬 Loading 防呆組件。
   ==========================================
 -->
 <head>
@@ -83,7 +80,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.03.PRO.V63.FILTER_AND_TAGS";
+    const APP_VERSION = "2026.03.03.PRO.V65.TAG_AND_MONTH_FIX";
     const GAS_TARGET_VERSION = "2026.03.02.PRO.V15.SYNC_RETURN";
 
     // --- 儲存與共用常數 ---
@@ -173,15 +170,25 @@
     
     const getChildCat = (catStr) => String(catStr).includes('/') ? String(catStr).substring(String(catStr).indexOf('/') + 1) : catStr;
 
-    // ★ 改寫為取得陣列，不再合併，以便產生各自獨立的標籤
+    const formatBen = (benStr, memberName) => {
+      if (!benStr) return "";
+      const arr = String(benStr).split(",").filter(Boolean).map(s => s.trim());
+      if (arr.length === 0) return "";
+      if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家共同";
+      if (arr.length === 1 && arr[0] === memberName) return ""; 
+      return arr.join("、");
+    };
+
+    // ★ 核心修復：獨立文字標籤用的陣列轉換器
     const getBenArray = (benStr, memberName) => {
       if (!benStr) return [];
       const arr = Array.from(new Set(String(benStr).split(",").filter(Boolean).map(s => s.trim())));
-      if (arr.length === 1 && arr[0] === memberName) return []; 
+      // 如果該明細只有自己，不特別顯示標籤，保持乾淨
+      if (arr.length === 1 && arr[0] === memberName) return [];
       return arr;
     };
 
-    // ★ 為每種對象分配專屬顏色
+    // ★ 核心修復：獨立文字標籤的專屬顏色指派
     const getBenBadgeStyle = (name) => {
         if (name === "爸爸") return "bg-blue-50 text-blue-600 border-blue-200";
         if (name === "媽媽") return "bg-pink-50 text-pink-600 border-pink-200";
@@ -256,7 +263,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -276,7 +283,7 @@
       );
     };
 
-    // --- 共用組件 ---
+    // --- 共用子組件 ---
     const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
       const pCats = Object.keys(CATEGORY_MAP[type] || CATEGORY_MAP.expense);
       const safeParentCat = pCats.includes(parentCat) ? parentCat : pCats[0];
@@ -803,18 +810,18 @@
       const [editingGroup, setEditingGroup] = useState(null);
       const [expandedGroups, setExpandedGroups] = useState({});
       
-      // 歷史清單相關狀態
+      // 歷史清單相關狀態 (預設全時段)
       const [historySearch, setHistorySearch] = useState("");
       const [debouncedHistorySearch, setDebouncedHistorySearch] = useState(""); 
       const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
-      const [historyDateFilter, setHistoryDateFilter] = useState("current_month");
+      const [historyDateFilter, setHistoryDateFilter] = useState("all");
       const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
       const [showSearchFilterModal, setShowSearchFilterModal] = useState(false);
       const [historyExcludeSearch, setHistoryExcludeSearch] = useState("");
       const [debouncedHistoryExcludeSearch, setDebouncedHistoryExcludeSearch] = useState("");
 
-      // 圖表分析所需狀態
-      const [analysisDateFilter, setAnalysisDateFilter] = useState("current_month");
+      // 圖表分析所需狀態 (預設全時段)
+      const [analysisDateFilter, setAnalysisDateFilter] = useState("all");
       const [analysisCustomStart, setAnalysisCustomStart] = useState("");
       const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
       const [analysisType, setAnalysisType] = useState("expense"); 
@@ -1027,8 +1034,38 @@
               }
 
               if (responseData && responseData.transactions) {
-                  const changed = applyCloudData(responseData);
-                  if (changed) {
+                  let formatted = responseData.transactions.filter(t => t != null).map((t, i) => {
+                      const rawDate = String(t["日期時間"] || t["日期"] || t.date || "");
+                      const cleanStr = rawDate.replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
+                      return {
+                          id: String(t.id || t["ID"] || i), 
+                          amount: parseFloat(t.amount || t["金額"]) || 0, 
+                          category: String(t.category || t["類別"] || "其他"),
+                          date: rawDate, 
+                          timestamp: new Date(cleanStr).getTime() || 0, 
+                          member: String(t.member || t["成員"] || "未知"), 
+                          recorder: String(t.recorder || t["記錄者"] || "系統"),
+                          desc: String(t.desc || t["備註"] || ""), 
+                          type: String(t.type || t["類型"] || "expense"), 
+                          groupId: String(t.groupId || t["GroupID"] || ""), 
+                          parentDesc: String(t.parentDesc || t["ParentDesc"] || ""), 
+                          beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知")
+                      };
+                  });
+
+                  formatted = formatted.filter(t => t && t.id && t.id !== "undefined");
+                  formatted.sort((a,b) => b.timestamp - a.timestamp || String(b.id).localeCompare(String(a.id)));
+                  
+                  const oldStr = localStorage.getItem(LS.txCache) || "[]";
+                  const newStr = JSON.stringify(formatted);
+                  
+                  if (oldStr !== newStr) {
+                      setTxCache(formatted);
+                      saveToIndexedDB(formatted);
+                      localStorage.setItem(LS.txCache, newStr);
+                      setLastSyncText(nowStr());
+                      if (responseData.greetings) setGreetingsCache(responseData.greetings);
+                      
                       if (isSilent && sentQueueCount === 0) showStatus("success", "🔄 已載入雲端最新資料");
                   } else {
                       if (!isSilent && sentQueueCount === 0) showStatus("success", "✅ 已是最新資料");
@@ -1047,7 +1084,7 @@
                   setTimeout(() => syncManager(false), 100);
               }
           }
-      }, [forceReloginForToken, applyCloudData]);
+      }, [forceReloginForToken]);
 
       const processRef = useRef(syncManager);
       useEffect(() => { processRef.current = syncManager; }, [syncManager]);
@@ -1066,6 +1103,7 @@
             if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         };
       }, [isOnline, currentUser, silentPollEngine]); 
+
 
       const handleSyncClick = () => {
           syncManager(false);
@@ -1329,6 +1367,9 @@
           if (historyDateFilter === "current_month") {
               startTime = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
               endTime = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+          } else if (historyDateFilter === "last_month") {
+              startTime = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+              endTime = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
           } else {
               endTime = now.getTime();
               const cutoff = new Date();
@@ -1435,7 +1476,7 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // ★ 渲染單筆卡片 (修復 renderItemOrGroup 依賴)
+      // ★ 渲染單獨卡片
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benArray = getBenArray(tx.beneficiary, tx.member);
         const pAction = pendingMap[tx.id];
@@ -1490,7 +1531,7 @@
         );
       };
 
-      // ★ 渲染母項目卡片 (修復 renderItemOrGroup 依賴)
+      // ★ 渲染群組卡片
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
@@ -1574,7 +1615,7 @@
                             {cAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待處理</span>}
                             {/* ★ 獨立文字標籤 */}
                             {childBenArray.map(b => (
-                               <span key={b} className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span>
+                               <span key={b} className={`shrink-0 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span>
                             ))}
                           </div>
                           {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
@@ -1599,7 +1640,7 @@
         );
       };
 
-      // ★ 定義總渲染入口
+      // 定義主渲染函數
       const renderItemOrGroup = (item, allowEdit) => {
         if (item.isGroup) return renderGroupCard(item, allowEdit);
         return renderStandaloneCard(item, allowEdit);
@@ -1630,7 +1671,7 @@
         }
       };
 
-      // ★ 定義三組不同的漸層色系，供圖表分析使用
+      // 定義三組不同的漸層色系，供圖表分析使用
       const CHART_COLORS = {
         expense: ["#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#ec4899", "#f43f5e", "#ef4444"], 
         income: ["#10b981", "#059669", "#047857", "#3b82f6", "#2563eb", "#1d4ed8", "#0ea5e9", "#0891b2"], 
@@ -1907,19 +1948,20 @@
                       <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
                         <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">時間區間</label>
                         <select value={historyDateFilter} onChange={(e) => setHistoryDateFilter(e.target.value)} className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800 truncate">
+                          <option value="all">全部時間</option>
                           <option value="current_month">當月</option>
+                          <option value="last_month">上月</option>
                           <option value="1m">近一月</option>
                           <option value="3m">近 3 個月</option>
                           <option value="6m">近半年</option>
                           <option value="1y">近 1 年</option>
-                          <option value="all">全部時間</option>
                         </select>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex gap-3 mt-8">
-                    <button onClick={() => { setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all"); setHistoryDateFilter("current_month"); }} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1">
+                    <button onClick={() => { setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all"); setHistoryDateFilter("all"); }} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1">
                       清空條件
                     </button>
                     <button onClick={() => setShowSearchFilterModal(false)} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2">
@@ -1974,10 +2016,18 @@
 
             {activeTab === "history" && (
               <div className="space-y-4 animate-in pb-20 text-left">
-                <div className="flex justify-between items-center px-1 mb-2">
-                   <h3 className="font-black text-xl text-gray-800">歷史清單</h3>
-                   <button onClick={() => setShowSearchFilterModal(true)} className="flex items-center gap-1.5 text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full border border-blue-100 active:scale-95 transition-all">
-                       <SvgIcon name="search" size={14} /> 搜尋 / 篩選
+                <div className="flex justify-between items-center px-1 mb-3 gap-2">
+                   <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1">
+                      <h3 className="font-black text-xl text-gray-800 shrink-0">歷史清單</h3>
+                      {/* ★ 快捷時間篩選按鈕 */}
+                      <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
+                         <button onClick={()=>setHistoryDateFilter("current_month")} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='current_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>本月</button>
+                         <button onClick={()=>setHistoryDateFilter("last_month")} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='last_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>上月</button>
+                         <button onClick={()=>{setHistoryDateFilter("all"); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='all' && !historySearch && !historyExcludeSearch && historyTypeFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>還原</button>
+                      </div>
+                   </div>
+                   <button onClick={() => setShowSearchFilterModal(true)} className="flex items-center justify-center w-8 h-8 shrink-0 bg-blue-50 rounded-full border border-blue-100 active:scale-95 transition-all text-blue-600">
+                       <SvgIcon name="search" size={14} />
                    </button>
                 </div>
                 
@@ -1987,7 +2037,7 @@
                       {debouncedHistorySearch && <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-1 rounded-md font-bold">🔍 包含: {debouncedHistorySearch}</span>}
                       {debouncedHistoryExcludeSearch && <span className="text-[9px] bg-red-100 text-red-700 px-2 py-1 rounded-md font-bold">🚫 排除: {debouncedHistoryExcludeSearch}</span>}
                       {historyTypeFilter !== "all" && <span className="text-[9px] bg-gray-200 text-gray-700 px-2 py-1 rounded-md font-bold">類型: {historyTypeFilter === 'expense' ? '支出' : '收入'}</span>}
-                      {historyDateFilter !== "all" && <span className="text-[9px] bg-gray-200 text-gray-700 px-2 py-1 rounded-md font-bold">時間: {historyDateFilter === 'current_month' ? '當月' : historyDateFilter === '1m' ? '近一月' : historyDateFilter === '3m' ? '近3個月' : historyDateFilter === '6m' ? '近半年' : historyDateFilter === '1y' ? '近1年' : '全部'}</span>}
+                      {historyDateFilter !== "all" && <span className="text-[9px] bg-gray-200 text-gray-700 px-2 py-1 rounded-md font-bold">時間: {historyDateFilter === 'current_month' ? '當月' : historyDateFilter === 'last_month' ? '上月' : historyDateFilter === '1m' ? '近一月' : historyDateFilter === '3m' ? '近3個月' : historyDateFilter === '6m' ? '近半年' : historyDateFilter === '1y' ? '近1年' : '全部'}</span>}
                    </div>
                 )}
 
@@ -2021,24 +2071,30 @@
             {activeTab === "analysis" && (
               <div className="space-y-6 animate-in pb-20 text-left">
                 <div className="flex flex-col gap-3 px-1">
-                  <div className="flex justify-between items-center mb-1">
-                    <h3 className="font-black text-xl text-gray-800">圖表分析</h3>
-                  </div>
-
-                  {/* ★ 分析頁篩選：改為與歷史清單一致的下拉選單 */}
-                  <div className="flex gap-2 mb-2">
-                      <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
-                        <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">時間區間</label>
-                        <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800 truncate">
+                  <div className="flex justify-between items-center mb-2 gap-2">
+                     <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1">
+                        <h3 className="font-black text-xl text-gray-800 shrink-0">圖表分析</h3>
+                        {/* ★ 快捷時間篩選按鈕 */}
+                        <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
+                           <button onClick={()=>{setAnalysisDateFilter("current_month"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='current_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>本月</button>
+                           <button onClick={()=>{setAnalysisDateFilter("last_month"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='last_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>上月</button>
+                           <button onClick={()=>{setAnalysisDateFilter("all"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>還原</button>
+                        </div>
+                     </div>
+                     
+                     {/* ★ 完整下拉選單 (放置在右側) */}
+                     <div className="relative shrink-0 border-l pl-2 border-gray-200">
+                        <select value={analysisDateFilter} onChange={(e) => {setAnalysisDateFilter(e.target.value); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className="appearance-none bg-transparent py-1.5 pl-1 pr-4 font-black text-[10px] text-gray-400 outline-none text-right">
+                          <option value="all">全部</option>
                           <option value="current_month">當月</option>
-                          <option value="1m">近一月</option>
-                          <option value="3m">近 3 個月</option>
-                          <option value="6m">近半年</option>
-                          <option value="1y">近 1 年</option>
-                          <option value="all">全部時間</option>
-                          <option value="custom">自訂區間</option>
+                          <option value="last_month">上月</option>
+                          <option value="7d">近7日</option><option value="14d">近14日</option>
+                          <option value="1m">近一月</option><option value="3m">近3月</option>
+                          <option value="6m">近半年</option><option value="1y">近1年</option>
+                          <option value="custom">自訂</option>
                         </select>
-                      </div>
+                        <div className="absolute inset-y-0 right-0 flex items-center pointer-events-none"><span className="text-[8px] text-gray-400">▼</span></div>
+                     </div>
                   </div>
 
                   {/* 自訂區間輸入框 */}
@@ -2073,6 +2129,9 @@
                       if (analysisDateFilter === "current_month") {
                           startTime = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
                           endTime = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+                      } else if (analysisDateFilter === "last_month") {
+                          startTime = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+                          endTime = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
                       } else {
                           const cutoff = new Date();
                           if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7);
@@ -2095,6 +2154,7 @@
 
                   if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm">該區間尚無紀錄</div>;
                   
+                  // ★ 依照分析類型使用對應的色系
                   const currentColors = CHART_COLORS[analysisType] || CHART_COLORS.expense;
                   let level1Totals = {}; let grandTotal = 0;
 
@@ -2175,6 +2235,7 @@
                   }
                   const sortedLevel3 = Object.entries(level3Totals).sort((a,b) => b[1] - a[1]);
 
+                  // 圖表主色系邏輯
                   const activeColorClass = analysisType === "expense" ? "blue" : analysisType === "income" ? "green" : "purple";
 
                   return (
@@ -2192,12 +2253,18 @@
                           {analysisType !== "beneficiary" && <div className="text-[9px] text-center font-black text-gray-400 uppercase tracking-widest mb-3 bg-gray-50 py-1.5 rounded-lg border border-gray-100">點擊下方分類查看細項</div>}
                           {(sortedLevel1 || []).map(([cat, amt], idx) => {
                             const isSelected = selectedAnalysisLevel1 === cat;
+                            // ★ 分析標籤圖示
+                            let labelContent = cat;
+                            if (analysisType === "beneficiary") {
+                                const tagData = getBenTagContent(cat);
+                                labelContent = <span className="flex items-center gap-1.5"><span className="text-base leading-none">{tagData.icon}</span> {cat}</span>;
+                            }
                             return (
                               <div key={cat} onClick={() => { setSelectedAnalysisLevel1(isSelected ? null : cat); setSelectedAnalysisLevel2(null); }} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-colors border ${isSelected ? `bg-${activeColorClass}-50/50 border-${activeColorClass}-200` : 'bg-gray-50/50 hover:bg-gray-100 border-transparent'}`}>
                                 <div className="flex items-center gap-3">
                                   <div className="w-3 h-3 rounded-full shadow-sm shrink-0" style={{ background: currentColors[idx % currentColors.length] }}></div>
                                   <span className={`font-bold text-sm truncate ${isSelected ? `text-${activeColorClass}-700` : 'text-gray-700'}`}>
-                                    {cat}
+                                    {labelContent}
                                   </span>
                                  </div>
                                 <div className="flex items-center gap-3 shrink-0">
@@ -2332,12 +2399,15 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>補回遺失的 getBenArray 與 getBenBadgeStyle 函數，徹底解決 ReferenceError 崩潰；確保「上月」篩選為精確的日曆月 (Calendar Month) 而非近 30 天 (V65.TAG_AND_MONTH_FIX)</li>
+                          <li>修復底部導覽列設定圖示變形問題 (增加 items-center 對齊) (V64.UX_POLISH)</li>
+                          <li>歷史清單與圖表分析的時間區間預設改為「全部」 (V64.UX_POLISH)</li>
+                          <li>在歷史清單與圖表分析的標題列旁邊，直接加入 [本月] [上月] [還原] 快捷按鈕圖卡 (V64.UX_POLISH)</li>
+                          <li>清理歷史篩選彈窗內的冗餘按鈕，明確區分「當月」與「近一月」選項 (V64.UX_POLISH)</li>
                           <li>取消對象標籤的合併邏輯，改為獨立顯示文字標籤，並為各對象設定專屬底色 (V63.FILTER_AND_TAGS)</li>
                           <li>優化歷史清單的統計圖卡為亮色系，並移除結餘顯示 (V63.FILTER_AND_TAGS)</li>
                           <li>統一歷史與圖表的時間篩選器，全面改用簡潔的下拉選單，新增「當月」並設為預設值 (V63.FILTER_AND_TAGS)</li>
                           <li>徹底移除了所有因生成錯誤導致的重複宣告，並補回 renderItemOrGroup 函數 (V62.FINAL_CLEAN)</li>
-                          <li>修復在登入畫面中因缺少 bioBound 變數宣告而導致的 ReferenceError 渲染崩潰問題 (V61.BIOBOUND_FIX)</li>
-                          <li>全面清洗系統重複代碼，徹底解決所有白畫面與 ReferenceError 崩潰問題 (V60.CLEAN_BUILD)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
@@ -2355,13 +2425,13 @@
           </main>
 
           <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-40 shadow-2xl border border-white/20 safe-bottom">
-            <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="home" /></button>
-            <button onClick={() => setActiveTab("history")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="history" /></button>
+            <button onClick={() => setActiveTab("dashboard")} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="home" className="shrink-0" /></button>
+            <button onClick={() => setActiveTab("history")} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="history" className="shrink-0" /></button>
             <div className="px-1 shrink-0">
-              <button onClick={() => setActiveTab(prev => prev === "add" ? "dashboard" : "add")} className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={28} /></button>
+              <button onClick={() => setActiveTab(prev => prev === "add" ? "dashboard" : "add")} className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={28} className="shrink-0" /></button>
             </div>
-            <button onClick={() => setActiveTab("analysis")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "analysis" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="pieChart" /></button>
-            <button onClick={() => setActiveTab("settings")} className={`flex-1 flex justify-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="settings" /></button>
+            <button onClick={() => setActiveTab("analysis")} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "analysis" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="pieChart" className="shrink-0" /></button>
+            <button onClick={() => setActiveTab("settings")} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="settings" className="shrink-0" /></button>
           </nav>
 
           {statusMsg.text && (
