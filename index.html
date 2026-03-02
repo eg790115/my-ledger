@@ -3,9 +3,10 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V55.CONSTANT_FIX
+  最新版本: 2026.03.02.PRO.V56.TOAST_SYNC_FIX
   ==========================================
   【完整更新歷程】
+  - [2026.03.02] V56.TOAST_SYNC_FIX: 強化 syncManager 結束後的殘留檢查，解決快速連點時因狀態鎖定導致漏傳一筆資料的問題。全面優化並統一所有 Toast 提示語，使其更簡潔專業。
   - [2026.03.02] V55.CONSTANT_FIX: 補回在先前重構中不慎遺失的全域常數 BEN_OPTIONS，解決 AddTransactionForm 渲染時的 ReferenceError 崩潰。
   - [2026.03.02] V54.STRING_FIX: 針對 customSubtitle 導入 String 強制轉型防護，徹底避免因快取或後端傳回非字串格式導致的 .replace is not a function 渲染崩潰問題。
   - [2026.03.02] V53.ROBUST_FIX: 補回遺失的 setDeviceToken/clearDeviceToken 函數解決綁定報錯；於所有陣列操作與渲染邏輯導入 filter(Boolean) 防禦性過濾，徹底解決舊快取損壞導致的白畫面崩潰問題。
@@ -80,7 +81,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V55.CONSTANT_FIX";
+    const APP_VERSION = "2026.03.02.PRO.V56.TOAST_SYNC_FIX";
 
     // --- 儲存與共用常數 ---
     const DB_NAME = "FamilyAccountingDB";
@@ -138,7 +139,6 @@
           const tx = db.transaction(STORE_NAME, "readwrite");
           const store = tx.objectStore(STORE_NAME);
           store.clear(); 
-          // ★ 防呆過濾：只存入有 id 的有效資料
           (data || []).filter(item => item && item.id).forEach(item => store.put(item)); 
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject();
@@ -168,7 +168,6 @@
     
     const getChildCat = (catStr) => String(catStr).includes('/') ? String(catStr).substring(String(catStr).indexOf('/') + 1) : catStr;
 
-    // ★ 關鍵修復：補回被遺漏的全域常數 BEN_OPTIONS
     const BEN_OPTIONS = ["爸爸", "媽媽", "兒子", "其他"];
 
     const formatBen = (benStr, memberName) => {
@@ -802,7 +801,7 @@
       useEffect(() => {
           if (prevOnline.current !== isOnline) {
               if (isOnline) {
-                  showStatus("success", "✅ 網路已恢復連線");
+                  showStatus("success", "🌐 網路已連線");
                   if (syncQueue.length > 0) syncManager(false);
               } else {
                   showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
@@ -848,6 +847,71 @@
         setShowBootstrapModal(true); 
       }, []);
 
+      const applyCloudData = useCallback((data) => {
+        let formatted = (data.transactions || []).map((t, i) => {
+          const rawDate = t["日期時間"] || t["日期"] || "";
+          const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
+          const ts = new Date(cleanStr).getTime() || 0;
+          return {
+            id: t.id || t["ID"] || String(i), 
+            amount: parseFloat(t["金額"]) || 0, 
+            category: String(t["類別"] || "其他"),
+            date: rawDate, 
+            timestamp: ts, 
+            member: String(t["成員"] || "未知"), 
+            recorder: String(t["記錄者"] || "系統"),
+            desc: String(t["備註"] || ""), 
+            type: String(t["類型"] || "expense"), 
+            groupId: String(t["GroupID"] || ""), 
+            parentDesc: String(t["ParentDesc"] || ""), 
+            beneficiary: String(t["Beneficiary"] || t["成員"] || "未知")
+          };
+        });
+
+        formatted.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
+        
+        const oldStr = JSON.stringify(txCacheRef.current || []);
+        const newStr = JSON.stringify(formatted);
+
+        if (oldStr !== newStr) {
+            setTxCache(formatted); 
+            setLastSyncText(nowStr()); 
+            if (data.greetings) setGreetingsCache(data.greetings); 
+            saveToIndexedDB(formatted);
+            localStorage.setItem(LS.txCache, newStr);
+            return true; 
+        }
+        return false;
+      }, []);
+
+      const silentPollEngine = useCallback(async () => {
+          if (!navigator.onLine || !currentUserRef.current || isSyncingRef.current) {
+              pollingTimerRef.current = setTimeout(silentPollEngine, 5000);
+              return;
+          }
+          if (!deviceValid()) {
+              forceReloginForToken();
+              return; 
+          }
+
+          try {
+              const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken() });
+              if (data.result === "success") {
+                  const changed = applyCloudData(data);
+                  if (changed) {
+                      showStatus("success", "🔄 已載入雲端最新資料");
+                  }
+              }
+          } catch (e) {
+              if (e.message && (e.message.includes("憑證") || e.message.includes("無效") || e.message.includes("過期"))) {
+                   forceReloginForToken();
+                   return; 
+              }
+          }
+
+          pollingTimerRef.current = setTimeout(silentPollEngine, 5000);
+      }, [forceReloginForToken, applyCloudData]);
+
       const syncManager = useCallback(async (isSilent = false) => {
           if (!navigator.onLine || !deviceValid() || isSyncingRef.current) return;
           
@@ -878,7 +942,13 @@
                       if (adds) txt.push(`新增 ${adds} 筆`);
                       if (upds) txt.push(`修改 ${upds} 筆`);
                       if (dels) txt.push(`刪除 ${dels} 筆`);
-                      showStatus("success", `☁️ 同步成功！(${txt.join('、')})`);
+                      
+                      if (sentQueueCount > 1) showStatus("success", `☁️ 雲端同步完成 (${txt.join('、')})`);
+                      else {
+                          if (adds > 0) showStatus("success", "✅ 已同步至雲端");
+                          else if (upds > 0) showStatus("success", "✅ 更新已同步");
+                          else if (dels > 0) showStatus("success", "🗑️ 紀錄已移除");
+                      }
                   }
               } else {
                   const res = await postGAS({ action: "GET_TX", deviceToken: getDeviceToken() });
@@ -919,7 +989,7 @@
                       setLastSyncText(nowStr());
                       if (responseData.greetings) setGreetingsCache(responseData.greetings);
                       
-                      if (isSilent && sentQueueCount === 0) showStatus("success", "✅ 已自動同步雲端最新資料");
+                      if (isSilent && sentQueueCount === 0) showStatus("success", "🔄 已載入雲端最新資料");
                   } else {
                       if (!isSilent && sentQueueCount === 0) showStatus("success", "✅ 已是最新資料");
                   }
@@ -931,17 +1001,34 @@
           } finally {
               isSyncingRef.current = false;
               setIsSyncing(false);
+              
+              // ★ 修復核心：連鎖上傳機制
+              // 檢查剛才上傳期間，有沒有又被塞入新的操作？如果有，馬上再呼叫自己一次！
+              const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
+              if (leftoverQueue.length > 0 && navigator.onLine) {
+                  setTimeout(() => syncManager(false), 100);
+              }
           }
       }, [forceReloginForToken]);
 
+      const processRef = useRef(syncManager);
+      useEffect(() => { processRef.current = syncManager; }, [syncManager]);
+
       useEffect(() => {
-          if (!currentUser || !isOnline) return;
-          syncManager(true); 
-          const intervalId = setInterval(() => {
-              syncManager(true);
-          }, 5000);
-          return () => clearInterval(intervalId);
-      }, [currentUser, isOnline, syncManager]);
+        if (isOnline && currentUser) {
+            const currentQ = safeParse(localStorage.getItem(LS.pending), []);
+            if (currentQ.length === 0) {
+                 silentPollEngine(); 
+            } else {
+                 if (processRef.current) processRef.current(false);
+                 pollingTimerRef.current = setTimeout(silentPollEngine, 5000); 
+            }
+        }
+        return () => {
+            if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+        };
+      }, [isOnline, currentUser, silentPollEngine]); 
+
 
       const handleSyncClick = () => {
           syncManager(false);
@@ -1114,7 +1201,7 @@
           });
           setSyncQueue(currentQ);
           localStorage.setItem(LS.pending, JSON.stringify(currentQ));
-          if (!navigator.onLine) showStatus("info", `💾 離線暫存：操作已儲存`);
+          if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`);
           else syncManager(false);
       };
 
@@ -1155,7 +1242,7 @@
         setSyncQueue(currentQ);
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingGroup(null);
-        if (!navigator.onLine) showStatus("info", `💾 離線暫存：批次修改母項目`);
+        if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`);
         else syncManager(false);
       };
 
@@ -2213,6 +2300,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>強化 syncManager 結束後的殘留檢查，解決快速連點時因狀態鎖定導致漏傳一筆資料的問題。全面優化並統一所有 Toast 提示語，使其更簡潔專業 (V56.TOAST_SYNC_FIX)</li>
                           <li>補回在先前重構中不慎遺失的全域常數 BEN_OPTIONS，解決 AddTransactionForm 渲染時的 ReferenceError 崩潰 (V55.CONSTANT_FIX)</li>
                           <li>實作「終極防護與清洗機制」。無條件強制覆蓋快取，讀取前加裝記憶體極致過濾器消滅幽靈資料，修正 NaN 渲染當機問題，絕對杜絕白畫面崩潰 (V54.ULTIMATE_CLEAN)</li>
                           <li>確保 renderItemOrGroup 及其相依函數 正確定義於 App 元件內，修復 ReferenceError 崩潰 (V49.RENDER_FINAL_FIX)</li>
