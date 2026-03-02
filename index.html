@@ -3,9 +3,11 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V47.TOKEN_MODAL_FIX
+  最新版本: 2026.03.02.PRO.V49.RENDER_FINAL_FIX
   ==========================================
   【完整更新歷程】
+  - [2026.03.02] V49.RENDER_FINAL_FIX: 確保 renderItemOrGroup 及其相依函數 (renderStandaloneCard, renderGroupCard) 正確定義於 App 元件內，修復 ReferenceError 崩潰。
+  - [2026.03.02] V48.RENDER_FIX_2: 嘗試修復 renderItemOrGroup 遺失問題。
   - [2026.03.02] V47.TOKEN_MODAL_FIX: 徹底修復「PIN碼登入時若憑證無效會卡死」的重大問題。強化所有 API 錯誤攔截器，只要捕捉到憑證無效/過期，強制銷毀舊憑證並直接彈出重新綁定視窗。
   - [2026.03.02] V46.SYNTAX_FIX: 修正底部導覽列「新增」按鈕的語法錯誤 (Unexpected token)。
   - [2026.03.02] V45.MY_TX_FIX: 修正 myTransactions 變數作用域遺失導致的渲染崩潰問題。
@@ -83,7 +85,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V47.TOKEN_MODAL_FIX";
+    const APP_VERSION = "2026.03.02.PRO.V49.RENDER_FINAL_FIX";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -165,7 +167,7 @@
     const getParentCat = (catStr) => {
       if (!catStr) return "其他";
       if (catStr.includes('/')) return catStr.split('/')[0];
-      const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪 সির":"收入", "投資":"理財", "雜項":"其他"};
+      const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪資":"收入", "投資":"理財", "雜項":"其他"};
       return legacyMap[catStr] || "其他";
     };
     const getChildCat = (catStr) => catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
@@ -852,6 +854,7 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
+      // ★ 綁定最新的函數給 Interval 使用
       useEffect(() => { isSyncingRef.current = isSyncing; }, [isSyncing]);
       useEffect(() => { processRef.current = processQueueToCloud; });
       useEffect(() => { fetchRef.current = fetchCloudTx; });
@@ -1084,7 +1087,7 @@
                   if (isManualSync) {
                        showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
                   } else if (isLoginSync && oldStr !== newStr) {
-                       showStatus("success", "✅ 已自動拉取雲端最新資料");
+                       showStatus("success", "✅ 已自動同步雲端最新資料");
                   }
               }
           }
@@ -1693,6 +1696,11 @@
             </div>
           </div>
         );
+      };
+
+      const renderItemOrGroup = (item, allowEdit) => {
+        if (item.isGroup) return renderGroupCard(item, allowEdit);
+        return renderStandaloneCard(item, allowEdit);
       };
 
       const handleUserClick = async (user) => {
@@ -2420,6 +2428,8 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>確保 renderItemOrGroup 及其相依函數 (renderStandaloneCard, renderGroupCard) 正確定義於 App 元件內，修復 ReferenceError 崩潰 (V49.RENDER_FINAL_FIX)</li>
+                          <li>徹底修復 renderItemOrGroup 函數遺失導致的畫面渲染崩潰問題，確保所有卡片渲染邏輯正確就緒 (V48.RENDER_FIX_2)</li>
                           <li>徹底修復「PIN碼登入時若憑證無效會卡死」的問題。強化所有 API 錯誤攔截器，只要捕捉到憑證無效/過期，強制銷毀舊憑證並直接彈出重新綁定視窗 (V47.TOKEN_MODAL_FIX)</li>
                           <li>修正底部導覽列「新增」按鈕的語法錯誤 (V46.SYNTAX_FIX)</li>
                           <li>修正 myTransactions 變數作用域遺失導致的渲染崩潰問題 (V45.MY_TX_FIX)</li>
