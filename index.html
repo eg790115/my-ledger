@@ -3,12 +3,13 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V38.FIX_RENDER
+  最新版本: 2026.03.02.PRO.V39.REAL_POLLING
   ==========================================
   【完整更新歷程】
-  - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數遺失導致的畫面渲染崩潰問題。
+  - [2026.03.02] V39.REAL_POLLING: 修正延遲同步問題：連線狀態下新增或修改會「立刻」觸發上傳，不再延遲 5 秒。實作真正的背景閒置輪詢 (Idle Polling)：每 5 秒自動靜默抓取雲端最新資料，讓多設備能快速同步，且完全不干擾使用者介面。
+  - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數與 animTrigger 狀態遺失導致的畫面渲染崩潰問題。
   - [2026.03.02] V37.ENHANCED_UI: 首頁統計改為精準當月計算並修改文字。歷史清單搜尋與篩選整合成彈出視窗，新增反向搜尋與總額統計。優化歷史清單母項目在時間篩選下的顯示邏輯（僅顯示符合時間的子項）。分析圖表對象分析支援所有對象組合。
-  - [2026.03.02] V36.OFFLINE_TAGS: 導入操作當下的「離線標記 (isOffline)」。只有在斷網狀態下進行的操作，才會顯示「待處理」視覺標籤；連線狀態下的快速連續操作，將保持乾淨的樂觀 UI。新增背景 5 秒自動輪詢機制。
+  - [2026.03.02] V36.OFFLINE_TAGS: 導入操作當下的「離線標記 (isOffline)」。
   - [2026.03.02] V35.SMART_TOASTS: 重新設計所有 Toast 提示語機制，異常狀態透明化。
   - [2026.03.02] V34.CHAIN_SYNC: 實作「重試解鎖機制 (Unlock-and-Check)」。
   - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。
@@ -82,7 +83,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V38.FIX_RENDER";
+    const APP_VERSION = "2026.03.02.PRO.V39.REAL_POLLING";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -737,6 +738,8 @@
       const [analysisType, setAnalysisType] = useState("expense"); 
       const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null); 
       const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null); 
+      
+      const [animTrigger, setAnimTrigger] = useState(false);
 
       const [showBootstrapModal, setShowBootstrapModal] = useState(false);
       const [bootstrapSecret, setBootstrapSecret] = useState("");
@@ -750,10 +753,21 @@
 
       const [isOnline, setIsOnline] = useState(navigator.onLine);
       
-      // 引入計時器 Ref 用於輪詢重置
+      // 引入計時器 Ref 
       const pollingTimerRef = useRef(null);
+      const isSyncingRef = useRef(false);
+      const processRef = useRef(null);
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
+
+      // 圖表動畫觸發邏輯
+      useEffect(() => {
+        if (activeTab === "analysis") {
+            setAnimTrigger(false);
+            const timer = setTimeout(() => setAnimTrigger(true), 50);
+            return () => clearTimeout(timer);
+        }
+      }, [activeTab, analysisType, analysisDateFilter]);
 
       useEffect(() => {
         const handleNetworkChange = () => {
@@ -778,6 +792,11 @@
           if (prevOnline.current !== isOnline) {
               if (isOnline) {
                   showStatus("success", "✅ 網路已恢復連線");
+                  // 網路恢復時，自動靜默檢查/上傳
+                  if (processRef.current) {
+                      const currentQ = safeParse(localStorage.getItem(LS.pending), []);
+                      processRef.current({ isAutoRecover: currentQ.length > 0, isSilentPolling: currentQ.length === 0 });
+                  }
               } else {
                   showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
               }
@@ -826,14 +845,28 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
+      // ★ 動態更新 processRef 與 isSyncingRef 供 Interval 使用
+      useEffect(() => { isSyncingRef.current = isSyncing; }, [isSyncing]);
+      useEffect(() => { processRef.current = processQueueToCloud; });
+
+      // ★ 登入後啟動真正的閒置輪詢 (Idle Polling)
       useEffect(() => {
-        if (isOnline && currentUser && !isSyncing) {
-          if (syncQueue && syncQueue.length > 0) {
-             processQueueToCloud({ doRefreshFirst: true, isAutoRecover: true });
-          } else {
-             processQueueToCloud({ doRefreshFirst: true, isLoginSync: true });
-          }
+        if (!isOnline || !currentUser) return;
+        
+        // 初次登入的同步
+        if (!isSyncingRef.current) {
+            const currentQ = safeParse(localStorage.getItem(LS.pending), []);
+            if (processRef.current) processRef.current({ isAutoRecover: currentQ.length > 0, isLoginSync: currentQ.length === 0, isSilentPolling: false });
         }
+
+        // 設定每 5 秒的靜默抓取
+        const intervalId = setInterval(() => {
+            if (!isSyncingRef.current && navigator.onLine) {
+                if (processRef.current) processRef.current({ isSilentPolling: true });
+            }
+        }, 5000);
+        
+        return () => clearInterval(intervalId);
       }, [isOnline, currentUser]); 
 
       const displayDateClean = (val) => {
@@ -936,17 +969,6 @@
         return newQueue;
       };
 
-      // ★ 啟動 5 秒倒數計時器發動靜默同步
-      const resetPollingTimer = useCallback(() => {
-        if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
-        pollingTimerRef.current = setTimeout(() => {
-            const currentQ = safeParse(localStorage.getItem(LS.pending), []);
-            if (navigator.onLine && currentQ.length > 0 && !isSyncing) {
-                processQueueToCloud({ isSilentPolling: true });
-            }
-        }, 5000); 
-      }, [isSyncing]);
-
       // ==========================================
       // 🚀 背景同步引擎
       // ==========================================
@@ -967,6 +989,8 @@
         
         try {
           setIsSyncing(true);
+          isSyncingRef.current = true;
+          
           if (doRefreshFirst || isManualSync) await refreshDeviceToken();
           
           let didWrite = false;
@@ -1043,13 +1067,7 @@
         } finally { 
           setProcessingQueue([]);
           setIsSyncing(false);
-
-          const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
-          if (leftoverQueue && leftoverQueue.length > 0) {
-              setTimeout(() => {
-                  if (navigator.onLine) processQueueToCloud({ isSilentPolling: true });
-              }, 500);
-          }
+          isSyncingRef.current = false;
         }
       };
 
@@ -1128,6 +1146,7 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
+      // 樂觀 UI 渲染：提供給 UI 渲染用
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         let base = [...(txCache || [])]; 
@@ -1201,7 +1220,8 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：新增 ${completeTxs.length} 筆`);
         } else {
-            resetPollingTimer(); 
+            // ★ 立刻觸發同步，零延遲
+            processQueueToCloud({ overrideQueue: currentQ }); 
         }
       };
 
@@ -1223,7 +1243,8 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：修改紀錄`);
         } else {
-            resetPollingTimer();
+            // ★ 立刻觸發同步，零延遲
+            processQueueToCloud({ overrideQueue: currentQ });
         }
       };
 
@@ -1243,7 +1264,8 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：批次修改母項目`);
         } else {
-            resetPollingTimer();
+            // ★ 立刻觸發同步，零延遲
+            processQueueToCloud({ overrideQueue: currentQ });
         }
       };
 
@@ -1267,7 +1289,8 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：已排程刪除`);
         } else {
-            resetPollingTimer();
+            // ★ 立刻觸發同步，零延遲
+            processQueueToCloud({ overrideQueue: currentQ });
         }
       };
 
@@ -1453,7 +1476,7 @@
           <div key={tx.id} className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
             {pAction && (
                 <div className={`shrink-0 w-6 flex items-center justify-center rounded-2xl shadow-sm border ${pAction==='ADD'?'bg-green-50 border-green-200 text-green-700':pAction==='UPDATE_TX'?'bg-blue-50 border-blue-200 text-blue-700':'bg-red-50 border-red-200 text-red-700'}`}>
-                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{pAction==='ADD'?'待新增':pAction==='UPDATE_TX'?'待修改':'待刪除'}</span>
+                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{pAction==='ADD'?'待處理':pAction==='UPDATE_TX'?'待處理':'待處理'}</span>
                 </div>
             )}
             <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
@@ -1510,7 +1533,7 @@
           <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${isPendingDeleteGroup ? 'opacity-40 grayscale' : 'opacity-100'}`}>
             {(gAction || hasChildAction) && (
                 <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': isPendingDeleteGroup ? 'bg-red-50 border-red-200 text-red-700' : hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
-                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{isPendingDeleteGroup?'待刪除':gAction==='UPDATE_GROUP_PARENT'?'待改母項': '待處理明細'}</span>
+                    <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{isPendingDeleteGroup?'待處理':gAction==='UPDATE_GROUP_PARENT'?'待處理': '待處理'}</span>
                 </div>
             )}
             <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
@@ -1572,9 +1595,9 @@
                         <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
                           <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
                             <span className="truncate max-w-full">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
-                            {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待新增</span>}
-                            {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待修改</span>}
-                            {cAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待刪除</span>}
+                            {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待處理</span>}
+                            {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待處理</span>}
+                            {cAction === 'DELETE_TX' && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待處理</span>}
                             {childBen && <span className="shrink-0 bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border border-gray-200">{childBen}</span>}
                           </div>
                           {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
@@ -1599,7 +1622,6 @@
         );
       };
 
-      // ★ 在這裡補回遺失的 renderItemOrGroup 函數！
       const renderItemOrGroup = (item, allowEdit) => {
         if (item.isGroup) return renderGroupCard(item, allowEdit);
         return renderStandaloneCard(item, allowEdit);
@@ -1816,7 +1838,7 @@
                                       {!item.type && <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-black text-white bg-purple-500">母項目</span>}
                                       <span className="text-[12px] font-black text-gray-800 truncate">{item.category || item.parentTitle || '未知項目'}</span>
                                       <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${item.action==='ADD'?'text-green-600 border-green-200 bg-green-50':item.action==='DELETE_TX'?'text-red-600 border-red-200 bg-red-50':'text-blue-600 border-blue-200 bg-blue-50'}`}>
-                                          {item.action==='ADD'?'待新增':item.action==='DELETE_TX'?'待刪除':'待修改'}
+                                          {item.action==='ADD'?'待處理':item.action==='DELETE_TX'?'待處理':'待處理'}
                                       </span>
                                   </div>
                                   <div className="text-[10px] text-gray-400 font-bold mb-0.5">{displayDateClean(item.date)}</div>
@@ -2319,7 +2341,8 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>修復 renderItemOrGroup 函數遺失導致的畫面渲染崩潰問題 (V38.FIX_RENDER)</li>
+                          <li>修正延遲同步問題：連線狀態下新增或修改會「立刻」觸發上傳，不再延遲 5 秒。實作真正的背景閒置輪詢 (Idle Polling)：每 5 秒自動靜默抓取雲端最新資料，讓多設備能快速同步，且完全不干擾使用者介面 (V39.REAL_POLLING)</li>
+                          <li>修復 renderItemOrGroup 函數與 animTrigger 狀態遺失導致的畫面渲染崩潰問題 (V38.FIX_RENDER)</li>
                           <li>首頁統計改為精準當月計算並修改文字。歷史清單搜尋與篩選整合成彈出視窗，新增反向搜尋與總額統計。優化歷史清單母項目在時間篩選下的顯示邏輯（僅顯示符合時間的子項）。分析圖表對象分析支援所有對象組合 (V37.ENHANCED_UI)</li>
                           <li>導入操作當下的「離線標記 (isOffline)」。只有在斷網狀態下進行的操作，才會顯示待處理標籤；連線狀態下的操作將保持乾淨的樂觀 UI (V36.OFFLINE_TAGS)</li>
                           <li>新增背景 5 秒自動輪詢機制，靜默上傳遺漏的佇列且不干擾使用者 (V36.OFFLINE_TAGS)</li>
