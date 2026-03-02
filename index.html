@@ -3,18 +3,16 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V43.AUTH_FIX
+  最新版本: 2026.03.02.PRO.V47.TOKEN_MODAL_FIX
   ==========================================
   【完整更新歷程】
-  - [2026.03.02] V43.AUTH_FIX: 修正「憑證失效時無法登入」的問題。在強制登出時，同步清除本地端已過期的 Device Token，確保能夠重新發起綁定流程而不被舊憑證卡住。
-  - [2026.03.02] V42.CLEAN_POLLING: 移除測試用的 Console Log，保持程式碼純淨，輪詢維持完全靜默運作。
-  - [2026.03.02] V41.LOGIN_FIX: 修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯。
+  - [2026.03.02] V47.TOKEN_MODAL_FIX: 徹底修復「PIN碼登入時若憑證無效會卡死」的重大問題。強化所有 API 錯誤攔截器，只要捕捉到憑證無效/過期，強制銷毀舊憑證並直接彈出重新綁定視窗。
+  - [2026.03.02] V46.SYNTAX_FIX: 修正底部導覽列「新增」按鈕的語法錯誤 (Unexpected token)。
+  - [2026.03.02] V45.MY_TX_FIX: 修正 myTransactions 變數作用域遺失導致的渲染崩潰問題。
+  - [2026.03.02] V44.DATE_FIX: 修正 displayDateClean 函數遺失或作用域錯誤導致的渲染崩潰問題。
+  - [2026.03.02] V43.AUTH_FIX: 修正「憑證失效時無法登入」的問題。在強制登出時，同步清除本地端已過期的 Device Token。
   - [2026.03.02] V40.POLLING_FIX: 重構輪詢機制。實作「查詢與上傳分離」。
   - [2026.03.02] V39.REAL_POLLING: 修正延遲同步問題。
-  - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數崩潰問題。
-  - [2026.03.02] V37.ENHANCED_UI: 首頁統計改為當月計算，優化歷史清單過濾器。
-  - [2026.03.02] V36.OFFLINE_TAGS: 導入離線標記 (isOffline) 邏輯。
-  - [2026.03.02] V35.SMART_TOASTS: 重新設計所有 Toast 提示語機制。
   ==========================================
 -->
 <head>
@@ -85,7 +83,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V43.AUTH_FIX";
+    const APP_VERSION = "2026.03.02.PRO.V47.TOKEN_MODAL_FIX";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -167,7 +165,7 @@
     const getParentCat = (catStr) => {
       if (!catStr) return "其他";
       if (catStr.includes('/')) return catStr.split('/')[0];
-      const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪資":"收入", "投資":"理財", "雜項":"其他"};
+      const legacyMap = {"餐飲":"食", "交通":"行", "購物":"衣", "住":"居家", "水電":"居家", "育":"教育", "樂":"娛樂", "薪 সির":"收入", "投資":"理財", "雜項":"其他"};
       return legacyMap[catStr] || "其他";
     };
     const getChildCat = (catStr) => catStr.includes('/') ? catStr.substring(catStr.indexOf('/') + 1) : catStr;
@@ -233,7 +231,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -684,6 +682,13 @@
     };
 
     function App() {
+      const displayDateClean = (val) => {
+        if (!val) return "";
+        let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
+        const parts = str.split(" ");
+        return parts.length > 1 ? `${parts[0]} ${parts[1].split(":").slice(0,2).join(":")}` : str;
+      };
+
       const [activeTab, setActiveTab] = useState("dashboard");
       const [familyConfig, setFamilyConfig] = useState(() => {
         const saved = safeArrayLS(LS.members); return saved.length ? saved : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }];
@@ -847,14 +852,13 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // ★ 綁定最新的函數給 Interval 使用
       useEffect(() => { isSyncingRef.current = isSyncing; }, [isSyncing]);
       useEffect(() => { processRef.current = processQueueToCloud; });
       useEffect(() => { fetchRef.current = fetchCloudTx; });
 
-      // 🚨 修復點：確保 forceReloginForToken 函數在清除憑證時的穩定性
+      // ★ 修復：攔截器觸發重新登入時，徹底清空舊憑證並退回綁定視窗
       const forceReloginForToken = useCallback(() => { 
-        clearDeviceToken(); // ★ 修復：登出時務必清除損壞或過期的憑證
+        clearDeviceToken(); 
         setCurrentUser(null); 
         setSelectingUser(null); 
         setPinInput(""); 
@@ -862,7 +866,6 @@
         setShowBootstrapModal(true); 
       }, []);
 
-      // ★ 實作純粹的背景查詢輪詢 (只查不上傳，回報後再等 5 秒)
       useEffect(() => {
         if (!isOnline || !currentUser) return;
         
@@ -878,7 +881,6 @@
         const runSilentPoll = async () => {
             if (!isPollingActive) return;
             
-            // ★ 修復：輪詢遇到憑證失效時也要強制登出
             if (navigator.onLine && !isSyncingRef.current) {
                 if (!deviceValid()) {
                      forceReloginForToken();
@@ -886,7 +888,6 @@
                     try {
                         if (fetchRef.current) await fetchRef.current(); 
                     } catch (e) {
-                        // 處理 fetchCloudTx 內拋出的憑證無效錯誤
                         if (e.message && (e.message.includes("憑證") || e.message.includes("無效") || e.message.includes("過期"))) {
                              forceReloginForToken();
                         }
@@ -998,7 +999,6 @@
         return newQueue;
       };
 
-      // ★ 啟動 5 秒倒數計時器發動靜默同步
       const resetPollingTimer = useCallback(() => {
         if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         pollingTimerRef.current = setTimeout(() => {
@@ -1009,9 +1009,6 @@
         }, 5000); 
       }, [isSyncing]);
 
-      // ==========================================
-      // 🚀 背景同步引擎
-      // ==========================================
       const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, isSilentPolling = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "⚠️ 目前離線中，變更已暫存於手機");
@@ -1102,6 +1099,11 @@
                  return false; 
               }
               showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
+          } else {
+              if (e.message && (e.message.includes("過期") || e.message.includes("無效") || e.message.includes("憑證") || e.message.includes("重新綁定"))) {
+                 forceReloginForToken();
+                 return false;
+              }
           }
           return true; 
         } finally { 
@@ -1136,7 +1138,16 @@
             if (res.result !== "success") throw new Error(res.message);
             setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle}));
             showStatus("success", "✅ 問候語已更新");
-         } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
+         } catch (e) {
+            setLoadingCard({ show:false, text:"" });
+            const msg = e.message || "儲存失敗";
+            if (msg.includes("憑證") || msg.includes("無效") || msg.includes("過期") || msg.includes("重新綁定")) {
+                showStatus("error", "❌ 雲端憑證無效，請重新綁定");
+                forceReloginForToken();
+            } else {
+                showStatus("error", msg);
+            }
+         } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const saveLocalPinHash = async (name, pin) => { const h = await sha256Base64(`${name}::${pin}::local`); localStorage.setItem(LS.pinHashPrefix + name, h); };
@@ -1178,7 +1189,16 @@
         try {
           setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(currentUser.name, unbindPin);
           localStorage.removeItem(getBioKey(currentUser.name)); clearBioFail(currentUser.name); setShowUnbindModal(false); setUnbindPin(""); showStatus("success","✅ 已解除綁定");
-        } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
+        } catch (e) {
+          setLoadingCard({ show:false, text:"" });
+          const msg = e.message || "PIN 錯誤";
+          if (msg.includes("憑證") || msg.includes("無效") || msg.includes("過期") || msg.includes("重新綁定")) {
+              showStatus("error", "❌ 雲端憑證無效，請重新綁定");
+              forceReloginForToken();
+          } else {
+              showStatus("error", msg);
+          }
+        } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const changePin = async () => {
@@ -1192,7 +1212,16 @@
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name); setShowChangePinModal(false);
           showStatus("success","✅ 密碼更新成功，請重新登入"); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard");
-        } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
+        } catch (e) {
+          setLoadingCard({ show:false, text:"" });
+          const msg = e.message || "更新失敗";
+          if (msg.includes("憑證") || msg.includes("無效") || msg.includes("過期") || msg.includes("重新綁定")) {
+              showStatus("error", "❌ 雲端憑證無效，請重新綁定");
+              forceReloginForToken();
+          } else {
+              showStatus("error", msg);
+          }
+        } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
       const visibleTransactions = useMemo(() => {
@@ -1235,6 +1264,11 @@
         });
         return map;
       }, [syncQueue, processingQueue]);
+
+      const myTransactions = useMemo(() => {
+        if (!currentUser) return [];
+        return (visibleTransactions || []).filter(t => t.member === currentUser.name);
+      }, [visibleTransactions, currentUser]);
 
       const handleAdd = async (newTxs) => {
         const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
@@ -1337,11 +1371,6 @@
             processQueueToCloud({ overrideQueue: currentQ });
         }
       };
-
-      const myTransactions = useMemo(() => {
-        if (!currentUser) return [];
-        return (visibleTransactions || []).filter(t => t.member === currentUser.name);
-      }, [visibleTransactions, currentUser]);
 
       const currentMonthRange = useMemo(() => {
         const now = new Date();
@@ -1666,11 +1695,6 @@
         );
       };
 
-      const renderItemOrGroup = (item, allowEdit) => {
-        if (item.isGroup) return renderGroupCard(item, allowEdit);
-        return renderStandaloneCard(item, allowEdit);
-      };
-
       const handleUserClick = async (user) => {
         setSelectingUser(user);
         setPinInput("");
@@ -1777,7 +1801,18 @@
                                     setPinInput(""); 
                                     setFallbackToPin(false);
                                   }
-                                } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "PIN 錯誤"); setPinInput(""); }
+                                } catch (e) {
+                                  setLoadingCard({ show:false, text:"" });
+                                  const msg = e.message || "PIN 錯誤";
+                                  // ★ 修復：若密碼輸入時發現憑證無效，強制清除舊憑證並退回綁定畫面
+                                  if (msg.includes("憑證") || msg.includes("無效") || msg.includes("過期") || msg.includes("重新綁定")) {
+                                      showStatus("error", "❌ 雲端憑證無效，請重新綁定");
+                                      forceReloginForToken();
+                                  } else {
+                                      showStatus("error", msg);
+                                      setPinInput("");
+                                  }
+                                }
                               }
                             }} className="bg-white/5 h-16 rounded-2xl font-black text-2xl active:bg-blue-600 transition-all border border-white/5 text-white shadow-sm hover:bg-white/10">
                             {k}
@@ -1801,7 +1836,7 @@
                   <button onClick={async () => {
                       try {
                         setLoadingCard({ show:true, text:"正在綁定雲端..." }); await bootstrapDevice();
-                        setShowBootstrapModal(false); setBootstrapSecret(""); showStatus("success","雲端已綁定");
+                        setShowBootstrapModal(false); setBootstrapSecret(""); showStatus("success","✅ 雲端已綁定");
                       } catch (e) { showStatus("error", e.message || "雲端密碼錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
                     }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">
                     確認
@@ -1826,7 +1861,7 @@
                       setSyncQueue([]);
                       localStorage.removeItem(LS.pending);
                       setShowClearQueueModal(false);
-                      showStatus("success", "已清空卡死的暫存資料");
+                      showStatus("success", "✅ 已清空卡死的暫存資料");
                     }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
                   </div>
                 </div>
@@ -1995,7 +2030,7 @@
                     setSyncQueue([]);
                     localStorage.removeItem(LS.pending);
                     setShowClearQueueModal(false);
-                    showStatus("success", "已清空卡死的暫存資料");
+                    showStatus("success", "✅ 已清空卡死的暫存資料");
                   }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
                 </div>
               </div>
@@ -2385,6 +2420,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>徹底修復「PIN碼登入時若憑證無效會卡死」的問題。強化所有 API 錯誤攔截器，只要捕捉到憑證無效/過期，強制銷毀舊憑證並直接彈出重新綁定視窗 (V47.TOKEN_MODAL_FIX)</li>
+                          <li>修正底部導覽列「新增」按鈕的語法錯誤 (V46.SYNTAX_FIX)</li>
+                          <li>修正 myTransactions 變數作用域遺失導致的渲染崩潰問題 (V45.MY_TX_FIX)</li>
+                          <li>修正 displayDateClean 函數遺失導致的渲染崩潰問題 (V44.DATE_FIX)</li>
                           <li>修正「憑證失效時無法登入」的問題。在強制登出時，同步清除本地端已過期的 Device Token，確保能夠重新發起綁定流程而不被舊憑證卡住 (V43.AUTH_FIX)</li>
                           <li>移除測試用的 Console Log，保持程式碼純淨，輪詢維持完全靜默運作 (V42.CLEAN_POLLING)</li>
                           <li>修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯，確保使用者能順利重新輸入雲端密碼 (V41.LOGIN_FIX)</li>
