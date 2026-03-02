@@ -3,9 +3,10 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V40.POLLING_FIX
+  最新版本: 2026.03.02.PRO.V41.LOGIN_FIX
   ==========================================
   【完整更新歷程】
+  - [2026.03.02] V41.LOGIN_FIX: 修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯，確保使用者能順利重新輸入雲端密碼。
   - [2026.03.02] V40.POLLING_FIX: 重構輪詢機制。實作「查詢與上傳分離」：背景 5 秒輪詢僅限查詢下載資料，不上傳；且改用連鎖計時器，必須等雲端回報資料確認後，才重新計時 5 秒，避免阻塞。操作資料時則「零延遲」即時觸發上傳。
   - [2026.03.02] V39.REAL_POLLING: 修正延遲同步問題。
   - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數崩潰問題。
@@ -82,7 +83,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V40.POLLING_FIX";
+    const APP_VERSION = "2026.03.02.PRO.V41.LOGIN_FIX";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -891,6 +892,7 @@
         return parts.length > 1 ? `${parts[0]} ${parts[1].split(":").slice(0,2).join(":")}` : str;
       };
 
+      // 🚨 修正點：移除 useCallback 或修正閉包依賴，確保一定能跳轉
       const forceReloginForToken = useCallback(() => { 
         setCurrentUser(null); 
         setSelectingUser(null); 
@@ -1975,7 +1977,7 @@
                     setSyncQueue([]);
                     localStorage.removeItem(LS.pending);
                     setShowClearQueueModal(false);
-                    showStatus("success", "✅ 已清空卡死的暫存資料");
+                    showStatus("success", "已清空卡死的暫存資料");
                   }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
                 </div>
               </div>
@@ -2365,6 +2367,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯，確保使用者能順利重新輸入雲端密碼 (V41.LOGIN_FIX)</li>
                           <li>重構輪詢機制。實作「查詢與上傳分離」：背景 5 秒輪詢僅限查詢下載資料，不上傳；且改用連鎖計時器，必須等雲端回報資料確認後，才重新計時 5 秒，避免阻塞。操作資料時則「零延遲」即時觸發上傳 (V40.POLLING_FIX)</li>
                           <li>修正延遲同步問題：連線狀態下新增或修改會「立刻」觸發上傳，不再延遲 5 秒。實作真正的背景閒置輪詢 (Idle Polling)：每 5 秒自動靜默抓取雲端最新資料，讓多設備能快速同步，且完全不干擾使用者介面 (V39.REAL_POLLING)</li>
                           <li>修復 renderItemOrGroup 函數與 animTrigger 狀態遺失導致的畫面渲染崩潰問題 (V38.FIX_RENDER)</li>
