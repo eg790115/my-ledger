@@ -3,11 +3,13 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V41.LOGIN_FIX
+  最新版本: 2026.03.02.PRO.V43.AUTH_FIX
   ==========================================
   【完整更新歷程】
-  - [2026.03.02] V41.LOGIN_FIX: 修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯，確保使用者能順利重新輸入雲端密碼。
-  - [2026.03.02] V40.POLLING_FIX: 重構輪詢機制。實作「查詢與上傳分離」：背景 5 秒輪詢僅限查詢下載資料，不上傳；且改用連鎖計時器，必須等雲端回報資料確認後，才重新計時 5 秒，避免阻塞。操作資料時則「零延遲」即時觸發上傳。
+  - [2026.03.02] V43.AUTH_FIX: 修正「憑證失效時無法登入」的問題。在強制登出時，同步清除本地端已過期的 Device Token，確保能夠重新發起綁定流程而不被舊憑證卡住。
+  - [2026.03.02] V42.CLEAN_POLLING: 移除測試用的 Console Log，保持程式碼純淨，輪詢維持完全靜默運作。
+  - [2026.03.02] V41.LOGIN_FIX: 修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯。
+  - [2026.03.02] V40.POLLING_FIX: 重構輪詢機制。實作「查詢與上傳分離」。
   - [2026.03.02] V39.REAL_POLLING: 修正延遲同步問題。
   - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數崩潰問題。
   - [2026.03.02] V37.ENHANCED_UI: 首頁統計改為當月計算，優化歷史清單過濾器。
@@ -83,7 +85,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V41.LOGIN_FIX";
+    const APP_VERSION = "2026.03.02.PRO.V43.AUTH_FIX";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -231,7 +233,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -850,6 +852,16 @@
       useEffect(() => { processRef.current = processQueueToCloud; });
       useEffect(() => { fetchRef.current = fetchCloudTx; });
 
+      // 🚨 修復點：確保 forceReloginForToken 函數在清除憑證時的穩定性
+      const forceReloginForToken = useCallback(() => { 
+        clearDeviceToken(); // ★ 修復：登出時務必清除損壞或過期的憑證
+        setCurrentUser(null); 
+        setSelectingUser(null); 
+        setPinInput(""); 
+        setBootstrapSecret(""); 
+        setShowBootstrapModal(true); 
+      }, []);
+
       // ★ 實作純粹的背景查詢輪詢 (只查不上傳，回報後再等 5 秒)
       useEffect(() => {
         if (!isOnline || !currentUser) return;
@@ -866,10 +878,20 @@
         const runSilentPoll = async () => {
             if (!isPollingActive) return;
             
-            if (navigator.onLine && !isSyncingRef.current && getDeviceToken()) {
-                try {
-                    if (fetchRef.current) await fetchRef.current(); 
-                } catch (e) {}
+            // ★ 修復：輪詢遇到憑證失效時也要強制登出
+            if (navigator.onLine && !isSyncingRef.current) {
+                if (!deviceValid()) {
+                     forceReloginForToken();
+                } else {
+                    try {
+                        if (fetchRef.current) await fetchRef.current(); 
+                    } catch (e) {
+                        // 處理 fetchCloudTx 內拋出的憑證無效錯誤
+                        if (e.message && (e.message.includes("憑證") || e.message.includes("無效") || e.message.includes("過期"))) {
+                             forceReloginForToken();
+                        }
+                    }
+                }
             }
             
             if (isPollingActive) {
@@ -883,23 +905,7 @@
             isPollingActive = false;
             if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
         };
-      }, [isOnline, currentUser]); 
-
-      const displayDateClean = (val) => {
-        if (!val) return "";
-        let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
-        const parts = str.split(" ");
-        return parts.length > 1 ? `${parts[0]} ${parts[1].split(":").slice(0,2).join(":")}` : str;
-      };
-
-      // 🚨 修正點：移除 useCallback 或修正閉包依賴，確保一定能跳轉
-      const forceReloginForToken = useCallback(() => { 
-        setCurrentUser(null); 
-        setSelectingUser(null); 
-        setPinInput(""); 
-        setBootstrapSecret(""); 
-        setShowBootstrapModal(true); 
-      }, []);
+      }, [isOnline, currentUser, forceReloginForToken]); 
 
       const refreshDeviceToken = async () => {
         const data = await postGAS({ action: "DEVICE_REFRESH", deviceToken: getDeviceToken() });
@@ -992,16 +998,27 @@
         return newQueue;
       };
 
+      // ★ 啟動 5 秒倒數計時器發動靜默同步
+      const resetPollingTimer = useCallback(() => {
+        if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+        pollingTimerRef.current = setTimeout(() => {
+            const currentQ = safeParse(localStorage.getItem(LS.pending), []);
+            if (navigator.onLine && currentQ.length > 0 && !isSyncing) {
+                processQueueToCloud({ isSilentPolling: true });
+            }
+        }, 5000); 
+      }, [isSyncing]);
+
       // ==========================================
-      // 🚀 背景同步引擎 (專注於上傳與手動/觸發同步)
+      // 🚀 背景同步引擎
       // ==========================================
-      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
+      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, isSilentPolling = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "⚠️ 目前離線中，變更已暫存於手機");
           return true;
         }
         if (!deviceValid()) { 
-           showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
+           if (!isSilentPolling) showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
            return false; 
         }
@@ -1045,43 +1062,47 @@
           
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
-          if (didWrite) {
-              let summaryParts = [];
-              if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
-              if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
-              if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
-              const summaryText = summaryParts.join('、');
+          if (!isSilentPolling) {
+              if (didWrite) {
+                  let summaryParts = [];
+                  if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
+                  if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
+                  if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
+                  const summaryText = summaryParts.join('、');
 
-              if (isManualSync) {
-                  showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
-              } else if (isAutoRecover) {
-                  showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
-              } else {
-                  if (queueLengthBeforeSync > 1) {
-                      showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
+                  if (isManualSync) {
+                      showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
+                  } else if (isAutoRecover) {
+                      showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
                   } else {
-                      if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
-                      else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
-                      else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
+                      if (queueLengthBeforeSync > 1) {
+                          showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
+                      } else {
+                          if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
+                          else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
+                          else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
+                      }
                   }
-              }
-          } else {
-              if (isManualSync) {
-                   showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
-              } else if (isLoginSync && oldStr !== newStr) {
-                   showStatus("success", "✅ 已自動同步雲端最新資料");
+              } else {
+                  if (isManualSync) {
+                       showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
+                  } else if (isLoginSync && oldStr !== newStr) {
+                       showStatus("success", "✅ 已自動拉取雲端最新資料");
+                  }
               }
           }
 
           return true; 
         } catch (e) {
-          const msg = e.message || "未知錯誤"; 
-          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
-             showStatus("error", `❌ 驗證失效: ${msg}`);
-             forceReloginForToken();
-             return false; 
+          if (!isSilentPolling) {
+              const msg = e.message || "未知錯誤"; 
+              if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
+                 showStatus("error", `❌ 驗證失效: ${msg}`);
+                 forceReloginForToken();
+                 return false; 
+              }
+              showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
           }
-          showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
           return true; 
         } finally { 
           setProcessingQueue([]);
@@ -1093,6 +1114,8 @@
               setTimeout(() => {
                   if (navigator.onLine) processQueueToCloud({ isAutoRecover: true });
               }, 500);
+          } else {
+              resetPollingTimer();
           }
         }
       };
@@ -1172,7 +1195,6 @@
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
-      // 樂觀 UI 渲染：提供給 UI 渲染用
       const visibleTransactions = useMemo(() => {
         if (!currentUser) return [];
         let base = [...(txCache || [])]; 
@@ -1246,7 +1268,6 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：新增 ${completeTxs.length} 筆`);
         } else {
-            // ★ 立刻觸發同步，零延遲
             processQueueToCloud({ overrideQueue: currentQ }); 
         }
       };
@@ -1269,7 +1290,6 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：修改紀錄`);
         } else {
-            // ★ 立刻觸發同步，零延遲
             processQueueToCloud({ overrideQueue: currentQ });
         }
       };
@@ -1290,7 +1310,6 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：批次修改母項目`);
         } else {
-            // ★ 立刻觸發同步，零延遲
             processQueueToCloud({ overrideQueue: currentQ });
         }
       };
@@ -1315,7 +1334,6 @@
         if (isOfflineOp) {
             showStatus("info", `💾 離線暫存：已排程刪除`);
         } else {
-            // ★ 立刻觸發同步，零延遲
             processQueueToCloud({ overrideQueue: currentQ });
         }
       };
@@ -2367,6 +2385,8 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修正「憑證失效時無法登入」的問題。在強制登出時，同步清除本地端已過期的 Device Token，確保能夠重新發起綁定流程而不被舊憑證卡住 (V43.AUTH_FIX)</li>
+                          <li>移除測試用的 Console Log，保持程式碼純淨，輪詢維持完全靜默運作 (V42.CLEAN_POLLING)</li>
                           <li>修正「憑證失效時無法正確跳出重新綁定視窗」的問題。強化 forceReloginForToken 的狀態重置邏輯，確保使用者能順利重新輸入雲端密碼 (V41.LOGIN_FIX)</li>
                           <li>重構輪詢機制。實作「查詢與上傳分離」：背景 5 秒輪詢僅限查詢下載資料，不上傳；且改用連鎖計時器，必須等雲端回報資料確認後，才重新計時 5 秒，避免阻塞。操作資料時則「零延遲」即時觸發上傳 (V40.POLLING_FIX)</li>
                           <li>修正延遲同步問題：連線狀態下新增或修改會「立刻」觸發上傳，不再延遲 5 秒。實作真正的背景閒置輪詢 (Idle Polling)：每 5 秒自動靜默抓取雲端最新資料，讓多設備能快速同步，且完全不干擾使用者介面 (V39.REAL_POLLING)</li>
