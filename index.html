@@ -3,16 +3,15 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.02.PRO.V39.REAL_POLLING
+  最新版本: 2026.03.02.PRO.V40.POLLING_FIX
   ==========================================
   【完整更新歷程】
-  - [2026.03.02] V39.REAL_POLLING: 修正延遲同步問題：連線狀態下新增或修改會「立刻」觸發上傳，不再延遲 5 秒。實作真正的背景閒置輪詢 (Idle Polling)：每 5 秒自動靜默抓取雲端最新資料，讓多設備能快速同步，且完全不干擾使用者介面。
-  - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數與 animTrigger 狀態遺失導致的畫面渲染崩潰問題。
-  - [2026.03.02] V37.ENHANCED_UI: 首頁統計改為精準當月計算並修改文字。歷史清單搜尋與篩選整合成彈出視窗，新增反向搜尋與總額統計。優化歷史清單母項目在時間篩選下的顯示邏輯（僅顯示符合時間的子項）。分析圖表對象分析支援所有對象組合。
-  - [2026.03.02] V36.OFFLINE_TAGS: 導入操作當下的「離線標記 (isOffline)」。
-  - [2026.03.02] V35.SMART_TOASTS: 重新設計所有 Toast 提示語機制，異常狀態透明化。
-  - [2026.03.02] V34.CHAIN_SYNC: 實作「重試解鎖機制 (Unlock-and-Check)」。
-  - [2026.03.01] V33.ULTIMATE_SYNC: 實作「資料層與 UI 層分離」，新增 processingQueue。
+  - [2026.03.02] V40.POLLING_FIX: 重構輪詢機制。實作「查詢與上傳分離」：背景 5 秒輪詢僅限查詢下載資料，不上傳；且改用連鎖計時器，必須等雲端回報資料確認後，才重新計時 5 秒，避免阻塞。操作資料時則「零延遲」即時觸發上傳。
+  - [2026.03.02] V39.REAL_POLLING: 修正延遲同步問題。
+  - [2026.03.02] V38.FIX_RENDER: 修復 renderItemOrGroup 函數崩潰問題。
+  - [2026.03.02] V37.ENHANCED_UI: 首頁統計改為當月計算，優化歷史清單過濾器。
+  - [2026.03.02] V36.OFFLINE_TAGS: 導入離線標記 (isOffline) 邏輯。
+  - [2026.03.02] V35.SMART_TOASTS: 重新設計所有 Toast 提示語機制。
   ==========================================
 -->
 <head>
@@ -83,7 +82,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.02.PRO.V39.REAL_POLLING";
+    const APP_VERSION = "2026.03.02.PRO.V40.POLLING_FIX";
     const GAS_TARGET_VERSION = "2026.03.01.PRO.V14.BALANCED";
 
     const DB_NAME = "FamilyAccountingDB";
@@ -753,10 +752,10 @@
 
       const [isOnline, setIsOnline] = useState(navigator.onLine);
       
-      // 引入計時器 Ref 
       const pollingTimerRef = useRef(null);
       const isSyncingRef = useRef(false);
       const processRef = useRef(null);
+      const fetchRef = useRef(null);
 
       const showStatus = (type, text) => { setStatusMsg({ type, text }); setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); };
 
@@ -792,10 +791,11 @@
           if (prevOnline.current !== isOnline) {
               if (isOnline) {
                   showStatus("success", "✅ 網路已恢復連線");
-                  // 網路恢復時，自動靜默檢查/上傳
                   if (processRef.current) {
                       const currentQ = safeParse(localStorage.getItem(LS.pending), []);
-                      processRef.current({ isAutoRecover: currentQ.length > 0, isSilentPolling: currentQ.length === 0 });
+                      if (currentQ.length > 0) {
+                          processRef.current({ isAutoRecover: true });
+                      }
                   }
               } else {
                   showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
@@ -835,7 +835,6 @@
 
       useEffect(() => setHistoryVisibleCount(20), [debouncedHistorySearch, debouncedHistoryExcludeSearch, historyTypeFilter, historyDateFilter, activeTab]);
 
-      // 圖表重設機制
       useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
       useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
       useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
@@ -845,28 +844,44 @@
       
       useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
-      // ★ 動態更新 processRef 與 isSyncingRef 供 Interval 使用
+      // ★ 綁定最新的函數給 Interval 使用
       useEffect(() => { isSyncingRef.current = isSyncing; }, [isSyncing]);
       useEffect(() => { processRef.current = processQueueToCloud; });
+      useEffect(() => { fetchRef.current = fetchCloudTx; });
 
-      // ★ 登入後啟動真正的閒置輪詢 (Idle Polling)
+      // ★ 實作純粹的背景查詢輪詢 (只查不上傳，回報後再等 5 秒)
       useEffect(() => {
         if (!isOnline || !currentUser) return;
         
-        // 初次登入的同步
+        let isPollingActive = true;
+
         if (!isSyncingRef.current) {
             const currentQ = safeParse(localStorage.getItem(LS.pending), []);
-            if (processRef.current) processRef.current({ isAutoRecover: currentQ.length > 0, isLoginSync: currentQ.length === 0, isSilentPolling: false });
+            if (processRef.current) {
+                processRef.current({ isAutoRecover: currentQ.length > 0, isLoginSync: currentQ.length === 0 });
+            }
         }
 
-        // 設定每 5 秒的靜默抓取
-        const intervalId = setInterval(() => {
-            if (!isSyncingRef.current && navigator.onLine) {
-                if (processRef.current) processRef.current({ isSilentPolling: true });
+        const runSilentPoll = async () => {
+            if (!isPollingActive) return;
+            
+            if (navigator.onLine && !isSyncingRef.current && getDeviceToken()) {
+                try {
+                    if (fetchRef.current) await fetchRef.current(); 
+                } catch (e) {}
             }
-        }, 5000);
-        
-        return () => clearInterval(intervalId);
+            
+            if (isPollingActive) {
+                pollingTimerRef.current = setTimeout(runSilentPoll, 5000);
+            }
+        };
+
+        pollingTimerRef.current = setTimeout(runSilentPoll, 5000);
+
+        return () => {
+            isPollingActive = false;
+            if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+        };
       }, [isOnline, currentUser]); 
 
       const displayDateClean = (val) => {
@@ -970,15 +985,15 @@
       };
 
       // ==========================================
-      // 🚀 背景同步引擎
+      // 🚀 背景同步引擎 (專注於上傳與手動/觸發同步)
       // ==========================================
-      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, isSilentPolling = false, overrideQueue = null } = {}) => {
+      const processQueueToCloud = async ({ doRefreshFirst = false, isManualSync = false, isLoginSync = false, isAutoRecover = false, overrideQueue = null } = {}) => {
         if (!isOnline) {
           if (isManualSync) showStatus("info", "⚠️ 目前離線中，變更已暫存於手機");
           return true;
         }
         if (!deviceValid()) { 
-           if (!isSilentPolling) showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
+           showStatus("error", "❌ 雲端憑證已過期，請重新綁定"); 
            forceReloginForToken(); 
            return false; 
         }
@@ -1022,52 +1037,55 @@
           
           const { formatted, oldStr, newStr } = await fetchCloudTx();
           
-          if (!isSilentPolling) {
-              if (didWrite) {
-                  let summaryParts = [];
-                  if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
-                  if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
-                  if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
-                  const summaryText = summaryParts.join('、');
+          if (didWrite) {
+              let summaryParts = [];
+              if (addCount > 0) summaryParts.push(`新增 ${addCount} 筆`);
+              if (updateCount > 0) summaryParts.push(`修改 ${updateCount} 筆`);
+              if (deleteCount > 0) summaryParts.push(`刪除 ${deleteCount} 筆`);
+              const summaryText = summaryParts.join('、');
 
-                  if (isManualSync) {
-                      showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
-                  } else if (isAutoRecover) {
-                      showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
-                  } else {
-                      if (queueLengthBeforeSync > 1) {
-                          showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
-                      } else {
-                          if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
-                          else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
-                          else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
-                      }
-                  }
+              if (isManualSync) {
+                  showStatus("success", `☁️ 手動同步完成！上傳暫存: ${summaryText}`);
+              } else if (isAutoRecover) {
+                  showStatus("success", `✅ 網路恢復！已自動上傳暫存: ${summaryText}`);
               } else {
-                  if (isManualSync) {
-                       showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
-                  } else if (isLoginSync && oldStr !== newStr) {
-                       showStatus("success", "✅ 已自動拉取雲端最新資料");
+                  if (queueLengthBeforeSync > 1) {
+                      showStatus("success", `☁️ 同步成功！(包含暫存共上傳: ${summaryText})`);
+                  } else {
+                      if (addCount > 0) showStatus("success", "✅ 已新增至雲端");
+                      else if (updateCount > 0) showStatus("success", "✅ 已更新至雲端");
+                      else if (deleteCount > 0) showStatus("success", "🗑️ 已自雲端刪除");
                   }
+              }
+          } else {
+              if (isManualSync) {
+                   showStatus("success", oldStr === newStr ? "✅ 已是最新資料" : "✅ 已拉取雲端最新變更");
+              } else if (isLoginSync && oldStr !== newStr) {
+                   showStatus("success", "✅ 已自動同步雲端最新資料");
               }
           }
 
           return true; 
         } catch (e) {
-          if (!isSilentPolling) {
-              const msg = e.message || "未知錯誤"; 
-              if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
-                 showStatus("error", `❌ 驗證失效: ${msg}`);
-                 forceReloginForToken();
-                 return false; 
-              }
-              showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
+          const msg = e.message || "未知錯誤"; 
+          if (msg.includes("過期") || msg.includes("無效") || msg.includes("憑證") || msg.includes("重新綁定")) {
+             showStatus("error", `❌ 驗證失效: ${msg}`);
+             forceReloginForToken();
+             return false; 
           }
+          showStatus("error", `❌ 同步失敗: ${msg} (資料已安全暫存)`);
           return true; 
         } finally { 
           setProcessingQueue([]);
           setIsSyncing(false);
           isSyncingRef.current = false;
+
+          const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
+          if (leftoverQueue && leftoverQueue.length > 0) {
+              setTimeout(() => {
+                  if (navigator.onLine) processQueueToCloud({ isAutoRecover: true });
+              }, 500);
+          }
         }
       };
 
@@ -1086,7 +1104,7 @@
             const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() });
             if (res.result !== "success") throw new Error(res.message);
             setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle}));
-            showStatus("success", "問候語已更新");
+            showStatus("success", "✅ 問候語已更新");
          } catch (e) { showStatus("error", e.message || "儲存失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
@@ -1118,7 +1136,7 @@
           const challenge = new Uint8Array(32); crypto.getRandomValues(challenge); const userID = new Uint8Array(16); crypto.getRandomValues(userID);
           const cred = await navigator.credentials.create({ publicKey: { challenge, rp: { name:"家庭記帳" }, user: { id:userID, name: currentUser.name, displayName: currentUser.name }, pubKeyCredParams: [{ type:"public-key", alg:-7 }, { type:"public-key", alg:-257 }], authenticatorSelection: { authenticatorAttachment:"platform", userVerification:"required" }, timeout: 60000 } });
           localStorage.setItem(getBioKey(currentUser.name), btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(cred.rawId)))));
-          clearBioFail(currentUser.name); showStatus("success","設備已綁定");
+          clearBioFail(currentUser.name); showStatus("success","✅ 設備已綁定");
         } catch { showStatus("error","綁定失敗或已取消"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
@@ -1128,7 +1146,7 @@
         if (!deviceValid()) { showStatus("error","雲端憑證已過期，請先綁定雲端"); return; }
         try {
           setLoadingCard({ show:true, text:"正在驗證..." }); await verifyPinOnline(currentUser.name, unbindPin);
-          localStorage.removeItem(getBioKey(currentUser.name)); clearBioFail(currentUser.name); setShowUnbindModal(false); setUnbindPin(""); showStatus("success","已解除綁定");
+          localStorage.removeItem(getBioKey(currentUser.name)); clearBioFail(currentUser.name); setShowUnbindModal(false); setUnbindPin(""); showStatus("success","✅ 已解除綁定");
         } catch (e) { showStatus("error", e.message || "PIN 錯誤"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
@@ -1142,7 +1160,7 @@
           const res = await postGAS({ action:"UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
           if (res.result !== "success") throw new Error(res.message || "更新失敗");
           localStorage.removeItem(LS.pinHashPrefix + currentUser.name); setShowChangePinModal(false);
-          showStatus("success","密碼更新成功，請重新登入"); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard");
+          showStatus("success","✅ 密碼更新成功，請重新登入"); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard");
         } catch (e) { showStatus("error", e.message || "更新失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
       };
 
@@ -1951,7 +1969,7 @@
                     setSyncQueue([]);
                     localStorage.removeItem(LS.pending);
                     setShowClearQueueModal(false);
-                    showStatus("success", "已清空卡死的暫存資料");
+                    showStatus("success", "✅ 已清空卡死的暫存資料");
                   }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
                 </div>
               </div>
@@ -2341,6 +2359,7 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>重構輪詢機制。實作「查詢與上傳分離」：背景 5 秒輪詢僅限查詢下載資料，不上傳；且改用連鎖計時器，必須等雲端回報資料確認後，才重新計時 5 秒，避免阻塞。操作資料時則「零延遲」即時觸發上傳 (V40.POLLING_FIX)</li>
                           <li>修正延遲同步問題：連線狀態下新增或修改會「立刻」觸發上傳，不再延遲 5 秒。實作真正的背景閒置輪詢 (Idle Polling)：每 5 秒自動靜默抓取雲端最新資料，讓多設備能快速同步，且完全不干擾使用者介面 (V39.REAL_POLLING)</li>
                           <li>修復 renderItemOrGroup 函數與 animTrigger 狀態遺失導致的畫面渲染崩潰問題 (V38.FIX_RENDER)</li>
                           <li>首頁統計改為精準當月計算並修改文字。歷史清單搜尋與篩選整合成彈出視窗，新增反向搜尋與總額統計。優化歷史清單母項目在時間篩選下的顯示邏輯（僅顯示符合時間的子項）。分析圖表對象分析支援所有對象組合 (V37.ENHANCED_UI)</li>
