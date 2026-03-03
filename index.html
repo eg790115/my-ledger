@@ -3,9 +3,13 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.03.PRO.V65.TAG_AND_MONTH_FIX
+  最新版本: 2026.03.03.PRO.V69.TAG_FIX_2
   ==========================================
   【完整更新歷程】
+  - [2026.03.03] V69.TAG_FIX_2: 徹底修復圖表分析頁面中因為呼叫已刪除的 getBenTagContent 函數所造成的 ReferenceError 崩潰，全面替換為文字標籤的處理邏輯。
+  - [2026.03.03] V68.TAG_FIX: 移除遺留的 getBenTagContent 呼叫，並全面改用 getBenBadgeStyle 來渲染文字標籤的專屬顏色，修復了在圖表分析頁面發生的 ReferenceError。
+  - [2026.03.03] V67.FAMILY_TAG_RENAME: 將「全家共同」縮合標籤改名為更簡潔的「全家」，並套用亮橘色系增強視覺區別。
+  - [2026.03.03] V66.SMART_TAGS: 優化對象標籤的顯示邏輯，當選擇超過2個對象時，自動縮合為「全家共同」的單一標籤，避免手機版面被過多標籤擠壓變形。
   - [2026.03.03] V65.TAG_AND_MONTH_FIX: 補回遺失的 getBenArray 與 getBenBadgeStyle 函數，徹底解決 ReferenceError 崩潰；確保「上月」篩選為精確的日曆月 (Calendar Month) 而非近 30 天。
   - [2026.03.03] V64.UX_POLISH: 修復底部導覽列設定圖示變形問題；歷史與分析預設為全部；新增標題快捷篩選按鈕。
   - [2026.03.03] V63.FILTER_AND_TAGS: 取消對象標籤合併，改為多色獨立標籤；優化歷史統計卡片；下拉選單統一。
@@ -80,7 +84,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.03.PRO.V65.TAG_AND_MONTH_FIX";
+    const APP_VERSION = "2026.03.03.PRO.V69.TAG_FIX_2";
     const GAS_TARGET_VERSION = "2026.03.02.PRO.V15.SYNC_RETURN";
 
     // --- 儲存與共用常數 ---
@@ -174,22 +178,25 @@
       if (!benStr) return "";
       const arr = String(benStr).split(",").filter(Boolean).map(s => s.trim());
       if (arr.length === 0) return "";
-      if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家共同";
+      if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家";
       if (arr.length === 1 && arr[0] === memberName) return ""; 
       return arr.join("、");
     };
 
-    // ★ 核心修復：獨立文字標籤用的陣列轉換器
+    // ★ 智能標籤邏輯：超過2個就縮合為「全家」，避免撐爆版面
     const getBenArray = (benStr, memberName) => {
       if (!benStr) return [];
       const arr = Array.from(new Set(String(benStr).split(",").filter(Boolean).map(s => s.trim())));
       // 如果該明細只有自己，不特別顯示標籤，保持乾淨
       if (arr.length === 1 && arr[0] === memberName) return [];
+      // 如果選了 3 個以上，強制縮合成一個標籤
+      if (arr.length > 2) return ["全家"];
       return arr;
     };
 
-    // ★ 核心修復：獨立文字標籤的專屬顏色指派
+    // ★ 為每種對象分配專屬文字顏色
     const getBenBadgeStyle = (name) => {
+        if (name === "全家") return "bg-orange-100 text-orange-700 border-orange-200";
         if (name === "爸爸") return "bg-blue-50 text-blue-600 border-blue-200";
         if (name === "媽媽") return "bg-pink-50 text-pink-600 border-pink-200";
         if (name === "兒子") return "bg-amber-50 text-amber-600 border-amber-200";
@@ -263,7 +270,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -1938,6 +1945,17 @@
                       <input type="text" value={historyExcludeSearch} onChange={(e) => setHistoryExcludeSearch(e.target.value)} placeholder="排除不想看的內容..." className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0" />
                     </div>
 
+                    <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-2 tracking-widest">時間區間快捷篩選</label>
+                        <div className="flex flex-wrap gap-2">
+                           {["all", "1m", "3m", "6m"].map(val => (
+                               <button key={val} onClick={() => setQuickDateFilter(val)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${historyDateFilter === val ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+                                  {val === 'all' ? '全部' : val === '1m' ? '本月' : val === '3m' ? '近3月' : '近半年'}
+                               </button>
+                           ))}
+                        </div>
+                    </div>
+
                     <div className="flex gap-2">
                       <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
                         <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">收支類型</label>
@@ -1946,7 +1964,7 @@
                         </select>
                       </div>
                       <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
-                        <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">時間區間</label>
+                        <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">精細時間設定</label>
                         <select value={historyDateFilter} onChange={(e) => setHistoryDateFilter(e.target.value)} className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800 truncate">
                           <option value="all">全部時間</option>
                           <option value="current_month">當月</option>
@@ -2166,7 +2184,7 @@
                     if (analysisType === "beneficiary") {
                        const rawBens = t.beneficiary ? String(t.beneficiary).split(",").filter(Boolean).map(s => s.trim()) : ["未知"];
                        const sortedBens = rawBens.sort().join(", ");
-                       const displayBen = sortedBens === "兒子, 媽媽, 爸爸" ? "全家共同" : sortedBens;
+                       const displayBen = sortedBens === "兒子, 媽媽, 爸爸" ? "全家" : sortedBens;
                        level1Totals[displayBen] = (level1Totals[displayBen] || 0) + amt;
                     } else {
                        const pCat = getParentCat(t.category);
@@ -2191,7 +2209,7 @@
                         
                         const rawBens = t.beneficiary ? String(t.beneficiary).split(",").filter(Boolean).map(s => s.trim()) : ["未知"];
                         const sortedBens = rawBens.sort().join(", ");
-                        const displayBen = sortedBens === "兒子, 媽媽, 爸爸" ? "全家共同" : sortedBens;
+                        const displayBen = sortedBens === "兒子, 媽媽, 爸爸" ? "全家" : sortedBens;
 
                         if (displayBen === selectedAnalysisLevel1) {
                           const amt = Number(t.amount) || 0;
@@ -2223,7 +2241,7 @@
                       
                       const rawBens = t.beneficiary ? String(t.beneficiary).split(",").filter(Boolean).map(s => s.trim()) : ["未知"];
                       const sortedBens = rawBens.sort().join(", ");
-                      const displayBen = sortedBens === "兒子, 媽媽, 爸爸" ? "全家共同" : sortedBens;
+                      const displayBen = sortedBens === "兒子, 媽媽, 爸爸" ? "全家" : sortedBens;
 
                       if (displayBen === selectedAnalysisLevel1 && getParentCat(t.category) === selectedAnalysisLevel2) {
                         const amt = Number(t.amount) || 0;
@@ -2256,8 +2274,8 @@
                             // ★ 分析標籤圖示
                             let labelContent = cat;
                             if (analysisType === "beneficiary") {
-                                const tagData = getBenTagContent(cat);
-                                labelContent = <span className="flex items-center gap-1.5"><span className="text-base leading-none">{tagData.icon}</span> {cat}</span>;
+                                // 在這裡我們只顯示純文字的對象名稱，不再呼叫 getBenTagContent 以防出錯
+                                labelContent = <span className="flex items-center gap-1.5"><span className="text-base leading-none"></span> {cat}</span>;
                             }
                             return (
                               <div key={cat} onClick={() => { setSelectedAnalysisLevel1(isSelected ? null : cat); setSelectedAnalysisLevel2(null); }} className={`flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-colors border ${isSelected ? `bg-${activeColorClass}-50/50 border-${activeColorClass}-200` : 'bg-gray-50/50 hover:bg-gray-100 border-transparent'}`}>
@@ -2399,6 +2417,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>徹底修復圖表分析頁面中因為呼叫已刪除的 getBenTagContent 函數所造成的 ReferenceError 崩潰，全面替換為文字標籤的處理邏輯 (V69.TAG_FIX_2)</li>
+                          <li>移除遺留的 getBenTagContent 呼叫，並全面改用 getBenBadgeStyle 來渲染文字標籤的專屬顏色，修復了在圖表分析頁面發生的 ReferenceError (V68.TAG_FIX)</li>
+                          <li>將「全家共同」縮合標籤改名為更簡潔的「全家」，並套用亮橘色系增強視覺區別 (V67.FAMILY_TAG_RENAME)</li>
+                          <li>優化對象標籤的顯示邏輯，當選擇超過2個對象時，自動縮合為「全家共同」的單一標籤，避免手機版面被過多標籤擠壓變形 (V66.SMART_TAGS)</li>
                           <li>補回遺失的 getBenArray 與 getBenBadgeStyle 函數，徹底解決 ReferenceError 崩潰；確保「上月」篩選為精確的日曆月 (Calendar Month) 而非近 30 天 (V65.TAG_AND_MONTH_FIX)</li>
                           <li>修復底部導覽列設定圖示變形問題 (增加 items-center 對齊) (V64.UX_POLISH)</li>
                           <li>歷史清單與圖表分析的時間區間預設改為「全部」 (V64.UX_POLISH)</li>
