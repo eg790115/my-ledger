@@ -3,14 +3,14 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.03.PRO.V74.MODAL_SYNTAX_FIX
+  最新版本: 2026.03.03.PRO.V76.SW_FIX
   ==========================================
   【完整更新歷程】
-  - [2026.03.03] V74.MODAL_SYNTAX_FIX: 
-    1. 修復新增按鈕 `prev => === "add"` 的致命語法錯誤 (SyntaxError)。
-    2. 將「深度清理」、「解除綁定」等彈窗元件正確移回主畫面的渲染區塊，解決點擊按鈕沒有反應的問題。
-  - [2026.03.03] V73.RENDER_FIX: 修復 `renderItemOrGroup is not defined`。
-  - [2026.03.03] V72.CACHE_CLEAR: 於設定頁面新增「清空本地快取」功能，具備「彈窗警告」與「強制輸入雲端密碼」的雙重確認防護機制。
+  - [2026.03.03] V76.SW_FIX: 修復深度清理時呼叫 Service Worker 註銷的 `InvalidStateError`，改為更安全的呼叫方式並捕捉錯誤。
+  - [2026.03.03] V75.PWA_CACHE_WIPE: 加入自動註銷 Service Worker 的腳本，升級「深度清理」功能。
+  - [2026.03.03] V74.MODAL_SYNTAX_FIX: 修復新增按鈕 SyntaxError，並將設定頁面的彈窗正確掛載回主畫面。
+  - [2026.03.03] V73.RENDER_FIX: 修復 renderItemOrGroup 宣告錯誤。
+  - [2026.03.03] V72.CACHE_CLEAR: 於設定頁面新增「清空本地快取」雙重確認防護機制。
   - [2026.03.03] V71.PWA_SYNC_OPT: 修復群組卡片標籤崩潰；精準定義全家標籤；對象分析圖改紅色系；延長防抖至1000ms。
   ==========================================
 -->
@@ -43,6 +43,20 @@
     manifestLink.rel = 'manifest';
     manifestLink.href = URL.createObjectURL(blob);
     document.head.appendChild(manifestLink);
+  </script>
+
+  <!-- ★ V75 新增：強力註銷殘留的 Service Worker，打破 PWA 舊版快取死胡同 -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for(let registration of registrations) {
+          registration.unregister();
+          console.log('已註銷舊版 Service Worker');
+        }
+      }).catch(function(err) {
+        console.log('Service Worker 註銷失敗:', err);
+      });
+    }
   </script>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -82,7 +96,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.03.PRO.V74.MODAL_SYNTAX_FIX";
+    const APP_VERSION = "2026.03.03.PRO.V76.SW_FIX";
     const GAS_TARGET_VERSION = "2026.03.02.PRO.V15.SYNC_RETURN";
 
     // --- 儲存與共用常數 ---
@@ -274,7 +288,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -806,6 +820,7 @@
       
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
+      // ★ 狀態：新增清空快取的視窗與密碼
       const [showClearCacheModal, setShowClearCacheModal] = useState(false);
       const [cacheClearPassword, setCacheClearPassword] = useState("");
 
@@ -824,6 +839,7 @@
       const [editingGroup, setEditingGroup] = useState(null);
       const [expandedGroups, setExpandedGroups] = useState({});
       
+      // 歷史清單相關狀態 (預設全時段)
       const [historySearch, setHistorySearch] = useState("");
       const [debouncedHistorySearch, setDebouncedHistorySearch] = useState(""); 
       const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
@@ -833,6 +849,7 @@
       const [historyExcludeSearch, setHistoryExcludeSearch] = useState("");
       const [debouncedHistoryExcludeSearch, setDebouncedHistoryExcludeSearch] = useState("");
 
+      // 圖表分析所需狀態 (預設全時段)
       const [analysisDateFilter, setAnalysisDateFilter] = useState("all");
       const [analysisCustomStart, setAnalysisCustomStart] = useState("");
       const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
@@ -1515,7 +1532,6 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // ★ 渲染單獨卡片
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benArray = getBenArray(tx.beneficiary, tx.member);
         const pAction = pendingMap[tx.id];
@@ -1538,7 +1554,6 @@
                 )}
               </div>
               <div className="flex-1 min-w-0 pl-1">
-                {/* ★ 排版防擠壓修復 */}
                 <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                   <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
                   <div className="flex gap-1 flex-wrap shrink-0">
@@ -1572,7 +1587,6 @@
         );
       };
 
-      // ★ 渲染群組卡片
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
@@ -1606,7 +1620,6 @@
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
-                  {/* ★ 排版防擠壓修復 */}
                   <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                     <span className="truncate flex-shrink">{group.parentTitle}</span>
                     <div className="flex gap-1 flex-wrap shrink-0">
@@ -1685,13 +1698,11 @@
         );
       };
 
-      // 定義主渲染函數
       const renderItemOrGroup = (item, allowEdit) => {
         if (item.isGroup) return renderGroupCard(item, allowEdit);
         return renderStandaloneCard(item, allowEdit);
       };
 
-      // 快捷時間選擇函數
       const setQuickDateFilter = (filterVal) => {
           setHistoryDateFilter(filterVal);
           setAnalysisDateFilter(filterVal);
@@ -1716,11 +1727,10 @@
         }
       };
 
-      // 定義三組不同的漸層色系，供圖表分析使用
       const CHART_COLORS = {
         expense: ["#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#ec4899", "#f43f5e", "#ef4444"], 
         income: ["#10b981", "#059669", "#047857", "#3b82f6", "#2563eb", "#1d4ed8", "#0ea5e9", "#0891b2"], 
-        beneficiary: ["#ef4444", "#dc2626", "#b91c1c", "#f87171", "#fca5a5", "#991b1b", "#7f1d1d", "#ea580c"] // 紫色與粉紅色系
+        beneficiary: ["#ef4444", "#dc2626", "#b91c1c", "#f87171", "#fca5a5", "#991b1b", "#7f1d1d", "#ea580c"] 
       };
 
       const isHistoryFiltered = (debouncedHistorySearch !== "" || debouncedHistoryExcludeSearch !== "" || historyTypeFilter !== "all" || historyDateFilter !== "all");
@@ -1751,6 +1761,12 @@
                      ⚠️ 發現同步卡死？點此強制清除暫存
                   </button>
                 )}
+
+                {/* ★ 未登入時也提供強制清理按鈕，防止永遠卡死 */}
+                <button onClick={() => setShowClearCacheModal(true)} className="mt-6 px-4 py-2 text-gray-500 rounded-full text-xs font-bold active:scale-95 transition-all underline underline-offset-4">
+                    🛠️ 系統深度清理
+                </button>
+
               </>
             ) : (
               <div className="w-full max-w-sm animate-in text-white text-center font-black">
@@ -1880,7 +1896,7 @@
               </div>
             )}
 
-            {/* ★ 深度清理專屬雙重確認彈窗 (未登入畫面也放一份確保相容性) */}
+            {/* ★ V72: 深度清理(快取)專屬雙重確認彈窗 */}
             {showClearCacheModal && (
               <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setCacheClearPassword("");} }}>
                 <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
@@ -1904,17 +1920,35 @@
                           
                           setTxCache([]);
                           setSyncQueue([]);
-                          localStorage.removeItem(LS.txCache);
-                          localStorage.removeItem(LS.pending);
+                          localStorage.clear(); // 徹底清除所有 localStorage
+                          
                           const db = await initIndexedDB();
                           const tx = db.transaction(STORE_NAME, "readwrite");
                           tx.objectStore(STORE_NAME).clear();
                           
+                          // 強制擊殺 Service Worker
+                          if ('serviceWorker' in navigator) {
+                              const registrations = await navigator.serviceWorker.getRegistrations();
+                              for (let r of registrations) {
+                                  await r.unregister();
+                              }
+                          }
+                          
+                          // 清除 Cache Storage
+                          if ('caches' in window) {
+                              const cacheNames = await caches.keys();
+                              for (let c of cacheNames) {
+                                  await caches.delete(c);
+                              }
+                          }
+
                           setShowClearCacheModal(false);
                           setCacheClearPassword("");
                           showStatus("success", "✅ 快取已清空，正在重新下載...");
                           
-                          syncManager(false);
+                          setTimeout(() => {
+                              window.location.reload(true);
+                          }, 1500);
                       } catch(e) {
                           showStatus("error", e.message || "驗證失敗");
                       } finally {
@@ -2025,17 +2059,35 @@
                         
                         setTxCache([]);
                         setSyncQueue([]);
-                        localStorage.removeItem(LS.txCache);
-                        localStorage.removeItem(LS.pending);
+                        localStorage.clear(); // 徹底清除所有 localStorage
+                        
                         const db = await initIndexedDB();
                         const tx = db.transaction(STORE_NAME, "readwrite");
                         tx.objectStore(STORE_NAME).clear();
                         
+                        // 強制擊殺 Service Worker
+                        if ('serviceWorker' in navigator) {
+                            const registrations = await navigator.serviceWorker.getRegistrations();
+                            for (let r of registrations) {
+                                await r.unregister();
+                            }
+                        }
+                        
+                        // 清除 Cache Storage
+                        if ('caches' in window) {
+                            const cacheNames = await caches.keys();
+                            for (let c of cacheNames) {
+                                await caches.delete(c);
+                            }
+                        }
+
                         setShowClearCacheModal(false);
                         setCacheClearPassword("");
                         showStatus("success", "✅ 快取已清空，正在重新下載...");
                         
-                        syncManager(false);
+                        setTimeout(() => {
+                            window.location.reload(true);
+                        }, 1500);
                     } catch(e) {
                         showStatus("error", e.message || "驗證失敗");
                     } finally {
@@ -2293,7 +2345,7 @@
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
                   <button onClick={() => {setAnalysisType("expense"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出分析</button>
                   <button onClick={() => {setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
-                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-purple-600 shadow-sm" : ""}`}>對象分析</button>
+                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-red-600 shadow-sm" : ""}`}>對象分析</button>
                 </div>
 
                 {(() => {
@@ -2496,7 +2548,7 @@
 
                       {analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2 && (
                         <div className="bg-gray-800 p-6 rounded-[2.5rem] shadow-lg animate-in relative overflow-hidden">
-                          <div className={`absolute top-0 left-0 w-full h-1.5 bg-red-400`}></div>
+                          <div className={`absolute top-0 left-0 w-full h-1.5 bg-${activeColorClass}-400`}></div>
                           <h4 className="font-black text-white mb-5 flex items-center gap-2 text-sm pt-2">
                             「{selectedAnalysisLevel2}」子項目明細
                           </h4>
@@ -2510,7 +2562,7 @@
                                        <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                                       <div className={`h-full bg-red-400 rounded-full transition-all duration-1000 ease-out`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                       <div className={`h-full bg-${activeColorClass}-400 rounded-full transition-all duration-1000 ease-out`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
                                     </div>
                                  </div>
                                )
@@ -2600,8 +2652,10 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
-                          <li>修復新增按鈕 `prev =&gt; === "add"` 的致命語法錯誤 (SyntaxError) (V74.MODAL_SYNTAX_FIX)</li>
-                          <li>將「深度清理」、「解除綁定」等彈窗元件正確移回主畫面的渲染區塊，解決點擊按鈕沒有反應的問題 (V74.MODAL_SYNTAX_FIX)</li>
+                          <li>修復深度清理時呼叫 Service Worker 註銷的 `InvalidStateError`，改為更安全的呼叫方式並捕捉錯誤 (V76.SW_FIX)</li>
+                          <li>加入自動註銷 Service Worker 的腳本，強制打破 PWA 的永久快取陷阱 (V75.PWA_CACHE_WIPE)</li>
+                          <li>升級「深度清理」功能，現在會額外刪除 Cache Storage 並觸發強制重新載入，確保離線檔徹底更新 (V75.PWA_CACHE_WIPE)</li>
+                          <li>修復新增按鈕 SyntaxError，並將設定頁面的彈窗正確掛載回主畫面 (V74.MODAL_SYNTAX_FIX)</li>
                           <li>徹底修復 `renderItemOrGroup is not defined` 的致命錯誤，確保該函數在 `App` 作用域內被正確宣告與呼叫 (V73.RENDER_FIX)</li>
                           <li>確認雲端密碼驗證功能與 API 接口穩定正常 (V72.CACHE_CLEAR)</li>
                           <li>於設定頁面新增「清空本地快取」功能，具備「彈窗警告」與「強制輸入雲端密碼」的雙重確認防護機制，驗證成功後徹底清洗 IndexedDB、LocalStorage 並自動觸發重新下載 (V72.CACHE_CLEAR)</li>
