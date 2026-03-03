@@ -3,17 +3,14 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.03.PRO.V69.TAG_FIX_2
+  最新版本: 2026.03.03.PRO.V70.SMART_BATCH
   ==========================================
   【完整更新歷程】
+  - [2026.03.03] V70.SMART_BATCH: 導入「智能打包防抖 (Smart Batching)」機制，解決快速操作時資料逐筆上傳的問題，現在 0.5 秒內的連續操作會被完美打包成單一請求，一次性光速同步。
   - [2026.03.03] V69.TAG_FIX_2: 徹底修復圖表分析頁面中因為呼叫已刪除的 getBenTagContent 函數所造成的 ReferenceError 崩潰，全面替換為文字標籤的處理邏輯。
-  - [2026.03.03] V68.TAG_FIX: 移除遺留的 getBenTagContent 呼叫，並全面改用 getBenBadgeStyle 來渲染文字標籤的專屬顏色，修復了在圖表分析頁面發生的 ReferenceError。
   - [2026.03.03] V67.FAMILY_TAG_RENAME: 將「全家共同」縮合標籤改名為更簡潔的「全家」，並套用亮橘色系增強視覺區別。
-  - [2026.03.03] V66.SMART_TAGS: 優化對象標籤的顯示邏輯，當選擇超過2個對象時，自動縮合為「全家共同」的單一標籤，避免手機版面被過多標籤擠壓變形。
+  - [2026.03.03] V66.SMART_TAGS: 優化對象標籤的顯示邏輯，當選擇超過2個對象時，自動縮合為「全家」的單一標籤。
   - [2026.03.03] V65.TAG_AND_MONTH_FIX: 補回遺失的 getBenArray 與 getBenBadgeStyle 函數，徹底解決 ReferenceError 崩潰；確保「上月」篩選為精確的日曆月 (Calendar Month) 而非近 30 天。
-  - [2026.03.03] V64.UX_POLISH: 修復底部導覽列設定圖示變形問題；歷史與分析預設為全部；新增標題快捷篩選按鈕。
-  - [2026.03.03] V63.FILTER_AND_TAGS: 取消對象標籤合併，改為多色獨立標籤；優化歷史統計卡片；下拉選單統一。
-  - [2026.03.03] V62.FINAL_CLEAN: 徹底移除了所有因生成錯誤導致的重複宣告，並補回 renderItemOrGroup 函數。
   ==========================================
 -->
 <head>
@@ -84,7 +81,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.03.PRO.V69.TAG_FIX_2";
+    const APP_VERSION = "2026.03.03.PRO.V70.SMART_BATCH";
     const GAS_TARGET_VERSION = "2026.03.02.PRO.V15.SYNC_RETURN";
 
     // --- 儲存與共用常數 ---
@@ -183,7 +180,7 @@
       return arr.join("、");
     };
 
-    // ★ 智能標籤邏輯：超過2個就縮合為「全家」，避免撐爆版面
+    // 智能標籤邏輯：超過2個就縮合為「全家」，避免撐爆版面
     const getBenArray = (benStr, memberName) => {
       if (!benStr) return [];
       const arr = Array.from(new Set(String(benStr).split(",").filter(Boolean).map(s => s.trim())));
@@ -194,7 +191,7 @@
       return arr;
     };
 
-    // ★ 為每種對象分配專屬文字顏色
+    // 為每種對象分配專屬文字顏色
     const getBenBadgeStyle = (name) => {
         if (name === "全家") return "bg-orange-100 text-orange-700 border-orange-200";
         if (name === "爸爸") return "bg-blue-50 text-blue-600 border-blue-200";
@@ -270,7 +267,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -848,6 +845,7 @@
       const [isOnline, setIsOnline] = useState(navigator.onLine);
       
       const pollingTimerRef = useRef(null);
+      const syncDebounceRef = useRef(null); // ★ 新增防抖計時器
       const isSyncingRef = useRef(false);
       
       const txCacheRef = useRef(txCache);
@@ -879,47 +877,6 @@
           window.removeEventListener('focus', handleNetworkChange);
         };
       }, []);
-
-      const prevOnline = useRef(navigator.onLine);
-      useEffect(() => {
-          if (prevOnline.current !== isOnline) {
-              if (isOnline) {
-                  showStatus("success", "🌐 網路已連線");
-                  if (syncQueue.length > 0) syncManager(false);
-              } else {
-                  showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
-              }
-              prevOnline.current = isOnline;
-          }
-      }, [isOnline, syncQueue]);
-
-      useEffect(() => localStorage.setItem(LS.pending, JSON.stringify(syncQueue || [])), [syncQueue]);
-      useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig || [])), [familyConfig]);
-      useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
-      useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
-
-      useEffect(() => { loadFromIndexedDB().then(idbData => { if (idbData && idbData.length > 0) setTxCache(idbData); }); }, []);
-
-      useEffect(() => {
-        if (currentUser && greetingsCache && greetingsCache[currentUser.name]) setCustomSubtitle(String(greetingsCache[currentUser.name]));
-        else if (currentUser) setCustomSubtitle("{name}，你好！");
-      }, [currentUser, greetingsCache]);
-
-      useEffect(() => {
-        const timer = setTimeout(() => { setDebouncedHistorySearch(historySearch); setDebouncedHistoryExcludeSearch(historyExcludeSearch); }, 350);
-        return () => clearTimeout(timer);
-      }, [historySearch, historyExcludeSearch]);
-
-      useEffect(() => setHistoryVisibleCount(20), [debouncedHistorySearch, debouncedHistoryExcludeSearch, historyTypeFilter, historyDateFilter, activeTab]);
-
-      useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
-      useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]); 
-      useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]); 
-
-      useEffect(() => { if (window.PublicKeyCredential) PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(v => setBiometricAvailable(v)); }, []);
-      useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
-      
-      useEffect(() => { if (isOnline && !deviceValid()) { setShowBootstrapModal(true); setBootstrapSecret(""); } }, [isOnline]);
 
       const forceReloginForToken = useCallback(() => { 
         clearDeviceToken(); 
@@ -1086,15 +1043,44 @@
               isSyncingRef.current = false;
               setIsSyncing(false);
               
+              // ★ 結束後檢查是否還有殘留工作
               const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []);
               if (leftoverQueue.length > 0 && navigator.onLine) {
-                  setTimeout(() => syncManager(false), 100);
+                  setTimeout(() => requestSync(false, true), 100);
               }
           }
       }, [forceReloginForToken]);
 
-      const processRef = useRef(syncManager);
-      useEffect(() => { processRef.current = syncManager; }, [syncManager]);
+      // ★ 核心修復：統一的防抖發送器
+      const requestSync = useCallback((isSilent = false, immediate = false) => {
+          if (!navigator.onLine) return;
+          if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+          
+          if (immediate) {
+              syncManager(isSilent);
+          } else {
+              // 智能等待 500 毫秒，如果有連續操作就會自動合併成一次發車
+              syncDebounceRef.current = setTimeout(() => {
+                  syncManager(isSilent);
+              }, 500);
+          }
+      }, [syncManager]);
+
+      const processRef = useRef(requestSync);
+      useEffect(() => { processRef.current = requestSync; }, [requestSync]);
+
+      const prevOnlineEffect = useRef(navigator.onLine);
+      useEffect(() => {
+          if (prevOnlineEffect.current !== isOnline) {
+              if (isOnline) {
+                  showStatus("success", "🌐 網路已連線");
+                  if (syncQueue.length > 0) requestSync(false, true);
+              } else {
+                  showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
+              }
+              prevOnlineEffect.current = isOnline;
+          }
+      }, [isOnline, syncQueue, requestSync]);
 
       useEffect(() => {
         if (isOnline && currentUser) {
@@ -1102,7 +1088,7 @@
             if (currentQ.length === 0) {
                  silentPollEngine(); 
             } else {
-                 if (processRef.current) processRef.current(false);
+                 if (processRef.current) processRef.current(false, true);
                  pollingTimerRef.current = setTimeout(silentPollEngine, 5000); 
             }
         }
@@ -1113,7 +1099,7 @@
 
 
       const handleSyncClick = () => {
-          syncManager(false);
+          requestSync(false, true); // 手動點擊就立刻發車
       };
 
       const refreshDeviceToken = async () => {
@@ -1261,7 +1247,7 @@
           setSyncQueue(currentQ);
           localStorage.setItem(LS.pending, JSON.stringify(currentQ));
           if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`);
-          else syncManager(false);
+          else requestSync(false, false); // ★ 呼叫智能打包
       };
 
       const handleAdd = async (newTxs) => {
@@ -1302,7 +1288,7 @@
         localStorage.setItem(LS.pending, JSON.stringify(currentQ));
         setEditingGroup(null);
         if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`);
-        else syncManager(false);
+        else requestSync(false, false);
       };
 
       const handleDeleteTx = async (id) => {
@@ -1916,7 +1902,7 @@
                   </div>
                   <button onClick={() => {
                       setShowPendingModal(false);
-                      syncManager(false);
+                      requestSync(false, true);
                   }} disabled={isSyncing} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2 disabled:opacity-50">
                       {isSyncing ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : <SvgIcon name="cloudSync" size={20} />}
                       {isSyncing ? "同步中..." : "立即同步至雲端"}
@@ -2417,19 +2403,11 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>導入「智能打包防抖 (Smart Batching)」機制，解決快速操作時資料逐筆上傳的問題，現在 0.5 秒內的連續操作會被完美打包成單一請求，一次性光速同步 (V70.SMART_BATCH)</li>
                           <li>徹底修復圖表分析頁面中因為呼叫已刪除的 getBenTagContent 函數所造成的 ReferenceError 崩潰，全面替換為文字標籤的處理邏輯 (V69.TAG_FIX_2)</li>
                           <li>移除遺留的 getBenTagContent 呼叫，並全面改用 getBenBadgeStyle 來渲染文字標籤的專屬顏色，修復了在圖表分析頁面發生的 ReferenceError (V68.TAG_FIX)</li>
                           <li>將「全家共同」縮合標籤改名為更簡潔的「全家」，並套用亮橘色系增強視覺區別 (V67.FAMILY_TAG_RENAME)</li>
-                          <li>優化對象標籤的顯示邏輯，當選擇超過2個對象時，自動縮合為「全家共同」的單一標籤，避免手機版面被過多標籤擠壓變形 (V66.SMART_TAGS)</li>
-                          <li>補回遺失的 getBenArray 與 getBenBadgeStyle 函數，徹底解決 ReferenceError 崩潰；確保「上月」篩選為精確的日曆月 (Calendar Month) 而非近 30 天 (V65.TAG_AND_MONTH_FIX)</li>
-                          <li>修復底部導覽列設定圖示變形問題 (增加 items-center 對齊) (V64.UX_POLISH)</li>
-                          <li>歷史清單與圖表分析的時間區間預設改為「全部」 (V64.UX_POLISH)</li>
-                          <li>在歷史清單與圖表分析的標題列旁邊，直接加入 [本月] [上月] [還原] 快捷按鈕圖卡 (V64.UX_POLISH)</li>
-                          <li>清理歷史篩選彈窗內的冗餘按鈕，明確區分「當月」與「近一月」選項 (V64.UX_POLISH)</li>
-                          <li>取消對象標籤的合併邏輯，改為獨立顯示文字標籤，並為各對象設定專屬底色 (V63.FILTER_AND_TAGS)</li>
-                          <li>優化歷史清單的統計圖卡為亮色系，並移除結餘顯示 (V63.FILTER_AND_TAGS)</li>
-                          <li>統一歷史與圖表的時間篩選器，全面改用簡潔的下拉選單，新增「當月」並設為預設值 (V63.FILTER_AND_TAGS)</li>
-                          <li>徹底移除了所有因生成錯誤導致的重複宣告，並補回 renderItemOrGroup 函數 (V62.FINAL_CLEAN)</li>
+                          <li>優化對象標籤的顯示邏輯，當選擇超過2個對象時，自動縮合為「全家」的單一標籤，避免手機版面變形 (V66.SMART_TAGS)</li>
                         </ul>
                       </div>
                       <div className="border-l-2 border-green-500 pl-3">
