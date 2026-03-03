@@ -3,16 +3,16 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.04.PRO.V77.ANALYSIS_DETAIL
+  最新版本: 2026.03.04.PRO.V78.UI_TWEAKS
   ==========================================
   【完整更新歷程】
-  - [2026.03.04] V77.ANALYSIS_DETAIL: 
-    1. 移除登入頁面多餘的深度清理按鈕，並將設定頁的清理按鈕移至「安全與帳戶管理」區塊內。
-    2. 對象分析圓餅圖與長條圖的顏色，現已自動同步為各別專屬的對象標籤顏色（含組合混色）。
-    3. 於分析圖表的所有大類與子項目清單右側加入「明細」按鈕，點擊可彈窗查看對應的原始交易紀錄。
+  - [2026.03.04] V78.UI_TWEAKS: 
+    1. 將設定頁面「登出/切換使用者」按鈕顏色恢復為醒目的紅色系。
+    2. 將「深度清理」圖卡背景與文字顏色統一為常規設定項目樣式（保留紅色執行按鈕）。
+    3. 將分析頁面的「明細」按鈕移至金額數值的後方。
+  - [2026.03.04] V77.ANALYSIS_DETAIL: 移除登入頁面多餘清理按鈕；對象分析圖表顏色同步；新增明細鑽取功能。
   - [2026.03.03] V76.SW_FIX: 修復深度清理時呼叫 Service Worker 註銷的 `InvalidStateError`。
   - [2026.03.03] V75.PWA_CACHE_WIPE: 加入自動註銷 Service Worker 的腳本，升級「深度清理」功能。
-  - [2026.03.03] V74.MODAL_SYNTAX_FIX: 修復新增按鈕 SyntaxError，並將設定頁面的彈窗正確掛載回主畫面。
   ==========================================
 -->
 <head>
@@ -96,7 +96,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.04.PRO.V77.ANALYSIS_DETAIL";
+    const APP_VERSION = "2026.03.04.PRO.V78.UI_TWEAKS";
     const GAS_TARGET_VERSION = "2026.03.02.PRO.V15.SYNC_RETURN";
 
     // --- 儲存與共用常數 ---
@@ -1554,7 +1554,6 @@
 
       const toggleGroup = (gId) => setExpandedGroups(p => ({ ...p, [gId]: !p[gId] }));
 
-      // ★ 渲染單獨卡片
       const renderStandaloneCard = (tx, allowEdit = true) => {
         const benArray = getBenArray(tx.beneficiary, tx.member);
         const pAction = pendingMap[tx.id];
@@ -1577,7 +1576,6 @@
                 )}
               </div>
               <div className="flex-1 min-w-0 pl-1">
-                {/* ★ 排版防擠壓修復 */}
                 <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                   <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
                   <div className="flex gap-1 flex-wrap shrink-0">
@@ -1611,7 +1609,6 @@
         );
       };
 
-      // ★ 渲染群組卡片
       const renderGroupCard = (group, allowEdit = true) => {
         const isExp = !!expandedGroups[group.groupId];
         const allBens = new Set();
@@ -1645,7 +1642,6 @@
                   )}
                 </div>
                 <div className="flex-1 min-w-0 pl-1">
-                  {/* ★ 排版防擠壓修復 */}
                   <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                     <span className="truncate flex-shrink">{group.parentTitle}</span>
                     <div className="flex gap-1 flex-wrap shrink-0">
@@ -1724,7 +1720,6 @@
         );
       };
 
-      // 定義主渲染函數
       const renderItemOrGroup = (item, allowEdit) => {
         if (item.isGroup) return renderGroupCard(item, allowEdit);
         return renderStandaloneCard(item, allowEdit);
@@ -2230,6 +2225,7 @@
                    </button>
                 </div>
                 
+                {/* 顯示條件提示 */}
                 {(debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all") && (
                    <div className="flex flex-wrap gap-2 mb-2 px-1">
                       {debouncedHistorySearch && <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-1 rounded-md font-bold">🔍 包含: {debouncedHistorySearch}</span>}
@@ -2467,26 +2463,28 @@
                                   </span>
                                  </div>
                                 <div className="flex items-center gap-3 shrink-0">
-                                  {/* ★ 對象分析的 L1 明細按鈕 */}
-                                  {analysisType === "beneficiary" && (
-                                    <button onClick={(e) => {
-                                        e.stopPropagation();
-                                        setAnalysisDetailData({
-                                            title: `「${cat}」總花費明細`,
-                                            txs: analysisTxs.filter(t => {
-                                                const rawBens = t.beneficiary ? String(t.beneficiary).split(",").filter(Boolean).map(s => s.trim()) : ["未知"];
-                                                const sortedBens = rawBens.sort().join(", ");
-                                                let displayBen = sortedBens;
-                                                if (sortedBens.includes("爸爸") && sortedBens.includes("媽媽") && sortedBens.includes("兒子")) {
-                                                    displayBen = ["全家", ...rawBens.filter(x => x !== "爸爸" && x !== "媽媽" && x !== "兒子")].join(", ");
-                                                }
-                                                return displayBen === cat;
-                                            })
-                                        });
-                                    }} className={`px-2 py-0.5 rounded-md text-[9px] font-black active:scale-95 transition-all ${isSelected ? `bg-${activeColorClass}-200 text-${activeColorClass}-700` : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}>明細</button>
-                                  )}
                                   <span className="text-xs text-gray-400 font-bold w-10 text-right">{grandTotal > 0 ? ((amt/grandTotal)*100).toFixed(1) : 0}%</span>
                                   <span className={`font-black w-16 text-right ${isSelected ? `text-${activeColorClass}-700` : 'text-gray-800'}`}>${Math.round(amt).toLocaleString()}</span>
+                                  {/* ★ 分析的 L1 明細按鈕 */}
+                                  <button onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAnalysisDetailData({
+                                          title: `「${cat}」總明細`,
+                                          txs: analysisTxs.filter(t => {
+                                              if (analysisType === "beneficiary") {
+                                                  const rawBens = t.beneficiary ? String(t.beneficiary).split(",").filter(Boolean).map(s => s.trim()) : ["未知"];
+                                                  const sortedBens = rawBens.sort().join(", ");
+                                                  let displayBen = sortedBens;
+                                                  if (sortedBens.includes("爸爸") && sortedBens.includes("媽媽") && sortedBens.includes("兒子")) {
+                                                      displayBen = ["全家", ...rawBens.filter(x => x !== "爸爸" && x !== "媽媽" && x !== "兒子")].join(", ");
+                                                  }
+                                                  return displayBen === cat;
+                                              } else {
+                                                  return getParentCat(t.category) === cat;
+                                              }
+                                          })
+                                      });
+                                  }} className={`px-2 py-0.5 rounded-md text-[9px] font-black active:scale-95 transition-all ${isSelected ? `bg-${activeColorClass}-200 text-${activeColorClass}-700` : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}>明細</button>
                                 </div>
                               </div>
                             );
@@ -2512,6 +2510,7 @@
                                           {analysisType === "beneficiary" && <span className="text-[9px] text-gray-400 shrink-0">▼</span>}
                                        </span>
                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className={`${isL2Selected ? `text-${activeColorClass}-600` : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
                                           {/* ★ L2 明細按鈕 */}
                                           <button onClick={(e) => {
                                               e.stopPropagation();
@@ -2532,7 +2531,6 @@
                                                   })
                                               });
                                           }} className={`px-2 py-0.5 rounded-md text-[9px] font-black active:scale-95 transition-all ${isL2Selected ? `bg-${activeColorClass}-100 text-${activeColorClass}-600` : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>明細</button>
-                                          <span className={`${isL2Selected ? `text-${activeColorClass}-600` : 'text-gray-500'} tabular-nums`}>${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
                                        </div>
                                     </div>
                                     <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
@@ -2559,6 +2557,7 @@
                                     <div className="flex justify-between items-end text-xs font-bold mb-1.5 text-white gap-2">
                                        <span className="flex-1 truncate">{cCat}</span>
                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
                                           {/* ★ 對象分析 L3 明細按鈕 */}
                                           <button onClick={(e) => {
                                               e.stopPropagation();
@@ -2575,7 +2574,6 @@
                                                   })
                                               });
                                           }} className="px-2 py-0.5 bg-white/20 text-white rounded-md text-[9px] font-black active:scale-95 hover:bg-white/30 transition-all">明細</button>
-                                          <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
                                        </div>
                                     </div>
                                     <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
@@ -2630,16 +2628,17 @@
                       </div>
                       <button onClick={() => bioBound ? (setUnbindPin(""), setShowUnbindModal(true)) : bindDeviceBio()} className={`px-4 py-2 rounded-xl font-black text-xs active:scale-95 transition-all shrink-0 ${bioBound ? "bg-red-50 text-red-600 border border-red-100" : "bg-green-600 text-white shadow-lg"}`}>{bioBound ? "解除綁定" : "綁定設備"}</button>
                     </div>
-                    {/* ★ 將深度清理正確掛載在生物辨識下方 */}
-                    <div className="flex justify-between items-center p-4 bg-red-50 rounded-2xl border border-red-100 gap-2">
+                    {/* ★ 將深度清理正確掛載在生物辨識下方，顏色改回一般灰色系，保留按鈕紅色 */}
+                    <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 gap-2">
                         <div className="min-w-0">
-                            <p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none truncate">系統深度清理</p>
-                            <p className="font-black text-red-600 text-sm leading-none mt-1 truncate">清空本地所有快取</p>
+                            <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">系統深度清理</p>
+                            <p className="font-black text-gray-800 text-sm leading-none mt-1 truncate">清空本地所有快取</p>
                         </div>
                         <button onClick={() => setShowClearCacheModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">執行清理</button>
                     </div>
                   </div>
-                  <button onClick={() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }} className="w-full mt-6 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-2 border border-gray-200">
+                  {/* ★ 登出按鈕改回醒目的紅色系 */}
+                  <button onClick={() => { setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }} className="w-full mt-6 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-2 border border-red-100">
                     <SvgIcon name="logout" size={20} className="shrink-0" /> 登出 / 切換使用者
                   </button>
                   
@@ -2667,6 +2666,9 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>將設定頁面「登出/切換使用者」按鈕顏色恢復為醒目的紅色系 (V78.UI_TWEAKS)</li>
+                          <li>將「深度清理」圖卡背景與文字顏色統一為常規設定項目樣式（保留紅色執行按鈕） (V78.UI_TWEAKS)</li>
+                          <li>將分析頁面的「明細」按鈕移至金額數值的後方 (V78.UI_TWEAKS)</li>
                           <li>移除登入頁面多餘的深度清理按鈕，並將設定頁的清理按鈕移至「安全與帳戶管理」區塊內 (V77.ANALYSIS_DETAIL)</li>
                           <li>對象分析圓餅圖與長條圖的顏色，現已自動同步為各別專屬的對象標籤顏色（含組合混色） (V77.ANALYSIS_DETAIL)</li>
                           <li>於分析圖表的所有大類與子項目清單右側加入「明細」按鈕，點擊可彈窗查看對應的原始交易紀錄 (V77.ANALYSIS_DETAIL)</li>
