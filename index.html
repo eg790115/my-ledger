@@ -3,18 +3,15 @@
 <!--
   ==========================================
   家庭記帳前端 (React + Tailwind + PWA)
-  最新版本: 2026.03.03.PRO.V71.PWA_SYNC_OPT
+  最新版本: 2026.03.03.PRO.V74.MODAL_SYNTAX_FIX
   ==========================================
   【完整更新歷程】
-  - [2026.03.03] V71.PWA_SYNC_OPT: 
-    1. 修復群組卡片呼叫 getBenTagContent 的致命錯誤。
-    2. 精準定義「全家」標籤：必須同時包含爸、媽、兒才會縮合，否則獨立顯示。
-    3. 加入 flex-shrink 與彈性折行，確保多標籤不影響卡片右側金額排版。
-    4. 對象分析圖表色系改為紅色系。
-    5. 延長智能打包防抖時間至 1000ms，徹底解決快速點擊時資料分開上傳的問題。
-  - [2026.03.03] V70.SMART_BATCH: 導入智能打包防抖。
-  - [2026.03.03] V69.TAG_FIX_2: 移除圖表分析頁面錯誤呼叫。
-  - [2026.03.03] V67.FAMILY_TAG_RENAME: 全家標籤縮合與換色。
+  - [2026.03.03] V74.MODAL_SYNTAX_FIX: 
+    1. 修復新增按鈕 `prev => === "add"` 的致命語法錯誤 (SyntaxError)。
+    2. 將「深度清理」、「解除綁定」等彈窗元件正確移回主畫面的渲染區塊，解決點擊按鈕沒有反應的問題。
+  - [2026.03.03] V73.RENDER_FIX: 修復 `renderItemOrGroup is not defined`。
+  - [2026.03.03] V72.CACHE_CLEAR: 於設定頁面新增「清空本地快取」功能，具備「彈窗警告」與「強制輸入雲端密碼」的雙重確認防護機制。
+  - [2026.03.03] V71.PWA_SYNC_OPT: 修復群組卡片標籤崩潰；精準定義全家標籤；對象分析圖改紅色系；延長防抖至1000ms。
   ==========================================
 -->
 <head>
@@ -85,7 +82,7 @@
 
     const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
     
-    const APP_VERSION = "2026.03.03.PRO.V71.PWA_SYNC_OPT";
+    const APP_VERSION = "2026.03.03.PRO.V74.MODAL_SYNTAX_FIX";
     const GAS_TARGET_VERSION = "2026.03.02.PRO.V15.SYNC_RETURN";
 
     // --- 儲存與共用常數 ---
@@ -175,7 +172,16 @@
     
     const getChildCat = (catStr) => String(catStr).includes('/') ? String(catStr).substring(String(catStr).indexOf('/') + 1) : catStr;
 
-    // ★ 精準智能標籤邏輯：只有包含這三人，才會縮合為「全家」
+    const formatBen = (benStr, memberName) => {
+      if (!benStr) return "";
+      const arr = String(benStr).split(",").filter(Boolean).map(s => s.trim());
+      if (arr.length === 0) return "";
+      if (arr.length === 3 && arr.includes("爸爸") && arr.includes("媽媽") && arr.includes("兒子")) return "全家";
+      if (arr.length === 1 && arr[0] === memberName) return ""; 
+      return arr.join("、");
+    };
+
+    // 智能標籤邏輯
     const getBenArray = (benStr, memberName) => {
       if (!benStr) return [];
       const arr = Array.from(new Set(String(benStr).split(",").filter(Boolean).map(s => s.trim())));
@@ -185,23 +191,20 @@
       const hasSon = arr.includes("兒子");
 
       let finalArr = arr;
-      // 只有同時包含 爸爸、媽媽、兒子 才會合併
       if (hasDad && hasMom && hasSon) {
           finalArr = ["全家", ...arr.filter(x => x !== "爸爸" && x !== "媽媽" && x !== "兒子")];
       }
 
-      // 如果該明細只有自己，不特別顯示標籤，保持乾淨
       if (finalArr.length === 1 && finalArr[0] === memberName) return [];
       return finalArr;
     };
 
-    // ★ 為每種對象分配專屬文字顏色
     const getBenBadgeStyle = (name) => {
         if (name === "全家") return "bg-orange-100 text-orange-700 border-orange-200";
         if (name === "爸爸") return "bg-blue-50 text-blue-600 border-blue-200";
         if (name === "媽媽") return "bg-pink-50 text-pink-600 border-pink-200";
         if (name === "兒子") return "bg-amber-50 text-amber-600 border-amber-200";
-        return "bg-gray-50 text-gray-600 border-gray-200"; // 其他
+        return "bg-gray-50 text-gray-600 border-gray-200"; 
     };
 
     const safeParse = (raw, fallback) => {
@@ -271,7 +274,7 @@
         history: <React.Fragment><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 12h6"/><path d="M9 16h6"/><path d="M9 8h6"/></React.Fragment>,
         chart: <React.Fragment><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></React.Fragment>,
         search: <React.Fragment><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></React.Fragment>,
-        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
+        settings: (<React.Fragment><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></React.Fragment>),
         logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14l5-5l-5-5m5 5H9"/>,
         refresh: <React.Fragment><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></React.Fragment>,
         spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
@@ -803,6 +806,9 @@
       
       const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
+      const [showClearCacheModal, setShowClearCacheModal] = useState(false);
+      const [cacheClearPassword, setCacheClearPassword] = useState("");
+
       const [showClearQueueModal, setShowClearQueueModal] = useState(false);
       const [showPendingModal, setShowPendingModal] = useState(false);
       const [isSyncing, setIsSyncing] = useState(false);
@@ -818,7 +824,6 @@
       const [editingGroup, setEditingGroup] = useState(null);
       const [expandedGroups, setExpandedGroups] = useState({});
       
-      // 歷史清單相關狀態 (預設全時段)
       const [historySearch, setHistorySearch] = useState("");
       const [debouncedHistorySearch, setDebouncedHistorySearch] = useState(""); 
       const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
@@ -828,7 +833,6 @@
       const [historyExcludeSearch, setHistoryExcludeSearch] = useState("");
       const [debouncedHistoryExcludeSearch, setDebouncedHistoryExcludeSearch] = useState("");
 
-      // 圖表分析所需狀態 (預設全時段)
       const [analysisDateFilter, setAnalysisDateFilter] = useState("all");
       const [analysisCustomStart, setAnalysisCustomStart] = useState("");
       const [analysisCustomEnd, setAnalysisCustomEnd] = useState("");
@@ -887,7 +891,7 @@
           if (prevOnline.current !== isOnline) {
               if (isOnline) {
                   showStatus("success", "🌐 網路已連線");
-                  if (syncQueue.length > 0) syncManager(false);
+                  if (syncQueue.length > 0) requestSync(false, true);
               } else {
                   showStatus("info", "⚠️ 已進入離線模式 (變更將暫存手機)");
               }
@@ -1095,7 +1099,6 @@
           }
       }, [forceReloginForToken]);
 
-      // ★ 核心修復：延長防抖時間為 1 秒 (1000ms)，確保快速操作被順利打包
       const requestSync = useCallback((isSilent = false, immediate = false) => {
           if (!navigator.onLine) return;
           if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
@@ -1290,7 +1293,7 @@
           setSyncQueue(currentQ);
           localStorage.setItem(LS.pending, JSON.stringify(currentQ));
           if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`);
-          else requestSync(false, false); // ★ 呼叫智能打包
+          else requestSync(false, false); 
       };
 
       const handleAdd = async (newTxs) => {
@@ -1713,11 +1716,11 @@
         }
       };
 
-      // ★ 定義三組不同的漸層色系，供圖表分析使用
+      // 定義三組不同的漸層色系，供圖表分析使用
       const CHART_COLORS = {
         expense: ["#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#06b6d4", "#3b82f6", "#6366f1", "#ec4899", "#f43f5e", "#ef4444"], 
         income: ["#10b981", "#059669", "#047857", "#3b82f6", "#2563eb", "#1d4ed8", "#0ea5e9", "#0891b2"], 
-        beneficiary: ["#ef4444", "#dc2626", "#b91c1c", "#f87171", "#fca5a5", "#991b1b", "#7f1d1d", "#ea580c"] // ★ 對象分析換成紅色系
+        beneficiary: ["#ef4444", "#dc2626", "#b91c1c", "#f87171", "#fca5a5", "#991b1b", "#7f1d1d", "#ea580c"] // 紫色與粉紅色系
       };
 
       const isHistoryFiltered = (debouncedHistorySearch !== "" || debouncedHistoryExcludeSearch !== "" || historyTypeFilter !== "all" || historyDateFilter !== "all");
@@ -1876,6 +1879,52 @@
                 </div>
               </div>
             )}
+
+            {/* ★ 深度清理專屬雙重確認彈窗 (未登入畫面也放一份確保相容性) */}
+            {showClearCacheModal && (
+              <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setCacheClearPassword("");} }}>
+                <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <SvgIcon name="refresh" size={32} />
+                  </div>
+                  <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
+                  <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">
+                    這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：
+                  </p>
+                  <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+                  <div className="flex gap-3">
+                    <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
+                    <button onClick={async () => {
+                      if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; }
+                      if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; }
+                      try {
+                          setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." });
+                          const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword });
+                          if (res.result !== "success") throw new Error("雲端密碼錯誤");
+                          
+                          setTxCache([]);
+                          setSyncQueue([]);
+                          localStorage.removeItem(LS.txCache);
+                          localStorage.removeItem(LS.pending);
+                          const db = await initIndexedDB();
+                          const tx = db.transaction(STORE_NAME, "readwrite");
+                          tx.objectStore(STORE_NAME).clear();
+                          
+                          setShowClearCacheModal(false);
+                          setCacheClearPassword("");
+                          showStatus("success", "✅ 快取已清空，正在重新下載...");
+                          
+                          syncManager(false);
+                      } catch(e) {
+                          showStatus("error", e.message || "驗證失敗");
+                      } finally {
+                          setLoadingCard({ show: false, text: "" });
+                      }
+                    }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {statusMsg.text && (
               <div className="fixed bottom-12 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
@@ -1915,6 +1964,87 @@
               }}
               forceReloginForToken={forceReloginForToken}
             />
+          )}
+
+          {/* ★ 將遺失的彈窗正確放回登入後的主畫面 */}
+          {showUnbindModal && (
+            <div className="fixed inset-0 z-[350] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) {setShowUnbindModal(false); setUnbindPin("");} }}>
+              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
+                <button onClick={() => { setShowUnbindModal(false); setUnbindPin(""); }} className="absolute top-6 right-6 text-gray-400 active:scale-90"><SvgIcon name="close" size={24}/></button>
+                <h3 className="font-black text-lg mb-2">解除綁定</h3>
+                <p className="text-[11px] text-gray-500 mb-5">請輸入 PIN 驗證後才能解除。</p>
+                <input value={unbindPin} onChange={(e)=>setUnbindPin(e.target.value.replace(/\D/g,"").slice(0,6))} type="password" inputMode="numeric" placeholder="輸入 6 位 PIN" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-4 text-center tracking-widest" />
+                <button onClick={unbindDeviceBio} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40 shadow-md shadow-red-500/30">確認解除</button>
+              </div>
+            </div>
+          )}
+
+          {showClearQueueModal && (
+            <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) setShowClearQueueModal(false); }}>
+              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <SvgIcon name="trash" size={32} />
+                </div>
+                <h3 className="font-black text-lg mb-2 text-red-600">強制清除同步暫存</h3>
+                <p className="text-xs text-gray-500 mb-6 font-bold leading-relaxed">
+                  確定要清除卡在手機裡的 {(syncQueue || []).length} 筆暫存資料嗎？<br/>這將會永遠刪除這些尚未上傳的紀錄。
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowClearQueueModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95">取消</button>
+                  <button onClick={() => {
+                    setSyncQueue([]);
+                    localStorage.removeItem(LS.pending);
+                    setShowClearQueueModal(false);
+                    showStatus("success", "✅ 已清空卡死的暫存資料");
+                  }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showClearCacheModal && (
+            <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setCacheClearPassword("");} }}>
+              <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <SvgIcon name="refresh" size={32} />
+                </div>
+                <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
+                <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">
+                  這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：
+                </p>
+                <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+                <div className="flex gap-3">
+                  <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
+                  <button onClick={async () => {
+                    if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; }
+                    if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; }
+                    try {
+                        setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." });
+                        const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword });
+                        if (res.result !== "success") throw new Error("雲端密碼錯誤");
+                        
+                        setTxCache([]);
+                        setSyncQueue([]);
+                        localStorage.removeItem(LS.txCache);
+                        localStorage.removeItem(LS.pending);
+                        const db = await initIndexedDB();
+                        const tx = db.transaction(STORE_NAME, "readwrite");
+                        tx.objectStore(STORE_NAME).clear();
+                        
+                        setShowClearCacheModal(false);
+                        setCacheClearPassword("");
+                        showStatus("success", "✅ 快取已清空，正在重新下載...");
+                        
+                        syncManager(false);
+                    } catch(e) {
+                        showStatus("error", e.message || "驗證失敗");
+                    } finally {
+                        setLoadingCard({ show: false, text: "" });
+                    }
+                  }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* 【專屬待同步清單視窗】顯示完整明細資訊 */}
@@ -2163,7 +2293,7 @@
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
                   <button onClick={() => {setAnalysisType("expense"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出分析</button>
                   <button onClick={() => {setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
-                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-red-600 shadow-sm" : ""}`}>對象分析</button>
+                  <button onClick={() => {setAnalysisType("beneficiary"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "beneficiary" ? "bg-white text-purple-600 shadow-sm" : ""}`}>對象分析</button>
                 </div>
 
                 {(() => {
@@ -2366,7 +2496,7 @@
 
                       {analysisType === "beneficiary" && selectedAnalysisLevel1 && selectedAnalysisLevel2 && (
                         <div className="bg-gray-800 p-6 rounded-[2.5rem] shadow-lg animate-in relative overflow-hidden">
-                          <div className={`absolute top-0 left-0 w-full h-1.5 bg-${activeColorClass}-400`}></div>
+                          <div className={`absolute top-0 left-0 w-full h-1.5 bg-red-400`}></div>
                           <h4 className="font-black text-white mb-5 flex items-center gap-2 text-sm pt-2">
                             「{selectedAnalysisLevel2}」子項目明細
                           </h4>
@@ -2380,7 +2510,7 @@
                                        <span className="tabular-nums opacity-80">${Math.round(amt).toLocaleString()} <span className="text-[9px] ml-1">({pct.toFixed(1)}%)</span></span>
                                     </div>
                                     <div className="h-3 w-full bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                                       <div className={`h-full bg-${activeColorClass}-400 rounded-full transition-all duration-1000 ease-out`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
+                                       <div className={`h-full bg-red-400 rounded-full transition-all duration-1000 ease-out`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div>
                                     </div>
                                  </div>
                                )
@@ -2445,6 +2575,16 @@
                       <button onClick={() => setShowClearQueueModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">強制清除</button>
                     </div>
                   )}
+
+                  {/* ★ V72 新增：深度清理 (清空快取) */}
+                  <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mt-4 flex justify-between items-center gap-2">
+                      <div className="min-w-0">
+                          <p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none truncate">深度清理</p>
+                          <p className="font-black text-red-600 text-sm leading-none mt-1 truncate">清空本地快取資料</p>
+                      </div>
+                      <button onClick={() => setShowClearCacheModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">執行清理</button>
+                  </div>
+
                 </div>
 
                 <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
@@ -2460,6 +2600,11 @@
                       <div className="border-l-2 border-blue-500 pl-3">
                         <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
                         <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                          <li>修復新增按鈕 `prev =&gt; === "add"` 的致命語法錯誤 (SyntaxError) (V74.MODAL_SYNTAX_FIX)</li>
+                          <li>將「深度清理」、「解除綁定」等彈窗元件正確移回主畫面的渲染區塊，解決點擊按鈕沒有反應的問題 (V74.MODAL_SYNTAX_FIX)</li>
+                          <li>徹底修復 `renderItemOrGroup is not defined` 的致命錯誤，確保該函數在 `App` 作用域內被正確宣告與呼叫 (V73.RENDER_FIX)</li>
+                          <li>確認雲端密碼驗證功能與 API 接口穩定正常 (V72.CACHE_CLEAR)</li>
+                          <li>於設定頁面新增「清空本地快取」功能，具備「彈窗警告」與「強制輸入雲端密碼」的雙重確認防護機制，驗證成功後徹底清洗 IndexedDB、LocalStorage 並自動觸發重新下載 (V72.CACHE_CLEAR)</li>
                           <li>修復群組卡片呼叫 getBenTagContent 的致命錯誤 (V71.PWA_SYNC_OPT)</li>
                           <li>精準定義「全家」標籤：必須同時包含爸、媽、兒才會縮合，否則獨立顯示 (V71.PWA_SYNC_OPT)</li>
                           <li>加入 flex-shrink 與彈性折行，確保多標籤不影響卡片右側金額排版 (V71.PWA_SYNC_OPT)</li>
