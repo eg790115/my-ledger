@@ -1,0 +1,1 @@
+{"name":"家庭記帳 APP","short_name":"家庭記帳","description":"專屬家庭的雲端記帳系統","start_url":"/my-ledger/","display":"standalone","background_color":"#111827","theme_color":"#2563eb","lang":"en","scope":"/my-ledger/","icons":[{"src":"icon-192x192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512x512.png","sizes":"512x512","type":"image/png"}]}
