@@ -21,7 +21,7 @@ import { EditTransactionModal } from './components/EditTransactionModal';
 import { EditGroupParentModal } from './components/EditGroupParentModal';
 
 // ==========================================
-// ★ 新增：觸覺回饋 (Haptic Feedback) 引擎
+// ★ 觸覺回饋引擎
 // ==========================================
 const triggerVibration = (pattern) => {
   if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
@@ -102,12 +102,10 @@ function App() {
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
   useEffect(() => { lastServerTimeRef.current = lastServerTime; }, [lastServerTime]);
 
-  // ★ 加入震動邏輯：根據訊息狀態給予不同震動
   const showStatus = useCallback((type, text) => { 
     if (type === "success") triggerVibration([20, 50, 20]);
     else if (type === "error") triggerVibration([50, 50, 50, 50, 50]);
     else if (type === "info") triggerVibration(15);
-    
     setStatusMsg({ type, text }); 
     setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000); 
   }, []);
@@ -127,12 +125,14 @@ function App() {
             await saveLocalPinHash(selectingUser.name, n);
             setLoadingCard({ show:false, text:"" });
             setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); setFallbackToPin(false);
-            triggerVibration([20, 50, 20]); // 登入成功震動
+            triggerVibration([20, 50, 20]);
+            showStatus("success", "✅ 登入成功"); // ★ 已補回登入成功提示
           } else {
             const ok = await unlockWithPinLocal(selectingUser.name, n);
             if (!ok) { showStatus("error", "PIN 錯誤，或您尚未在有網路時登入過"); setPinInput(""); return; }
             setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); setFallbackToPin(false);
-            triggerVibration([20, 50, 20]); // 登入成功震動
+            triggerVibration([20, 50, 20]);
+            showStatus("success", "✅ 登入成功 (離線)"); // ★ 已補回登入成功提示
           }
         } catch (e) {
           setLoadingCard({ show:false, text:"" });
@@ -165,7 +165,11 @@ function App() {
     setSelectingUser(user); setPinInput(""); setFallbackToPin(false);
     if (biometricAvailable && isDeviceBioBound(user.name)) {
       const ok = await handleBioLoginLocal(user.name);
-      if (ok) { triggerVibration([20, 50, 20]); setCurrentUser(user); setSelectingUser(null); setPinInput(""); } else { setFallbackToPin(true); }
+      if (ok) { 
+          triggerVibration([20, 50, 20]); 
+          showStatus("success", "✅ 登入成功"); // ★ 已補回生物辨識登入成功提示
+          setCurrentUser(user); setSelectingUser(null); setPinInput(""); 
+      } else { setFallbackToPin(true); }
     }
   };
 
@@ -351,7 +355,6 @@ function App() {
           }
       } catch (e) {
           const msg = e.message || "未知錯誤";
-          // ★ 即使在靜默模式下，發生錯誤也一定要通知
           if (msg.includes("憑證") || msg.includes("過期") || msg.includes("無效")) forceReloginForToken(); else showStatus("error", `❌ 同步失敗: ${msg}`);
       } finally {
           isSyncingRef.current = false; setIsSyncing(false);
@@ -452,12 +455,11 @@ function App() {
           } else { currentQ.push({ ...newItem, opId: newOpId }); }
       });
       setSyncQueue(currentQ); localStorage.setItem(LS.pending, JSON.stringify(currentQ));
-      // ★ 靜默模式上傳
       if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); else requestSync(true, false); 
   };
 
   const handleAdd = async (newTxs) => {
-    triggerVibration([20, 40, 20]); // 新增完成的紮實震動
+    triggerVibration([20, 40, 20]);
     const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
     const baseTimestamp = Date.now(); const isMulti = newTxs.length > 1; const randomSuffix = () => Math.random().toString(36).substring(2, 8);
     const groupId = isMulti ? `G_${baseTimestamp}_${currentUser.name}_${randomSuffix()}` : ""; const parentDesc = isMulti ? newTxs[0].parentDesc : "";
@@ -487,7 +489,7 @@ function App() {
   };
 
   const handleDeleteTx = async (id) => {
-    triggerVibration([30, 50, 30]); // 刪除的長震動
+    triggerVibration([30, 50, 30]);
     const txToDelete = (visibleTransactions || []).find(t => String(t.id) === String(id)) || (txCache || []).find(t => String(t.id) === String(id)); 
     if (!txToDelete) return; appendToQueueAndSync([{ ...txToDelete, isOffline: !navigator.onLine, action: "DELETE_TX", lastModified: txToDelete.lastModified || 0 }]); setEditingTx(null);
   };
@@ -753,7 +755,7 @@ function App() {
 
               {isDeviceBioBound(selectingUser.name) && !fallbackToPin ? (
                 <div className="flex flex-col items-center mb-8 animate-in">
-                  <button onClick={async () => { triggerVibration(15); const ok = await handleBioLoginLocal(selectingUser.name); if (ok) { triggerVibration([20, 50, 20]); setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); } else { setFallbackToPin(true); } }} className="w-20 h-20 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center border-2 border-blue-500/50 mb-6 active:scale-95 transition-transform"><SvgIcon name="bio" size={36} /></button>
+                  <button onClick={async () => { triggerVibration(15); const ok = await handleBioLoginLocal(selectingUser.name); if (ok) { triggerVibration([20, 50, 20]); showStatus("success", "✅ 登入成功"); setCurrentUser(selectingUser); setSelectingUser(null); setPinInput(""); } else { setFallbackToPin(true); } }} className="w-20 h-20 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center border-2 border-blue-500/50 mb-6 active:scale-95 transition-transform"><SvgIcon name="bio" size={36} /></button>
                   <button onClick={() => { triggerVibration(10); setFallbackToPin(true); }} className="text-[11px] text-gray-400 underline underline-offset-4 font-bold active:text-white transition-colors">無法辨識？改用 PIN 碼登入</button>
                 </div>
               ) : (
@@ -770,7 +772,16 @@ function App() {
             </div>
           </div>
         )}
-        {/* 其他 Modals 保留... */}
+        {showBootstrapModal && (
+          <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
+            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
+              <h3 className="font-black text-lg mb-2">首次綁定雲端</h3>
+              <p className="text-[11px] text-gray-500 mb-5">請輸入雲端密碼（爸爸手機號碼）。</p>
+              <input value={bootstrapSecret} onChange={(e)=>setBootstrapSecret(e.target.value)} placeholder="輸入爸爸手機號碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
+              <button onClick={async () => { try { setLoadingCard({ show:true, text:"正在綁定雲端..." }); await bootstrapDevice(); setShowBootstrapModal(false); setBootstrapSecret(""); showStatus("success","✅ 雲端已綁定"); } catch (e) { showStatus("error", e.message || "雲端密碼錯誤"); } finally { setLoadingCard({ show:false, text:"" }); } }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">確認</button>
+            </div>
+          </div>
+        )}
         {showClearQueueModal && (
           <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget) setShowClearQueueModal(false); }}>
             <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
@@ -780,6 +791,20 @@ function App() {
               <div className="flex gap-3">
                 <button onClick={() => { triggerVibration(10); setShowClearQueueModal(false); }} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95">取消</button>
                 <button onClick={() => { triggerVibration([30, 50, 30]); setSyncQueue([]); localStorage.removeItem(LS.pending); setShowClearQueueModal(false); showStatus("success", "✅ 已清空卡死的暫存資料"); }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30">確認清除</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showClearCacheModal && (
+          <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setCacheClearPassword("");} }}>
+            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
+              <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
+              <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：</p>
+              <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+              <div className="flex gap-3">
+                <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
+                <button onClick={async () => { if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; } if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; } try { setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." }); const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword }); if (res.result !== "success") throw new Error("雲端密碼錯誤"); setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear(); if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); } if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); } setShowClearCacheModal(false); setCacheClearPassword(""); showStatus("success", "✅ 快取已清空，正在重新下載..."); setTimeout(() => { window.location.reload(true); }, 1500); } catch(e) { showStatus("error", e.message || "驗證失敗"); } finally { setLoadingCard({ show: false, text: "" }); } }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
               </div>
             </div>
           </div>
@@ -806,7 +831,6 @@ function App() {
       {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => { triggerVibration(10); setEditingGroup(null); }} />}
       {showChangePinModal && <ChangePinModal currentUser={currentUser} onCancel={() => setShowChangePinModal(false)} onSuccess={() => {setShowChangePinModal(false); setCurrentUser(null); setSelectingUser(null); setPinInput(""); showStatus("success", "✅ 密碼已更新，請重新登入");}} forceReloginForToken={forceReloginForToken} />}
       
-      {/* 其他 Modal 內容保留 (TrashModal, HistoryItem, FilterModal) ... */}
       {showTrashModal && (
         <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) setShowTrashModal(false); }}>
           <div className="bg-white w-full max-w-sm relative rounded-[2.5rem] shadow-2xl overflow-hidden pb-6 flex flex-col max-h-[85vh]">
@@ -849,6 +873,113 @@ function App() {
           </div>
         </div>
       )}
+      
+      {viewingHistoryItem && (
+        <div className="fixed inset-0 z-[700] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) setViewingHistoryItem(null); }}>
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+              <button onClick={() => setViewingHistoryItem(null)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
+              <h3 className="font-black text-lg mb-1 text-gray-800 pr-8 leading-tight flex items-center gap-2">✏️ 編輯歷程</h3>
+              <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-100 px-2 py-1 rounded-md self-start">{viewingHistoryItem.isGroup ? viewingHistoryItem.parentTitle : `${getParentCat(viewingHistoryItem.category)} - ${getChildCat(viewingHistoryItem.category)}`}</p>
+              <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
+                  {(viewingHistoryItem.editHistory || []).length === 0 ? ( <div className="text-gray-400 text-sm text-center py-4">無編輯紀錄</div> ) : (
+                      (viewingHistoryItem.editHistory || []).map((h, i) => {
+                         let fakeTx = null; let displayContent = h.oldContent;
+                         if (displayContent && !displayContent.includes('舊標題')) { try { const rawArr = JSON.parse(displayContent); if (Array.isArray(rawArr) && rawArr.length > 2) { fakeTx = { date: rawArr[0], category: rawArr[1], amount: Number(rawArr[2]), member: rawArr[3], desc: rawArr[4], type: rawArr[5], recorder: rawArr[6], id: rawArr[7] || 'fake', groupId: rawArr[8], parentDesc: rawArr[9], beneficiary: rawArr[10] || rawArr[3] }; } } catch (e) {} }
+                         return (
+                           <div key={i} className="bg-white p-4 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden">
+                               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-400"></div>
+                               <div className="flex justify-between items-center mb-3 pl-2 border-b border-gray-50 pb-2"><span className="font-black text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">{h.action.replace("修改明細", "編輯紀錄")}</span><span className="text-[9px] text-gray-400 font-bold">{h.time}</span></div>
+                               {fakeTx ? (
+                                  <div className="flex items-center gap-3 pl-1">
+                                    <div className="relative shrink-0">
+                                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none ${fakeTx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{fakeTx.type==="income" ? "收入" : "支出"}</div>
+                                      {fakeTx.member && fakeTx.member !== currentUser.name && (<div className={`absolute -top-2 -left-2 text-[8px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${fakeTx.member === "爸爸" ? "bg-blue-600" : fakeTx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{fakeTx.member}</div>)}
+                                    </div>
+                                    <div className="flex-1 min-w-0 pl-1">
+                                      <div className="font-bold text-[13px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap"><span className="truncate flex-shrink">{getParentCat(fakeTx.category)} - {getChildCat(fakeTx.category)}</span><div className="flex gap-1 flex-wrap shrink-0">{getBenArray(fakeTx.beneficiary, fakeTx.member).map(b => ( <span key={b} className={`text-[8px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div></div>
+                                      <div className="flex flex-col gap-1 mt-1 w-full items-start"><span className="text-[9px] text-gray-400 font-medium leading-none">{displayDateClean(fakeTx.date)}</span>{fakeTx.desc && <span className="text-[10px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{fakeTx.desc}</span>}</div>
+                                    </div>
+                                    <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10"><div className={`font-black tabular-nums text-[15px] leading-none ${fakeTx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(fakeTx.amount||0).toLocaleString()}</div></div>
+                                  </div>
+                               ) : ( <div className="pl-1 mt-2 text-[10px] text-gray-500 bg-gray-50 p-2 rounded-xl border border-gray-100 whitespace-pre-wrap break-words"><div className="text-[9px] text-gray-400 mb-1">修改前備註：</div>{displayContent || '無變更內容或無法解析'}</div> )}
+                           </div>
+                         );
+                      })
+                  )}
+              </div>
+          </div>
+        </div>
+      )}
+
+      {analysisDetailData && (
+        <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in text-left font-black" onClick={(e) => { if(e.target === e.currentTarget) setAnalysisDetailData(null); }}>
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+              <button onClick={() => setAnalysisDetailData(null)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
+              <h3 className="font-black text-lg mb-1 text-gray-800 pr-8 leading-tight">{analysisDetailData.title}</h3>
+              <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-100 px-2 py-1 rounded-md self-start">共 {analysisDetailData.txs.length} 筆明細</p>
+              <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
+                  {groupTransactions(analysisDetailData.txs).sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id))).map(item => renderItemOrGroup(item, false))}
+              </div>
+          </div>
+        </div>
+      )}
+
+      {showPendingModal && (
+        <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in text-left">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[80vh]">
+              <button onClick={() => setShowPendingModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
+              <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2"><SvgIcon name="cloudSync" size={24} className="text-blue-500" /> 待同步清單 ({(syncQueue || []).length})</h3>
+              <p className="text-[10px] text-gray-500 font-bold mb-4">以下清單為暫存於手機尚未上傳的操作（包含待刪除項目），點擊下方按鈕即可一併同步至雲端。</p>
+              <div className="flex-1 overflow-y-auto space-y-3 mb-6 pr-2 scrollbar-hide">
+                  {(syncQueue || []).map((item, idx) => (
+                      <div key={idx} className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex items-stretch gap-3 relative overflow-hidden">
+                          <div className={`absolute top-0 left-0 w-1.5 h-full ${item.action==='ADD'?'bg-green-500':item.action==='DELETE_TX'?'bg-red-500':'bg-blue-500'}`}></div>
+                          <div className="flex-1 min-w-0 pl-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  {item.type && <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-black text-white ${item.type==='income'?'bg-green-500':'bg-red-500'}`}>{item.type==='income'?'收入':'支出'}</span>}
+                                  {!item.type && <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md font-black text-white bg-purple-500">母項目</span>}
+                                  <span className="text-[12px] font-black text-gray-800 truncate">{item.category || item.parentTitle || '未知項目'}</span>
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${item.action==='ADD'?'text-green-600 border-green-200 bg-green-50':item.action==='DELETE_TX'?'text-red-600 border-red-200 bg-red-50':'text-blue-600 border-blue-200 bg-blue-50'}`}>{item.action==='ADD'?'待處理':item.action==='DELETE_TX'?'待處理':'待處理'}</span>
+                              </div>
+                              <div className="text-[10px] text-gray-400 font-bold mb-0.5">{displayDateClean(item.date)}</div>
+                              {(item.desc || item.parentDesc) && <div className="text-[10px] text-gray-600 truncate w-full mt-1 bg-gray-50 px-2 py-1 rounded-lg">{item.desc || item.parentDesc}</div>}
+                          </div>
+                          {item.amount !== undefined && <div className={`font-black flex items-center text-sm shrink-0 ${item.type==='income'?'text-green-600':'text-red-600'}`}>${Number(item.amount||0).toLocaleString()}</div>}
+                      </div>
+                  ))}
+              </div>
+              <button onClick={() => { triggerVibration(10); setShowPendingModal(false); requestSync(false, true); }} disabled={isSyncing} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2 disabled:opacity-50">{isSyncing ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : <SvgIcon name="cloudSync" size={20} />} {isSyncing ? "同步中..." : "立即同步至雲端"}</button>
+          </div>
+        </div>
+      )}
+
+      {showSearchFilterModal && (
+        <div className="fixed inset-0 z-[500] bg-gray-900/90 backdrop-blur-sm overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) setShowSearchFilterModal(false); }}>
+          <div className="w-full max-w-sm relative">
+            <button onClick={() => setShowSearchFilterModal(false)} className="absolute -top-12 right-0 text-white p-2 active:scale-90 opacity-80 hover:opacity-100 transition"><SvgIcon name="close" size={32} /></button>
+            <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden pb-8">
+              <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
+              <h2 className="text-xl font-black text-center mb-6 text-gray-800 pt-2">篩選與搜尋</h2>
+              <div className="space-y-4 text-left">
+                <div className="bg-gray-100 py-3 px-4 rounded-xl flex flex-col gap-1 border border-transparent focus-within:border-blue-200 transition-colors"><label className="text-[10px] font-black text-blue-500 uppercase tracking-widest shrink-0">包含關鍵字</label><input type="text" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="搜尋品項、金額或備註..." className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0" /></div>
+                <div className="bg-gray-100 py-3 px-4 rounded-xl flex flex-col gap-1 border border-transparent focus-within:border-red-200 transition-colors"><label className="text-[10px] font-black text-red-500 uppercase tracking-widest shrink-0">排除關鍵字</label><input type="text" value={historyExcludeSearch} onChange={(e) => setHistoryExcludeSearch(e.target.value)} placeholder="排除不想看的內容..." className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0" /></div>
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <label className="text-[10px] font-black text-gray-400 uppercase block mb-2 tracking-widest">時間區間快捷篩選</label>
+                    <div className="flex flex-wrap gap-2">{["all", "1m", "3m", "6m"].map(val => (<button key={val} onClick={() => setQuickDateFilter(val)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${historyDateFilter === val ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{val === 'all' ? '全部' : val === '1m' ? '本期' : val === '3m' ? '近3期' : '近半年'}</button>))}</div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors"><label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">收支類型</label><select value={historyTypeFilter} onChange={(e) => setHistoryTypeFilter(e.target.value)} className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800"><option value="all">全部收支</option><option value="expense">僅支出</option><option value="income">僅收入</option></select></div>
+                  <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors"><label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">精細時間設定</label><select value={historyDateFilter} onChange={(e) => setHistoryDateFilter(e.target.value)} className="w-full bg-transparent border-none outline-none appearance-none font-black text-sm text-gray-800 truncate"><option value="all">全部時間</option><option value="current_month">本期</option><option value="last_month">上期</option><option value="1m">近一期</option><option value="3m">近 3 期</option><option value="6m">近半年</option><option value="1y">近 1 年</option></select></div>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-8">
+                <button onClick={() => { triggerVibration(10); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all"); setHistoryDateFilter("all"); }} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-1">清空條件</button>
+                <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(false); }} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2">查看結果</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <header className="px-6 pt-12 pb-4 bg-white/90 backdrop-blur-md sticky top-0 z-40 flex justify-between items-center border-b border-gray-100 shrink-0 text-gray-800 shadow-sm">
         <div className="flex items-center gap-3 text-left">
@@ -867,7 +998,7 @@ function App() {
         </div>
       </header>
 
-      <main className="p-6 flex-1 overflow-y-auto scrollbar-hide text-gray-800">
+      <main className="p-6 flex-1 overflow-y-auto scrollbar-hide text-gray-800 flex flex-col relative">
         {activeTab === "dashboard" && (
           <div className="space-y-6 animate-in">
             <div className="bg-gray-900 p-8 rounded-[3rem] shadow-2xl text-white relative overflow-hidden text-center">
@@ -920,21 +1051,22 @@ function App() {
                 </div>
             )}
 
-            <div className="mt-4 flex-1">
+            {/* ★ 修復：解開高度限制，讓歷史清單正常顯示 */}
+            <div className="mt-4">
               {(filteredHistoryGroups || []).length === 0 ? (
                   <div className="text-center py-10 flex flex-col items-center gap-2"><span className="text-gray-400 text-sm font-bold">尚無符合條件的紀錄</span></div>
               ) : (
                   <Virtuoso
                       style={{ height: 'calc(100vh - 240px)' }}
+                      className="scrollbar-hide"
                       data={filteredHistoryGroups}
-                      itemContent={(index, item) => <div className="pb-3">{renderItemOrGroup(item, true)}</div>}
+                      itemContent={(index, item) => <div className="pb-3 px-1">{renderItemOrGroup(item, true)}</div>}
                   />
               )}
             </div>
           </div>
         )}
 
-        {/* 其餘 Analysis, Add, Settings Tabs 的程式碼保留，此處省略顯示以確保簡潔 */}
         {activeTab === "analysis" && (
           <div className="space-y-6 animate-in pb-20 text-left">
             <div className="flex flex-col gap-3 px-1">
@@ -955,6 +1087,13 @@ function App() {
                     <div className="absolute inset-y-0 right-0 flex items-center pointer-events-none"><span className="text-[8px] text-gray-400">▼</span></div>
                  </div>
               </div>
+              {analysisDateFilter === "custom" && (
+                <div className="flex gap-2 items-center bg-gray-100 p-2.5 rounded-xl border border-gray-200 animate-in shadow-inner">
+                  <input type="date" value={analysisCustomStart} onChange={e => setAnalysisCustomStart(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
+                  <span className="text-gray-400 font-bold text-xs">~</span>
+                  <input type="date" value={analysisCustomEnd} onChange={e => setAnalysisCustomEnd(e.target.value)} className="flex-1 bg-transparent font-black text-[10px] text-gray-700 outline-none text-center" />
+                </div>
+              )}
             </div>
             
             <div className="flex bg-gray-100 p-1.5 rounded-2xl text-sm text-gray-500">
@@ -962,7 +1101,6 @@ function App() {
               <button onClick={() => { triggerVibration(10); setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
             </div>
 
-            {/* 圖表渲染邏輯 ... */}
             {(() => {
               let analysisTxs = myTransactions || []; let prevAnalysisTxs = []; let yoyAnalysisTxs = []; const showCompare = (analysisDateFilter === "current_month" || analysisDateFilter === "last_month");
               if (analysisDateFilter !== "all") {
@@ -976,7 +1114,7 @@ function App() {
                   else {
                       const cutoff = new Date();
                       if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7); else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14); else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1);
-                      else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3); else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6); else if (historyDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
+                      else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3); else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6); else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1);
                       startTime = cutoff.getTime();
                   }
                   analysisTxs = analysisTxs.filter(item => { const tTime = parseDateForSort(item); return tTime >= startTime && tTime <= endTime; });
@@ -1010,45 +1148,75 @@ function App() {
               }
               const sortedLevel2 = Object.entries(level2Totals).sort((a,b) => b[1] - a[1]);
 
-              const activeColorClass = analysisType === "expense" ? "blue" : "green"; const isExp = analysisType === "expense"; const clrUp = isExp ? "text-red-500" : "text-green-500"; const clrDn = isExp ? "text-green-500" : "text-red-500";
+              const activeColorClass = analysisType === "expense" ? "blue" : "green"; 
+              const isExp = analysisType === "expense"; 
+              const clrUp = isExp ? "text-red-500" : "text-green-500"; 
+              const clrDn = isExp ? "text-green-500" : "text-red-500";
               let diffTotalPrev = grandTotal - totalPrev; let diffTotalYoy = grandTotal - totalYoy;
               let topIncreases = []; let topDecreases = [];
 
               if (showCompare && isExp) {
                   const allCats = new Set([...Object.keys(level1Totals), ...Object.keys(prevLevel1Totals)]);
-                  allCats.delete("理財"); 
-                  allCats.delete("投資"); 
-                  allCats.delete("教育");
-                  allCats.delete("育");   
-                  allCats.delete("醫療");
-                  allCats.delete("醫");   
-
+                  allCats.delete("理財"); allCats.delete("投資"); allCats.delete("教育"); allCats.delete("育"); allCats.delete("醫療"); allCats.delete("醫");   
                   allCats.forEach(cat => {
-                      const curAmt = level1Totals[cat] || 0;
-                      const prevAmt = prevLevel1Totals[cat] || 0;
-                      const diff = curAmt - prevAmt;
-                      if (diff > 100) topIncreases.push({ cat, diff });
-                      else if (diff < -100) topDecreases.push({ cat, diff });
+                      const curAmt = level1Totals[cat] || 0; const prevAmt = prevLevel1Totals[cat] || 0; const diff = curAmt - prevAmt;
+                      if (diff > 100) topIncreases.push({ cat, diff }); else if (diff < -100) topDecreases.push({ cat, diff });
                   });
-
-                  topIncreases.sort((a, b) => b.diff - a.diff);
-                  topDecreases.sort((a, b) => a.diff - b.diff);
+                  topIncreases.sort((a, b) => b.diff - a.diff); topDecreases.sort((a, b) => a.diff - b.diff);
               }
 
               return (
                 <div className="space-y-4">
-                  {showCompare && isExp && (
+                  {showCompare && (
                     <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 relative overflow-hidden animate-in">
-                       <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
-                       <h4 className="font-black text-gray-800 text-sm mb-4 flex items-center gap-2"><SvgIcon name="chart" size={16} className="text-blue-500" />智能抓漏與總評</h4>
-                       <div className={`mb-4 p-4 rounded-2xl border flex items-center justify-between ${diffTotalPrev > 0 ? 'bg-red-50/50 border-red-100' : 'bg-green-50/50 border-green-100'}`}>
+                       <div className={`absolute top-0 left-0 w-1.5 h-full ${isExp ? 'bg-blue-500' : 'bg-green-500'}`}></div>
+                       <h4 className="font-black text-gray-800 text-sm mb-4 flex items-center gap-2">
+                           <SvgIcon name="chart" size={16} className={isExp ? "text-blue-500" : "text-green-500"} />
+                           {isExp ? "智能抓漏與總評" : "收入增減總評"}
+                       </h4>
+                       
+                       <div className={`mb-4 p-4 rounded-2xl border flex items-center justify-between ${diffTotalPrev > 0 ? (isExp ? 'bg-red-50/50 border-red-100' : 'bg-green-50/50 border-green-100') : (isExp ? 'bg-green-50/50 border-green-100' : 'bg-red-50/50 border-red-100')}`}>
                            <div>
-                               <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">與上期相比總花費</div>
-                               <div className={`text-lg font-black ${diffTotalPrev > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                   {diffTotalPrev > 0 ? `超支 $${diffTotalPrev.toLocaleString()}` : (diffTotalPrev < 0 ? `節省 $${Math.abs(diffTotalPrev).toLocaleString()}` : '持平')}
+                               <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">與上期相比總{isExp ? '花費' : '收入'}</div>
+                               <div className={`text-lg font-black ${diffTotalPrev > 0 ? (isExp ? 'text-red-600' : 'text-green-600') : (diffTotalPrev < 0 ? (isExp ? 'text-green-600' : 'text-red-600') : 'text-gray-500')}`}>
+                                   {diffTotalPrev > 0 ? `${isExp ? '超支' : '增加'} $${diffTotalPrev.toLocaleString()}` : (diffTotalPrev < 0 ? `${isExp ? '節省' : '減少'} $${Math.abs(diffTotalPrev).toLocaleString()}` : '持平')}
                                </div>
                            </div>
+                           {diffTotalYoy !== 0 && (
+                               <div className="text-right">
+                                   <div className="text-[9px] font-bold text-gray-400 mb-1">較去年同期</div>
+                                   <div className={`text-xs font-black ${diffTotalYoy > 0 ? (isExp ? 'text-red-500' : 'text-green-500') : (isExp ? 'text-green-500' : 'text-red-500')}`}>
+                                       {diffTotalYoy > 0 ? `+$${diffTotalYoy.toLocaleString()}` : `-$${Math.abs(diffTotalYoy).toLocaleString()}`}
+                                   </div>
+                               </div>
+                           )}
                        </div>
+
+                       {isExp && (
+                           <div className="space-y-3 text-[11px] font-bold text-gray-600">
+                              {topIncreases.length > 0 && ( 
+                                  <div className="flex gap-3 items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                      <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 text-lg shadow-inner">⚠️</div>
+                                      <div className="leading-relaxed flex-1 min-w-0">
+                                          <div className="truncate">【{topIncreases[0].cat}】較上期{topIncreases[0].diff > 2000 ? '暴增' : '增加'} <span className="font-black text-red-600">${topIncreases[0].diff.toLocaleString()}</span></div>
+                                          {topIncreases[0].diff > 1000 && <div className="text-[9px] text-red-500 mt-0.5">上升顯著，建議點擊下方查看明細！</div>}
+                                      </div>
+                                  </div> 
+                              )}
+                              {topDecreases.length > 0 && ( 
+                                  <div className="flex gap-3 items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                      <div className="w-8 h-8 rounded-full bg-green-100 text-green-500 flex items-center justify-center shrink-0 text-lg shadow-inner">👍</div>
+                                      <div className="leading-relaxed flex-1 min-w-0">
+                                          <div className="truncate">【{topDecreases[0].cat}】較上期節省 <span className="font-black text-green-600">${Math.abs(topDecreases[0].diff).toLocaleString()}</span></div>
+                                          <div className="text-[9px] text-green-600 mt-0.5">控制得非常棒，繼續保持！</div>
+                                      </div>
+                                  </div> 
+                              )}
+                              {topIncreases.length === 0 && topDecreases.length === 0 && (
+                                  <div className="text-center py-2 text-gray-400">目前數據與上期持平，或尚無足夠數據。</div>
+                              )}
+                           </div>
+                       )}
                     </div>
                   )}
 
@@ -1074,12 +1242,51 @@ function App() {
                                  <span className="text-xs text-gray-400 font-bold w-10 text-right">{grandTotal > 0 ? ((amt/grandTotal)*100).toFixed(1) : 0}%</span>
                                  <span className={`font-black w-16 text-right ${isSelected ? `text-${activeColorClass}-700` : 'text-gray-800'}`}>${Math.round(amt).toLocaleString()}</span>
                               </div>
+                              {showCompare && (diffP !== 0 || diffY !== 0) && (
+                                 <div className="flex gap-1.5 justify-end mt-1 text-[9px] font-bold opacity-90">
+                                    {diffP !== 0 && <span className={diffP > 0 ? clrUp : clrDn}>上期 {diffP > 0 ? '↑' : '↓'}{Math.abs(diffP).toLocaleString()}</span>}
+                                    {diffY !== 0 && <span className={diffY > 0 ? clrUp : clrDn}>去年 {diffY > 0 ? '↑' : '↓'}{Math.abs(diffY).toLocaleString()}</span>}
+                                 </div>
+                              )}
                             </div>
                           </div>
                         );
                       })}
                     </div>
                   </div>
+
+                  {/* ★ 修復：完整裝回的 Level 2 展開細項 */}
+                  {selectedAnalysisLevel1 && (
+                    <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 animate-in relative overflow-hidden mt-4">
+                      <div className={`absolute top-0 left-0 w-full h-1.5 bg-${activeColorClass}-500`}></div>
+                      <h4 className="font-black text-gray-800 mb-5 flex items-center gap-2 text-sm pt-2">「{selectedAnalysisLevel1}」子項目明細</h4>
+                      <div className="space-y-4">
+                        {(sortedLevel2 || []).map(([cat, amt]) => {
+                           const pct = level1SelectedTotal > 0 ? (amt / level1SelectedTotal) * 100 : 0; const isL2Selected = selectedAnalysisLevel2 === cat; const diffP = amt - (prevLevel2Totals[cat] || 0); const diffY = amt - (yoyLevel2Totals[cat] || 0);
+                           return (
+                             <div key={cat}>
+                                <div className="flex justify-between items-start text-xs font-bold mb-1.5 gap-2">
+                                   <span className="text-gray-700 flex-1 min-w-0 flex items-center gap-1 mt-0.5"><span className="truncate">{cat}</span></span>
+                                   <div className="flex flex-col items-end shrink-0">
+                                      <div className="flex items-center gap-2">
+                                          <span className="text-gray-500 tabular-nums">${Math.round(amt).toLocaleString()} <span className="text-[9px] text-gray-400 ml-1">({pct.toFixed(1)}%)</span></span>
+                                          <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setAnalysisDetailData({ title: `「${selectedAnalysisLevel1} - ${cat}」明細`, txs: analysisTxs.filter(t => { return getParentCat(t.category) === selectedAnalysisLevel1 && getChildCat(t.category) === cat; }) }); }} className="px-2 py-0.5 rounded-md text-[9px] font-black active:scale-95 transition-all bg-gray-100 text-gray-500 hover:bg-gray-200">明細</button>
+                                      </div>
+                                      {showCompare && (diffP !== 0 || diffY !== 0) && (
+                                          <div className="flex gap-1.5 justify-end mt-1 text-[9px] font-bold opacity-90 pr-10">
+                                             {diffP !== 0 && <span className={diffP > 0 ? clrUp : clrDn}>上期 {diffP > 0 ? '↑' : '↓'}{Math.abs(diffP).toLocaleString()}</span>}
+                                             {diffY !== 0 && <span className={diffY > 0 ? clrUp : clrDn}>去年 {diffY > 0 ? '↑' : '↓'}{Math.abs(diffY).toLocaleString()}</span>}
+                                          </div>
+                                      )}
+                                   </div>
+                                </div>
+                                <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner"><div className={`h-full bg-${activeColorClass}-400 rounded-full transition-all duration-1000 ease-out`} style={{ width: animTrigger ? `${pct}%` : '0%' }}></div></div>
+                             </div>
+                           )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -1090,7 +1297,6 @@ function App() {
 
         {activeTab === "settings" && (
           <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
-             {/* 介面內容不變，僅加入一些按鈕的 triggerVibration(10) 以略過冗長程式碼區塊 */}
             <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
               <h3 className="font-black text-xs mb-4 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1"><SvgIcon name="calendar" size={16} className="text-blue-500 shrink-0" /> 記帳週期設定</h3>
               <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 focus-within:border-blue-200 transition-colors">
@@ -1098,14 +1304,66 @@ function App() {
                 <div className="flex items-center gap-2">
                   <select value={billingStartDay} onChange={(e) => { triggerVibration(10); const newDay = Number(e.target.value); setBillingStartDay(newDay); localStorage.setItem(LS.billingStartDay, String(newDay)); }} className="flex-1 bg-transparent font-black border-none outline-none text-blue-600 text-sm min-w-0">{[...Array(28)].map((_, i) => <option key={i+1} value={i+1}>每月 {i+1} 號</option>)}</select>
                 </div>
+                <div className="mt-3 text-[10px] text-gray-500 font-bold bg-white p-2 rounded-xl border border-gray-100 leading-relaxed">設定後，歷史清單與圖表的「本期/上期」將以此為基準。<br/>👉 目前本期範圍：<span className="text-blue-600 ml-1">{formatDateOnly(currentCycleRange.start)} ~ {formatDateOnly(currentCycleRange.end)}</span></div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
+              <h3 className="font-black text-xs mb-4 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1"><SvgIcon name="edit" size={16} className="text-blue-500 shrink-0" /> 介面自訂</h3>
+              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 focus-within:border-blue-200 transition-colors">
+                <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 leading-none tracking-widest">首頁副標題問候語 (支援 {"{name}"} 變數)</label>
+                <div className="flex items-center gap-2">
+                  <input type="text" className="flex-1 bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0" placeholder="例如：{name}，你好！" value={customSubtitle || ""} onChange={(e) => setCustomSubtitle(e.target.value)} />
+                  <button onClick={handleSaveGreeting} disabled={isSyncing} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[10px] font-black shadow-sm active:scale-95 disabled:opacity-50 shrink-0">儲存</button>
+                </div>
               </div>
             </div>
 
             <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
               <h3 className="font-black text-xs mb-5 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1"><SvgIcon name="info" size={16} className="text-blue-500 shrink-0" /> 安全與帳戶管理</h3>
               <div className="space-y-3">
-                <button onClick={() => { triggerVibration(15); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }} className="w-full mt-6 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-2 border border-red-100"><SvgIcon name="logout" size={20} className="shrink-0" /> 登出 / 切換使用者</button>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 gap-2">
+                  <div className="min-w-0"><p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">使用身份</p><p className="font-black text-gray-800 text-base leading-none mt-1 truncate">{currentUser.name}</p></div>
+                  <button onClick={() => { triggerVibration(10); setShowChangePinModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all shrink-0">更換密碼</button>
+                </div>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 gap-2">
+                  <div className="min-w-0"><p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">生物辨識 / 裝置解鎖</p><p className="font-black text-gray-800 text-sm leading-none mt-1 truncate">{bioBound ? "設備已綁定" : "設備未綁定"}</p></div>
+                  <button onClick={() => { triggerVibration(10); bioBound ? (setUnbindPin(""), setShowUnbindModal(true)) : bindDeviceBio(); }} className={`px-4 py-2 rounded-xl font-black text-xs active:scale-95 transition-all shrink-0 ${bioBound ? "bg-red-50 text-red-600 border border-red-100" : "bg-green-600 text-white shadow-lg"}`}>{bioBound ? "解除綁定" : "綁定設備"}</button>
+                </div>
+                <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 gap-2">
+                    <div className="min-w-0"><p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">系統深度清理</p><p className="font-black text-gray-800 text-sm leading-none mt-1 truncate">清空本地所有快取</p></div>
+                    <button onClick={() => { triggerVibration(10); setShowClearCacheModal(true); }} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">執行清理</button>
+                </div>
               </div>
+              <button onClick={() => { triggerVibration(15); setCurrentUser(null); setSelectingUser(null); setPinInput(""); setActiveTab("dashboard"); }} className="w-full mt-6 py-4 bg-red-50 text-red-600 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-2 border border-red-100"><SvgIcon name="logout" size={20} className="shrink-0" /> 登出 / 切換使用者</button>
+              
+              {syncQueue && syncQueue.length > 0 && (
+                <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mt-4 flex justify-between items-center gap-2">
+                  <div className="min-w-0"><p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none truncate">異常排解</p><p className="font-black text-red-600 text-sm leading-none mt-1 truncate">有 {syncQueue.length} 筆資料卡住</p></div>
+                  <button onClick={() => { triggerVibration([50, 50]); setShowClearQueueModal(true); }} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">強制清除</button>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
+              <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsLogOpen(!isLogOpen)}>
+                <h3 className="font-black text-xs uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1"><SvgIcon name="chart" size={16} className="text-blue-500 shrink-0" /> 系統資訊 & 更新歷程</h3>
+                <span className={`text-gray-400 text-[10px] transition-transform duration-300 ${isLogOpen ? 'rotate-180' : ''}`}>▼</span>
+              </div>
+              {isLogOpen && (
+                <div className="mt-5 space-y-5 font-bold text-gray-600 animate-in border-t border-gray-100 pt-4">
+                  <div className="border-l-2 border-blue-500 pl-3">
+                    <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">{APP_VERSION}</span></p>
+                    <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                      <li>正式轉換為 Vite + React 多檔案專案架構，大幅提升開發與維護效率。</li>
+                      <li>全面升級 IndexedDB 取代 LocalStorage 儲存資料，突破 5MB 限制。</li>
+                      <li>導入增量同步 (Delta Sync) 演算法與衝突防護機制，流量消耗降低 90%。</li>
+                      <li>歷史清單導入 react-virtuoso 虛擬列表技術，萬筆資料滑動依然順暢不卡頓。</li>
+                      <li>加入原生的震動回饋 (Haptic Feedback) 引擎，強化點擊手感。</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
