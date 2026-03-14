@@ -1,24 +1,31 @@
 import { DB_NAME, DB_VERSION, STORE_NAME } from './constants.js';
 
+// 將 DB_VERSION 升級為 2，並新增 trash_store 資源回收桶專用表
 export function initIndexedDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    // 強制使用版本 2 來觸發更新
+    const req = indexedDB.open(DB_NAME, 2); 
     req.onerror = () => reject("IndexedDB Error");
     req.onsuccess = (e) => resolve(e.target.result);
     req.onupgradeneeded = (e) => {
-      if (!e.target.result.objectStoreNames.contains(STORE_NAME)) {
-        e.target.result.createObjectStore(STORE_NAME, { keyPath: "id" });
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("trash_store")) {
+        db.createObjectStore("trash_store", { keyPath: "id" });
       }
     };
   });
 }
 
-export async function saveToIndexedDB(data) {
+// 支援指定 storeName 存入資料
+export async function saveToIndexedDB(storeName, data) {
   try {
     const db = await initIndexedDB();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(storeName, "readwrite");
+      const store = tx.objectStore(storeName);
       store.clear();
       (data || []).filter(i => i && i.id).forEach(i => store.put(i));
       tx.oncomplete = resolve;
@@ -27,13 +34,16 @@ export async function saveToIndexedDB(data) {
   } catch (e) {}
 }
 
-export async function loadFromIndexedDB() {
+// 支援指定 storeName 讀取資料
+export async function loadFromIndexedDB(storeName) {
   try {
     const db = await initIndexedDB();
     return new Promise((resolve, reject) => {
-      const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const req = store.getAll();
       req.onsuccess = () => resolve(req.result);
-      req.onerror = reject;
+      req.onerror = () => reject([]);
     });
   } catch (e) {
     return [];
