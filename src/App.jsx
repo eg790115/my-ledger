@@ -402,7 +402,7 @@ function App() {
   const handleSaveGreeting = async () => { 
     if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; } 
     try { 
-      setLoadingCard({ show:true, text:"正在儲存..." }); await await refreshDeviceToken(); 
+      setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken(); 
       const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() }); 
       if (res.result !== "success") throw new Error(res.message); 
       setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle})); showStatus("success", "✅ 問候語已更新"); 
@@ -435,7 +435,7 @@ function App() {
         }
       });
 
-      const promptTemplate = sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練。請針對以下帳單給予嚴厲的財務建議與控管警告。";
+      const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財教練。請針對以下帳單給予財務建議。";
 
       const finalPrompt = `
 ${promptTemplate}
@@ -521,7 +521,6 @@ ${momStr}
     }
   }, [currentUser, isOnline, txCache, sysConfig, aiEvalData]);
 
-
   const visibleTransactions = useMemo(() => {
     if (!currentUser) return []; 
     let base = [...(txCache || [])].filter(t => t && t.id); 
@@ -583,7 +582,7 @@ ${momStr}
       }); 
       setSyncQueue(currentQ); 
       localStorage.setItem(LS.pending, JSON.stringify(currentQ)); 
-      if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); else requestSync(true, false); 
+      if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); else requestSync(false, false); 
   };
 
   const handleAdd = async (newTxs) => { 
@@ -612,7 +611,7 @@ ${momStr}
     const idx = currentQ.findIndex(p => p.action === "UPDATE_GROUP_PARENT" && String(p.groupId) === String(newItem.groupId)); 
     if (idx >= 0) { currentQ[idx] = newItem; } else { currentQ.push(newItem); } 
     setSyncQueue(currentQ); localStorage.setItem(LS.pending, JSON.stringify(currentQ)); setEditingGroup(null); 
-    if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); else requestSync(true, false); 
+    if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); else requestSync(false, false); 
   };
   
   const handleDeleteTx = async (id) => { 
@@ -761,132 +760,7 @@ ${momStr}
 
   const toggleGroup = (gId) => { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); };
 
-  const renderStandaloneCard = (tx, allowEdit = true) => {
-    const benArray = getBenArray(tx.beneficiary, tx.member); 
-    const pAction = pendingMap[tx.id];
-    return (
-      <div key={tx.id} className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' || pAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-        {pAction && ( 
-          <div className={`shrink-0 w-6 flex items-center justify-center rounded-2xl shadow-sm border ${pAction==='ADD' || pAction === 'RESTORE_TX' ?'bg-green-50 border-green-200 text-green-700':pAction==='UPDATE_TX'?'bg-blue-50 border-blue-200 text-blue-700':'bg-red-50 border-red-200 text-red-700'}`}> 
-            <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{(pAction==='ADD' || pAction === 'RESTORE_TX')?'待處理':pAction==='UPDATE_TX'?'待處理':'待處理'}</span> 
-          </div> 
-        )}
-        <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-start sm:items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
-          <div className="relative shrink-0 mt-1 sm:mt-0">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{tx.type==="income" ? "收入" : "支出"}</div>
-            {tx.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{tx.member}</div> )}
-          </div>
-          <div className="flex-1 min-w-0 pl-1 pt-1">
-            <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
-              <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
-              <div className="flex gap-1 flex-wrap shrink-0">{benArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
-            </div>
-            <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
-              <div className="flex items-center gap-2 flex-wrap w-full">
-                <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(tx.date)}</span>
-                {tx.editHistory && tx.editHistory.length > 0 && ( 
-                  <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(tx); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button> 
-                )}
-              </div>
-              {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
-            </div>
-          </div>
-          <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
-            <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
-            {tx.recorder && tx.recorder !== tx.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {tx.recorder}代記</div> )}
-          </div>
-          {allowEdit && pAction !== 'DELETE_TX' && pAction !== 'HARD_DELETE_TX' && ( 
-            <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingTx(tx); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button> 
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderGroupCard = (group, allowEdit = true) => {
-    const isExp = !!expandedGroups[group.groupId]; 
-    const allBens = new Set(); 
-    (group.children || []).forEach(c => { if(c.beneficiary) String(c.beneficiary).split(",").filter(Boolean).forEach(b => allBens.add(b.trim())); }); 
-    const parentBenArray = getBenArray(Array.from(allBens).join(","), group.member); 
-    const gAction = pendingMap[group.groupId]; 
-    const hasChildAction = (group.children || []).some(c => pendingMap[c.id]); 
-    const isPendingDeleteGroup = (group.children || []).every(c => pendingMap[c.id] === 'DELETE_TX' || pendingMap[c.id] === 'HARD_DELETE_TX');
-    
-    return (
-      <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${isPendingDeleteGroup ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-        {(gAction || hasChildAction) && ( 
-          <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': isPendingDeleteGroup ? 'bg-red-50 border-red-200 text-red-700' : hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}> 
-            <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{isPendingDeleteGroup?'待處理':gAction==='UPDATE_GROUP_PARENT'?'待處理': '待處理'}</span> 
-          </div> 
-        )}
-        <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-          <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-start sm:items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
-            <div className="relative shrink-0 mt-1 sm:mt-0">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{group.type==="income" ? "收入" : "支出"}</div>
-              <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
-              {group.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div> )}
-            </div>
-            <div className="flex-1 min-w-0 pl-1 pt-1">
-              <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
-                <span className="truncate flex-shrink">{group.parentTitle}</span>
-                <div className="flex gap-1 flex-wrap shrink-0">{parentBenArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
-                <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 shrink-0 ${isExp ? 'rotate-180' : ''}`}>▼</span>
-              </div>
-              <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
-                <div className="flex items-center gap-2 flex-wrap w-full">
-                  <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(group.date)}</span>
-                  {group.editHistory && group.editHistory.length > 0 && ( 
-                    <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(group); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button> 
-                  )}
-                </div>
-                {group.parentDesc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{group.parentDesc}</div>}
-              </div>
-            </div>
-            <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
-              <div className={`font-black tabular-nums text-lg leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(group.amount||0).toLocaleString()}</div>
-              {group.recorder && group.recorder !== group.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {group.recorder}代記</div> )}
-            </div>
-            {allowEdit && !isPendingDeleteGroup && ( 
-              <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingGroup(group); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button> 
-            )}
-          </div>
-
-          {isExp && (
-            <div className="bg-gray-50/80 p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
-              {(group.children || []).map((child, idx) => {
-                const childBenArray = getBenArray(child.beneficiary, group.member); 
-                const cAction = pendingMap[child.id];
-                return (
-                  <div key={child.id} className={`w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden transition-opacity ${cAction === 'DELETE_TX' || cAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-                    {cAction && <div className={`absolute left-0 top-0 h-full w-1 ${cAction==='ADD'?'bg-green-400':cAction==='UPDATE_TX'?'bg-blue-400':'bg-red-400'}`}></div>}
-                    <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">{idx + 1}</div>
-                    <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
-                      <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
-                        <span className="truncate flex-shrink">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
-                        {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待處理</span>}
-                        {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待處理</span>}
-                        {(cAction === 'DELETE_TX' || cAction === 'HARD_DELETE_TX') && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待處理</span>}
-                        <div className="flex gap-1 flex-wrap shrink-0">{childBenArray.map(b => ( <span key={b} className={`text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
-                      </div>
-                      {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
-                    </div>
-                    <div className="flex flex-col items-end shrink-0 min-w-[3.5rem] text-right z-10">
-                      <div className={`font-black tabular-nums text-xs sm:text-sm ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>${Number(child.amount||0).toLocaleString()}</div>
-                    </div>
-                    {allowEdit && cAction !== 'DELETE_TX' && cAction !== 'HARD_DELETE_TX' && ( 
-                      <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingTx(child); }} className="absolute bottom-1 right-1.5 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={11} /></button> 
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // 🌟 把這個神聖不可侵犯的工具補回來了！
+  // 🌟 這裡完美傳入畫圖工具
   const renderItemOrGroup = (item, allowEdit) => { 
     if (item.isGroup) return renderGroupCard(item, allowEdit); 
     return renderStandaloneCard(item, allowEdit); 
@@ -898,7 +772,7 @@ ${momStr}
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
+      <div translate="no" className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
         
         {isLoading && (
           <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
@@ -961,7 +835,7 @@ ${momStr}
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 pb-24 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
+    <div translate="no" className="min-h-screen bg-gray-50 text-gray-900 pb-24 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
       
       <ProxyNotification transactions={unackedProxyTxs} onAck={() => { triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...unackedProxyTxs.map(t => t.id)])]; localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
 
@@ -1063,19 +937,6 @@ ${momStr}
                          );
                       })
                   )}
-              </div>
-          </div>
-        </div>
-      )}
-
-      {analysisDetailData && (
-        <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in text-left font-black" onClick={(e) => { if(e.target === e.currentTarget) setAnalysisDetailData(null); }}>
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
-              <button onClick={() => setAnalysisDetailData(null)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
-              <h3 className="font-black text-lg mb-1 text-gray-800 pr-8 leading-tight">{analysisDetailData.title}</h3>
-              <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-100 px-2 py-1 rounded-md self-start">共 {analysisDetailData.txs.length} 筆明細</p>
-              <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
-                  {groupTransactions(analysisDetailData.txs).sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id))).map(item => renderItemOrGroup(item, false))}
               </div>
           </div>
         </div>
@@ -1226,7 +1087,7 @@ ${momStr}
       />
 
       {statusMsg.text && ( 
-        <div className="fixed bottom-24 left-0 right-0 flex justify-center z z-[1000] pointer-events-none px-4 text-center">
+        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
           <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
             <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
           </div>
