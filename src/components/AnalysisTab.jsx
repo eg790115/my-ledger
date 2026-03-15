@@ -3,36 +3,56 @@ import { SvgIcon } from './Icons';
 import { CHART_COLORS } from '../utils/constants';
 import { getCycleRange, parseDateForSort, getParentCat, getChildCat } from '../utils/helpers';
 
-// 🌟 大聲公廣播版卡片式 AI 幻燈片模組
+// 🌟 儀式感爆棚：大聲公 + 純淨打字動畫 AI 幻燈片模組 (無光標版)
 const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [fade, setFade] = useState(true);
+  const [displayText, setDisplayText] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
 
   const defaultMessages = [
     "正在等待最新的財務洞察... 到「設定」點擊 🤖 手動分析吧！✨"
   ];
 
-  // 將 AI 長篇報告切成一則則的「洞察卡片」
+  // 解析報告內容
   const messages = useMemo(() => {
     if (!aiReport) return defaultMessages;
-    // 優先使用直線「|」來分隔每一段具體的分析 (對應新版緊箍咒)
     if (aiReport.includes('|')) {
       return aiReport.split('|').map(s => s.trim()).filter(s => s.length > 5);
     }
-    // 舊版相容
     const parsed = aiReport.split(/(?<=[。！？!\?])\s*/).filter(s => s.trim().length > 5);
     return parsed.length > 0 ? parsed : defaultMessages;
   }, [aiReport]);
 
+  // 打字機邏輯
+  useEffect(() => {
+    if (isEvaluating) return;
+    
+    let i = 0;
+    const fullText = messages[currentIndex] || "";
+    setDisplayText(""); 
+    setIsTyping(true);
+
+    const typingTimer = setInterval(() => {
+      if (i < fullText.length) {
+        setDisplayText(fullText.substring(0, i + 1));
+        i++;
+      } else {
+        setIsTyping(false);
+        clearInterval(typingTimer);
+      }
+    }, 50);
+
+    return () => clearInterval(typingTimer);
+  }, [currentIndex, messages, isEvaluating]);
+
+  // 幻燈片輪播邏輯
   useEffect(() => {
     if (isEvaluating || messages.length <= 1) return;
+    
     const interval = setInterval(() => {
-      setFade(false); // 先淡出
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % messages.length);
-        setFade(true); // 換句話後再淡入
-      }, 500); // 淡出動畫時間
-    }, 6000); // 每 6 秒切換一張卡片
+      setCurrentIndex((prev) => (prev + 1) % messages.length);
+    }, 8000); 
+    
     return () => clearInterval(interval);
   }, [messages.length, isEvaluating]);
 
@@ -46,11 +66,12 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   }
 
   return (
-    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100/50 rounded-2xl p-4 flex items-start gap-3 shadow-sm relative mb-4 min-h-[4.5rem] transition-all">
-      <span className="shrink-0 text-lg mt-0.5 opacity-80">📢</span>
+    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100/50 rounded-2xl p-4 flex items-start gap-3 shadow-sm relative mb-4 min-h-[4.8rem] transition-all overflow-hidden">
+      <span className="shrink-0 text-lg mt-0.5 opacity-80 animate-bounce">📢</span>
       <div className="flex-1 w-full relative flex items-center h-full min-h-[3rem]">
-        <span className={`text-[12px] font-black text-indigo-800 transition-opacity duration-500 leading-relaxed absolute inset-0 flex items-center ${fade ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
-          {messages[currentIndex]}
+        {/* 🌟 文字顯示區：已移除光標，讓文字自然蹦出 */}
+        <span className="text-[12px] font-black text-indigo-800 leading-relaxed">
+          {displayText}
         </span>
       </div>
     </div>
@@ -97,7 +118,7 @@ const AnalysisTab = ({
         )}
       </div>
 
-      {/* 🌟 2. AI 幻燈片移到這裡 (在收支切換按鈕的上方) */}
+      {/* 2. AI 幻燈片 */}
       <AiInsightsCarousel 
          aiReport={aiEvalData ? (currentUser?.name === "爸爸" ? aiEvalData.dad_eval : aiEvalData.mom_eval) : null} 
          isEvaluating={isAIEvaluating} 
@@ -109,7 +130,7 @@ const AnalysisTab = ({
         <button onClick={() => { triggerVibration(10); setAnalysisType("income"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-2 rounded-xl font-black transition-all ${analysisType === "income" ? "bg-white text-green-500 shadow-sm" : ""}`}>收入分析</button>
       </div>
 
-      {/* 4. 核心資料與圖表區 */}
+      {/* 4. 圖表區 */}
       {(() => {
         let analysisTxs = myTransactions || []; let prevAnalysisTxs = []; let yoyAnalysisTxs = []; const showCompare = (analysisDateFilter === "current_month" || analysisDateFilter === "last_month");
         if (analysisDateFilter !== "all") {
@@ -164,10 +185,9 @@ const AnalysisTab = ({
         return (
           <div className="space-y-4">
             
-            {/* 簡潔的一行文字摘要 */}
             {showCompare && (diffTotalPrev !== 0 || diffTotalYoy !== 0) && (
               <div className="text-center text-[11px] font-bold text-gray-500 bg-gray-100/80 py-2.5 rounded-xl border border-gray-100 px-2 animate-in">
-                較上期 {diffTotalPrev > 0 ? (isExp ? '增加' : '增加') : (diffTotalPrev < 0 ? (isExp ? '減少' : '減少') : '持平')}
+                較上期 {diffTotalPrev > 0 ? '增加' : '減少'}
                 <span className={`mx-1 font-black ${diffTotalPrev > 0 ? clrUp : clrDn}`}>
                   {diffTotalPrev !== 0 ? `$${Math.abs(diffTotalPrev).toLocaleString()}` : ''}
                 </span>
@@ -175,7 +195,7 @@ const AnalysisTab = ({
                 {diffTotalYoy !== 0 && (
                   <>
                     <span className="mx-2 text-gray-300 font-normal">|</span>
-                    較去年 {diffTotalYoy > 0 ? (isExp ? '增加' : '增加') : '減少'}
+                    較去年 {diffTotalYoy > 0 ? '增加' : '減少'}
                     <span className={`ml-1 font-black ${diffTotalYoy > 0 ? clrUp : clrDn}`}>
                       ${Math.abs(diffTotalYoy).toLocaleString()}
                     </span>
