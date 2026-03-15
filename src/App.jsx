@@ -6,7 +6,7 @@ import { APP_VERSION, STORE_NAME, LS, CHART_COLORS } from './utils/constants';
 import { initIndexedDB, saveToIndexedDB, loadFromIndexedDB, getParentCat, getChildCat, getBenArray, getBenBadgeStyle, safeParse, safeArrayLS, safeStringLS, safeNumberLS, nowStr, displayDateClean, formatDateOnly, parseDateForSort, getCycleRange } from './utils/helpers';
 import { gasUrl, postGAS, getDeviceToken, deviceValid, setDeviceToken, clearDeviceToken, getBioKey, isDeviceBioBound, getBioFailCount, setBioFailCount, getBioLockedUntil, setBioLockedUntil, clearBioFail, verifyPinOnline, saveLocalPinHash, unlockWithPinLocal } from './utils/api';
 
-// --- 🌟 引入我們剛剛成功拆分出來的「抽屜」們 ---
+// --- 🌟 引入所有拆分出來的「抽屜」 ---
 import BottomNav from './components/BottomNav';
 import Header from './components/Header';
 import DashboardSummary from './components/DashboardSummary';
@@ -31,7 +31,7 @@ const triggerVibration = (pattern) => {
 
 function App() {
   // ==========================================
-  // 1. 所有的 State 狀態管理 (一字未改，保留大腦)
+  // 1. State 狀態管理
   // ==========================================
   const [activeTab, setActiveTab] = useState("dashboard");
   const [familyConfig, setFamilyConfig] = useState(() => safeArrayLS(LS.members).length ? safeArrayLS(LS.members) : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }]);
@@ -94,7 +94,7 @@ function App() {
   const [unackedProxyTxs, setUnackedProxyTxs] = useState([]);
 
   // ==========================================
-  // 2. 所有的 Refs 與 Effects (大腦神經神經網絡)
+  // 2. Refs 與 Effects
   // ==========================================
   const pollingTimerRef = useRef(null); 
   const syncDebounceRef = useRef(null); 
@@ -400,7 +400,7 @@ function App() {
   const handleSaveGreeting = async () => { 
     if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; } 
     try { 
-      setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken(); 
+      setLoadingCard({ show:true, text:"正在儲存..." }); await await refreshDeviceToken(); 
       const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() }); 
       if (res.result !== "success") throw new Error(res.message); 
       setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle})); showStatus("success", "✅ 問候語已更新"); 
@@ -410,6 +410,9 @@ function App() {
     } finally { setLoadingCard({ show:false, text:"" }); } 
   };
 
+  // ==========================================
+  // 3. 🌟 新版最強 AI 洞察邏輯
+  // ==========================================
   const executeFrontendAI = async (isManual = false) => {
     if (!sysConfig || !sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
       if (isManual) showStatus("error", "尚未設定 Gemini API Key，請先至試算表 __成員密碼__ 設定。");
@@ -443,14 +446,32 @@ function App() {
 
       if (!dadStr && !momStr) throw new Error("近半年無足夠的記帳資料可供分析");
 
-      const sysPrompt = sysConfig.prompt || "你是一位溫暖的家庭理財顧問...";
+      const baseSysPrompt = sysConfig.prompt || "你是一位溫暖的家庭理財顧問...";
+      
+      // 🌟 解開 15 字封印，要求 AI 給出有血有肉的具體分析！
+      const strictFormatPrompt = `
+${baseSysPrompt}
+
+⚠️ 【強制輸出格式規定】：
+請務必回傳純 JSON 格式。前端將使用「卡片幻燈片」輪播顯示，dad_eval 和 mom_eval 必須是由 5~7 個「具體財務洞察」組成。
+1. 每個洞察約 30~50 字，【必須包含具體金額、消費項目與明確建議】。
+2. 洞察之間「絕對必須」用直線符號「|」隔開（系統將以此切割卡片）。
+3. 語氣要溫暖親切，並根據內容加上 Emoji。
+
+範例格式：
+{
+  "dad_eval": "這個月飲料花費高達 $1,500 偏多喔！建議下個月挑戰控制在 $1,000 內，多喝水更健康！🥤 | 週末帶兒子去遊樂園花了 $2,000，創造美好回憶非常值得！✨ | 車子保養噴了 $5,000，這是為了家人安全的必要開銷，辛苦了！🚗",
+  "mom_eval": "這個月衣服只花 $800，控制得非常棒，真是省錢達人！👗 | 買菜錢 $6,000 完美控制在預算內，家人吃得健康又安心！🥦 | 偶爾花 $150 喝杯咖啡犒賞自己，這是很棒的放鬆時光！☕"
+}
+`;
+
       const userPrompt = `【爸爸的近半年資料】：\n${dadStr || '無資料'}\n\n【媽媽的近半年資料】：\n${momStr || '無資料'}`;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${sysConfig.apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: sysPrompt + "\n\n" + userPrompt }] }],
+          contents: [{ role: "user", parts: [{ text: strictFormatPrompt + "\n\n" + userPrompt }] }],
           generationConfig: { responseMimeType: "application/json" }
         })
       });
@@ -473,8 +494,8 @@ function App() {
 
       postGAS({ action: "SAVE_AI_RESULT", aiData: parsedResult, deviceToken: getDeviceToken() }).catch(()=>{});
 
-      if (isManual) { triggerVibration([20, 50, 20]); showStatus("success", "✨ AI 分析完成！"); }
-      else { showStatus("info", "✨ AI 已悄悄為您產生最新財務評估！"); }
+      if (isManual) { triggerVibration([20, 50, 20]); showStatus("success", "✨ AI 洞察分析完成！"); }
+      else { showStatus("info", "✨ AI 已悄悄為您產生最新財務洞察！"); }
 
     } catch (e) {
       if (isManual) showStatus("error", `❌ AI 錯誤: ${e.message}`);
@@ -482,9 +503,10 @@ function App() {
       setIsAIEvaluating(false);
     }
   };
-
-  const handleForceAIEval = () => executeFrontendAI(true);
   
+  // 🌟 修復：正確綁定手動觸發功能
+  const handleForceAIEval = () => executeFrontendAI(true);
+
   const hasTriggeredAutoAI = useRef(false);
   useEffect(() => {
     if (currentUser && isOnline && txCache.length > 0 && sysConfig.apiKey && !hasTriggeredAutoAI.current && deviceValid()) {
@@ -493,6 +515,9 @@ function App() {
     }
   }, [currentUser, isOnline, txCache, sysConfig]);
 
+  // ==========================================
+  // 4. 資料整理與計算區塊
+  // ==========================================
   const visibleTransactions = useMemo(() => {
     if (!currentUser) return []; 
     let base = [...(txCache || [])].filter(t => t && t.id); 
@@ -732,6 +757,9 @@ function App() {
 
   const toggleGroup = (gId) => { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); };
 
+  // ==========================================
+  // 5. 渲染卡片區塊
+  // ==========================================
   const renderStandaloneCard = (tx, allowEdit = true) => {
     const benArray = getBenArray(tx.beneficiary, tx.member); 
     const pAction = pendingMap[tx.id];
@@ -859,10 +887,9 @@ function App() {
   const isHistoryFiltered = debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all";
 
   // ==========================================
-  // 3. 畫面的渲染 (Render) 區塊
+  // 6. 主體渲染 (Render) 區塊
   // ==========================================
 
-  // 未登入畫面 (使用 LoginUI 抽屜)
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
@@ -1155,10 +1182,9 @@ function App() {
           />
         )}
 
-        {/* 新增紀錄表單 (尚未拆分) */}
+        {/* 新增紀錄表單 */}
         {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
 
-        {/* 設定頁面 (尚未拆分) */}
         {/* --- 🌟 設定頁面 SettingsTab 抽屜 --- */}
         {activeTab === "settings" && (
           <SettingsTab
