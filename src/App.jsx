@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 
-// --- 引入常數與輔助函式 ---
 import { APP_VERSION, STORE_NAME, LS, CHART_COLORS } from './utils/constants';
-import { initIndexedDB, saveToIndexedDB, loadFromIndexedDB, getParentCat, getChildCat, getBenArray, getBenBadgeStyle, safeParse, safeArrayLS, safeStringLS, safeNumberLS, nowStr, displayDateClean, formatDateOnly, parseDateForSort, getCycleRange } from './utils/helpers';
+import { initIndexedDB, saveToIndexedDB, loadFromIndexedDB, getParentCat, getChildCat, getBenArray, getBenBadgeStyle, safeParse, safeArrayLS, safeStringLS, safeNumberLS, nowStr, displayDateClean, formatDateOnly, parseDateForSort } from './utils/helpers';
 import { gasUrl, postGAS, getDeviceToken, deviceValid, setDeviceToken, clearDeviceToken, getBioKey, isDeviceBioBound, getBioFailCount, setBioFailCount, getBioLockedUntil, setBioLockedUntil, clearBioFail, verifyPinOnline, saveLocalPinHash, unlockWithPinLocal } from './utils/api';
 
-// --- 🌟 引入所有拆分出來的「抽屜」 ---
 import BottomNav from './components/BottomNav';
 import Header from './components/Header';
 import DashboardSummary from './components/DashboardSummary';
@@ -15,7 +13,6 @@ import HistoryTab from './components/HistoryTab';
 import AnalysisTab from './components/AnalysisTab';
 import SettingsTab from './components/SettingsTab';
 
-// --- 引入其他原始 UI 元件 ---
 import { SvgIcon } from './components/Icons';
 import { ProxyNotification } from './components/ProxyNotification';
 import { ChangePinModal } from './components/ChangePinModal';
@@ -29,10 +26,19 @@ const triggerVibration = (pattern) => {
   } 
 };
 
+const getSafeCycleRange = (now, startDay, monthOffset = 0) => {
+  const bDay = Number(startDay) || 1;
+  let start = new Date(now.getFullYear(), now.getMonth(), bDay, 0, 0, 0);
+  if (now.getDate() < bDay) start.setMonth(start.getMonth() - 1);
+  start.setMonth(start.getMonth() + monthOffset);
+  let end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  end.setDate(end.getDate() - 1);
+  end.setHours(23, 59, 59, 999);
+  return { start: start.getTime(), end: end.getTime() };
+};
+
 function App() {
-  // ==========================================
-  // 1. State 狀態管理
-  // ==========================================
   const [activeTab, setActiveTab] = useState("dashboard");
   const [familyConfig, setFamilyConfig] = useState(() => safeArrayLS(LS.members).length ? safeArrayLS(LS.members) : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }]);
   const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
@@ -57,7 +63,6 @@ function App() {
   const [trashCache, setTrashCache] = useState([]);
   const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
   
-  // AI 與設定狀態
   const [aiEvalData, setAiEvalData] = useState(() => { try { return JSON.parse(localStorage.getItem('ai_eval_data')) || null; } catch { return null; } });
   const [isAIEvaluating, setIsAIEvaluating] = useState(false);
   const [sysConfig, setSysConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('sys_config')) || { apiKey: "", prompt: "" }; } catch { return { apiKey: "", prompt: "" }; } });
@@ -93,9 +98,6 @@ function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [unackedProxyTxs, setUnackedProxyTxs] = useState([]);
 
-  // ==========================================
-  // 2. Refs 與 Effects
-  // ==========================================
   const pollingTimerRef = useRef(null); 
   const syncDebounceRef = useRef(null); 
   const isSyncingRef = useRef(false);
@@ -410,92 +412,82 @@ function App() {
     } finally { setLoadingCard({ show:false, text:"" }); } 
   };
 
-  // ==========================================
-  // 3. 🌟 新版最強 AI 洞察邏輯
-  // ==========================================
+
   const executeFrontendAI = async (isManual = false) => {
-    if (!sysConfig || !sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
-      if (isManual) showStatus("error", "尚未設定 Gemini API Key，請先至試算表 __成員密碼__ 設定。");
+    if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
+      if (isManual) showStatus("error", "尚未設定 API Key");
       return;
     }
     
-    const todayStr = formatDateOnly(Date.now());
-    const txCount = (txCache || []).length;
-    
-    if (!isManual) {
-       const lastDate = localStorage.getItem('ai_last_date');
-       const lastCount = localStorage.getItem('ai_last_count');
-       if (lastDate === todayStr || String(txCount) === lastCount) return;
-    }
-
     setIsAIEvaluating(true);
-    if (isManual) { triggerVibration(15); showStatus("info", "🤖 正在連線 AI 進行分析，請稍候..."); }
+    if (isManual) showStatus("info", "🤖 正在連線 AI 分析...");
 
     try {
-      const cutoffTime = Date.now() - (180 * 24 * 60 * 60 * 1000);
+      const cutoffTime = Date.now() - (180 * 24 * 60 * 60 * 1000); 
       let dadStr = ""; let momStr = "";
       
-      (txCache || []).forEach(tx => {
+      txCache.forEach(tx => {
         const ts = parseDateForSort(tx);
         if (ts > cutoffTime) {
-          const line = `[${displayDateClean(tx.date).substring(0,5)}] ${tx.type==='income'?'收入':'支出'} ${tx.category} $${tx.amount} (對象:${tx.beneficiary||tx.member}) - ${tx.desc||'無'}\n`;
+          const line = `日期:${displayDateClean(tx.date).substring(0,5)} | 類型:${tx.type==='income'?'收入':'支出'} | 項目:${tx.category} | 金額:$${tx.amount} | 對象:${tx.beneficiary || tx.member} | 備註:${tx.desc || '無'}\n`;
           if (tx.member === "爸爸") dadStr += line;
-          else if (tx.member === "媽媽") momStr += line;
+          else if (tx.member === "媽媽" || tx.member === "妈妈") momStr += line;
         }
       });
 
-      if (!dadStr && !momStr) throw new Error("近半年無足夠的記帳資料可供分析");
-
-      const baseSysPrompt = sysConfig.prompt || "你是一位溫暖的家庭理財顧問...";
-      
-      // 🌟 解開 15 字封印，要求 AI 給出有血有肉的具體分析！
       const strictFormatPrompt = `
-${baseSysPrompt}
+${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
 
 ⚠️ 【強制輸出格式規定】：
-請務必回傳純 JSON 格式。前端將使用「卡片幻燈片」輪播顯示，dad_eval 和 mom_eval 必須是由 5~7 個「具體財務洞察」組成。
+請務必回傳純 JSON 格式。前端將使用「卡片幻燈片」輪播顯示，dad_eval 和 mom_eval 必須是由 8~10 個「具體財務洞察」組成。
 1. 每個洞察約 30~50 字，【必須包含具體金額、消費項目與明確建議】。
 2. 洞察之間「絕對必須」用直線符號「|」隔開（系統將以此切割卡片）。
-3. 語氣要溫暖親切，並根據內容加上 Emoji。
+
+🚨【時間範圍限制與語氣要求】：
+- 雖然你看到了過去半年的資料，但你的「評語與洞察」請【絕對只針對最近 30 天內發生的花費】進行點評！絕對不要翻舊帳！
+- 語氣要【專業、一針見血、帶有嚴格的理財教練口吻】。對於不必要的浪費要給予直接、嚴厲的警告，要求下個月立刻改進！
+
+🚨【重要情商判斷與對象解析邏輯】：
+- 若對象包含「爸爸,媽媽,兒子」或備註寫「全家」，這是「家庭基本開銷」，請肯定扛起家庭責任！
+- 若對象是「爸爸,媽媽」或備註有「老婆/老公」，這是「夫妻約會」，請稱讚對方用心經營婚姻！
+- 若對象包含「兒子」，若是教育或必要花費請肯定，若過度買玩具請稍微嚴厲提醒控制預算。
+- 若「對象」僅有個人，且明顯是個人娛樂消耗，請給予【嚴厲的警告與控管建議】，要求下個月必須改善！
 
 範例格式：
 {
-  "dad_eval": "這個月飲料花費高達 $1,500 偏多喔！建議下個月挑戰控制在 $1,000 內，多喝水更健康！🥤 | 週末帶兒子去遊樂園花了 $2,000，創造美好回憶非常值得！✨ | 車子保養噴了 $5,000，這是為了家人安全的必要開銷，辛苦了！🚗",
-  "mom_eval": "這個月衣服只花 $800，控制得非常棒，真是省錢達人！👗 | 買菜錢 $6,000 完美控制在預算內，家人吃得健康又安心！🥦 | 偶爾花 $150 喝杯咖啡犒賞自己，這是很棒的放鬆時光！☕"
+  "dad_eval": "這個月飲料花費高達 $1,500，這筆開銷完全可以省下來！下個月立刻減少手搖飲！🥤 | 帶老婆去吃拉麵花了 $800，這筆花費很值得，用心經營婚姻！✨ | 繳了全家的管理費 $2,500，扛起家庭責任，辛苦了！🏠 | 買給兒子的玩具花了 $1,200，請注意不要過度溺愛，控制玩具預算！🎮 | 車子保養噴了 $5,000，安全第一，這筆錢花得合理！🚗 | 週末幫忙買菜花了 $1,500，分擔家務值得肯定！🥦 | 存了 $10,000 投資理財，保持這個紀律！💰 | 買了自己的衣服花了 $2,000，請確認是否為必要開銷，避免衝動購物！👔",
+  "mom_eval": "買菜錢 $6,000 控制在水準內，繼續保持這個標準！🥦 | 這個月買衣服花了 $3,500 偏高，請克制購物慾望，下個月務必縮減！👗 | 帶兒子去遊樂園花了 $1,500，創造回憶很好，但注意娛樂支出！🎡 | 幫全家買了日用品 $2,000，打理家裡辛苦了！🛒 | 週末和老公看電影花了 $900，夫妻相處的必要投資！🍿 | 保養品花了 $3,000，請檢視是否超過個人月度預算！✨ | 幫兒子繳補習費 $4,000，教育投資必須花！📚 | 喝咖啡花了 $500，適度放鬆可以，別變成習慣！☕"
 }
 `;
 
-      const userPrompt = `【爸爸的近半年資料】：\n${dadStr || '無資料'}\n\n【媽媽的近半年資料】：\n${momStr || '無資料'}`;
+      const reqBody = {
+        contents: [{ role: "user", parts: [{ text: strictFormatPrompt + "\n\n爸爸資料：\n" + dadStr + "\n媽媽資料：\n" + momStr }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      };
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${sysConfig.apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: strictFormatPrompt + "\n\n" + userPrompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
-        })
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify(reqBody)
       });
-
-      const jsonRes = await response.json();
-      if (jsonRes.error) throw new Error(jsonRes.error.message);
       
-      const aiText = jsonRes.candidates[0].content.parts[0].text;
-      let parsedResult = {};
-      try {
-        const match = aiText.match(/\{[\s\S]*\}/);
-        parsedResult = JSON.parse(match ? match[0] : aiText);
-      } catch (e) { throw new Error("AI 回傳格式無法解析"); }
+      const jsonRes = await response.json();
 
+      if (jsonRes.error) throw new Error(jsonRes.error.message);
+      if (!jsonRes.candidates || jsonRes.candidates.length === 0) throw new Error("AI 沒有回傳內容或 API 暫時無回應");
+
+      const aiText = jsonRes.candidates[0].content.parts[0].text;
+      
+      const match = aiText.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("AI 回傳格式錯誤 (非 JSON)");
+      
+      const parsedResult = JSON.parse(match[0]);
       parsedResult.lastUpdated = nowStr();
       
       setAiEvalData(parsedResult);
-      localStorage.setItem('ai_last_date', todayStr);
-      localStorage.setItem('ai_last_count', String(txCount));
-
       postGAS({ action: "SAVE_AI_RESULT", aiData: parsedResult, deviceToken: getDeviceToken() }).catch(()=>{});
-
-      if (isManual) { triggerVibration([20, 50, 20]); showStatus("success", "✨ AI 洞察分析完成！"); }
-      else { showStatus("info", "✨ AI 已悄悄為您產生最新財務洞察！"); }
+      
+      if (isManual) showStatus("success", "✨ AI 分析完成！");
 
     } catch (e) {
       if (isManual) showStatus("error", `❌ AI 錯誤: ${e.message}`);
@@ -503,8 +495,7 @@ ${baseSysPrompt}
       setIsAIEvaluating(false);
     }
   };
-  
-  // 🌟 修復：正確綁定手動觸發功能
+
   const handleForceAIEval = () => executeFrontendAI(true);
 
   const hasTriggeredAutoAI = useRef(false);
@@ -515,9 +506,7 @@ ${baseSysPrompt}
     }
   }, [currentUser, isOnline, txCache, sysConfig]);
 
-  // ==========================================
-  // 4. 資料整理與計算區塊
-  // ==========================================
+
   const visibleTransactions = useMemo(() => {
     if (!currentUser) return []; 
     let base = [...(txCache || [])].filter(t => t && t.id); 
@@ -622,7 +611,7 @@ ${baseSysPrompt}
   const handleHardDeleteTrash = (tx) => { triggerVibration([30, 50, 30]); const newOpId = Date.now() + '_' + Math.random().toString(36).substring(2, 9); appendToQueueAndSync([{ ...tx, isOffline: !navigator.onLine, action: "HARD_DELETE_TX", opId: newOpId }]); setConfirmHardDeleteId(null); };
   const handleEmptyTrash = () => { triggerVibration([50, 50, 50]); const ops = visibleTrash.map(tx => ({ ...tx, isOffline: !navigator.onLine, action: "HARD_DELETE_TX", opId: Date.now() + '_' + Math.random().toString(36).substring(2, 9) })); appendToQueueAndSync(ops); setShowConfirmEmptyTrash(false); setShowTrashModal(false); showStatus("success", "🗑️ 已清空資源回收桶"); };
 
-  const currentCycleRange = useMemo(() => { return getCycleRange(new Date(), billingStartDay, 0); }, [billingStartDay]);
+  const currentCycleRange = useMemo(() => { return getSafeCycleRange(new Date(), billingStartDay, 0); }, [billingStartDay]);
 
   const stats = useMemo(() => { 
     let income = 0; let expense = 0; 
@@ -674,8 +663,8 @@ ${baseSysPrompt}
     let startTime = 0; let endTime = Infinity;
     if (historyDateFilter !== "all") {
       const now = new Date(); 
-      if (historyDateFilter === "current_month") { const range = getCycleRange(now, billingStartDay, 0); startTime = range.start; endTime = range.end; } 
-      else if (historyDateFilter === "last_month") { const range = getCycleRange(now, billingStartDay, -1); startTime = range.start; endTime = range.end; } 
+      if (historyDateFilter === "current_month") { const range = getSafeCycleRange(now, billingStartDay, 0); startTime = range.start; endTime = range.end; } 
+      else if (historyDateFilter === "last_month") { const range = getSafeCycleRange(now, billingStartDay, -1); startTime = range.start; endTime = range.end; } 
       else { 
         endTime = now.getTime(); const cutoff = new Date(); 
         if (historyDateFilter === "7d") cutoff.setDate(now.getDate() - 7); 
@@ -758,7 +747,7 @@ ${baseSysPrompt}
   const toggleGroup = (gId) => { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); };
 
   // ==========================================
-  // 5. 渲染卡片區塊
+  // 5. 渲染卡片區塊 (🌟 修復「已編輯」被擠壓換行的問題)
   // ==========================================
   const renderStandaloneCard = (tx, allowEdit = true) => {
     const benArray = getBenArray(tx.beneficiary, tx.member); 
@@ -770,27 +759,31 @@ ${baseSysPrompt}
             <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{(pAction==='ADD' || pAction === 'RESTORE_TX')?'待處理':pAction==='UPDATE_TX'?'待處理':'待處理'}</span> 
           </div> 
         )}
-        <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
-          <div className="relative shrink-0">
+        <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-start sm:items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
+          <div className="relative shrink-0 mt-1 sm:mt-0">
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{tx.type==="income" ? "收入" : "支出"}</div>
             {tx.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{tx.member}</div> )}
           </div>
-          <div className="flex-1 min-w-0 pl-1">
+          <div className="flex-1 min-w-0 pl-1 pt-1">
             <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
               <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
               <div className="flex gap-1 flex-wrap shrink-0">{benArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
             </div>
-            <div className="flex flex-col gap-1 mt-1.5 w-full items-start">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(tx.date)}</span>
-                {tx.editHistory && tx.editHistory.length > 0 && ( <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(tx); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded text-[9px] font-black border border-amber-200 active:scale-95 transition-transform">✏️ 已編輯</button> )}
+            {/* 🌟 版面優化：獨立的一行裝日期跟編輯按鈕 */}
+            <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
+              <div className="flex items-center gap-2 flex-wrap w-full">
+                <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(tx.date)}</span>
+                {tx.editHistory && tx.editHistory.length > 0 && ( 
+                  <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(tx); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button> 
+                )}
               </div>
-              {tx.desc && <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{tx.desc}</span>}
+              {/* 🌟 備註區塊獨立成新行 */}
+              {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
             </div>
           </div>
-          <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10">
+          <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
             <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
-            {tx.recorder && tx.recorder !== tx.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>✍️ {tx.recorder}代記</div> )}
+            {tx.recorder && tx.recorder !== tx.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {tx.recorder}代記</div> )}
           </div>
           {allowEdit && pAction !== 'DELETE_TX' && pAction !== 'HARD_DELETE_TX' && ( 
             <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingTx(tx); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button> 
@@ -817,29 +810,31 @@ ${baseSysPrompt}
           </div> 
         )}
         <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-          <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
-            <div className="relative shrink-0">
+          <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-start sm:items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
+            <div className="relative shrink-0 mt-1 sm:mt-0">
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{group.type==="income" ? "收入" : "支出"}</div>
               <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
               {group.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div> )}
             </div>
-            <div className="flex-1 min-w-0 pl-1">
+            <div className="flex-1 min-w-0 pl-1 pt-1">
               <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                 <span className="truncate flex-shrink">{group.parentTitle}</span>
                 <div className="flex gap-1 flex-wrap shrink-0">{parentBenArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
                 <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 shrink-0 ${isExp ? 'rotate-180' : ''}`}>▼</span>
               </div>
-              <div className="flex flex-col gap-1 mt-1 w-full items-start">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-400 font-medium leading-none">{displayDateClean(group.date)}</span>
-                  {group.editHistory && group.editHistory.length > 0 && ( <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(group); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded text-[9px] font-black border border-amber-200 active:scale-95 transition-transform">✏️ 已編輯</button> )}
+              <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
+                <div className="flex items-center gap-2 flex-wrap w-full">
+                  <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(group.date)}</span>
+                  {group.editHistory && group.editHistory.length > 0 && ( 
+                    <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(group); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button> 
+                  )}
                 </div>
-                {group.parentDesc && <span className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2 py-1 rounded-lg whitespace-normal break-words w-full">{group.parentDesc}</span>}
+                {group.parentDesc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{group.parentDesc}</div>}
               </div>
             </div>
-            <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10">
+            <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
               <div className={`font-black tabular-nums text-lg leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(group.amount||0).toLocaleString()}</div>
-              {group.recorder && group.recorder !== group.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"}`}>✍️ {group.recorder}代記</div> )}
+              {group.recorder && group.recorder !== group.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {group.recorder}代記</div> )}
             </div>
             {allowEdit && !isPendingDeleteGroup && ( 
               <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingGroup(group); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button> 
@@ -955,7 +950,7 @@ ${baseSysPrompt}
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 pb-20 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-24 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
       
       <ProxyNotification transactions={unackedProxyTxs} onAck={() => { triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...unackedProxyTxs.map(t => t.id)])]; localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
 
@@ -1116,7 +1111,7 @@ ${baseSysPrompt}
         isOnline={isOnline} 
       />
 
-      <main className="p-6 flex-1 overflow-y-auto scrollbar-hide text-gray-800 flex flex-col relative">
+      <main className="p-6 pb-32 flex-1 overflow-y-auto scrollbar-hide text-gray-800 flex flex-col relative">
         
         {/* --- 🌟 首頁 Dashboard --- */}
         {activeTab === "dashboard" && (
@@ -1225,7 +1220,7 @@ ${baseSysPrompt}
       />
 
       {statusMsg.text && ( 
-        <div className="fixed bottom-20 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
+        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
           <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
             <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
           </div>
