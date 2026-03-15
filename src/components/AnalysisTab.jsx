@@ -3,7 +3,6 @@ import { SvgIcon } from './Icons';
 import { CHART_COLORS } from '../utils/constants';
 import { getCycleRange, parseDateForSort, getParentCat, getChildCat } from '../utils/helpers';
 
-// 🌟 AI 幻燈片模組
 const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [displayText, setDisplayText] = useState("");
@@ -53,7 +52,6 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   );
 };
 
-// 🌟 核心智慧歸納
 const normalizeBen = (rawBen, currentUserName) => {
   if (!rawBen) return '未分類';
   if (rawBen === '全家') return '全家';
@@ -91,7 +89,6 @@ const getDisplayColor = (analysisType, cat, idx, fallbackColors) => {
   return fallbackColors[idx % fallbackColors.length];
 };
 
-// 🌟 絕對安全的 Tailwind 色系對照表，防止編譯器誤刪樣式！
 const getThemeColors = (type) => {
   if (type === "income") return {
     l1SelectedBg: "bg-green-50/60", l1SelectedBorder: "border-green-200", l1SelectedRing: "ring-green-100", l1SelectedText: "text-green-800", l1Amount: "text-green-600",
@@ -101,7 +98,6 @@ const getThemeColors = (type) => {
     l1SelectedBg: "bg-purple-50/60", l1SelectedBorder: "border-purple-200", l1SelectedRing: "ring-purple-100", l1SelectedText: "text-purple-800", l1Amount: "text-purple-600",
     l2IconBg: "bg-purple-50", l2IconText: "text-purple-600", l2IconBorder: "border-purple-100", l2BarFill: "bg-purple-400", titleIcon: "text-purple-500", indicator: "bg-purple-400"
   };
-  // expense
   return {
     l1SelectedBg: "bg-blue-50/60", l1SelectedBorder: "border-blue-200", l1SelectedRing: "ring-blue-100", l1SelectedText: "text-blue-800", l1Amount: "text-blue-600",
     l2IconBg: "bg-blue-50", l2IconText: "text-blue-600", l2IconBorder: "border-blue-100", l2BarFill: "bg-blue-400", titleIcon: "text-blue-500", indicator: "bg-blue-400"
@@ -128,7 +124,7 @@ const AnalysisTab = ({
             <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
               <button onClick={()=>{ triggerVibration(10); setAnalysisDateFilter("current_month"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='current_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>本期</button>
               <button onClick={()=>{ triggerVibration(10); setAnalysisDateFilter("last_month"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='last_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>上期</button>
-              <button onClick={()=>{ triggerVibration(10); setAnalysisDateFilter("all"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>還原</button>
+              <button onClick={()=>{ triggerVibration(10); setAnalysisDateFilter("all"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${analysisDateFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>全部</button>
             </div>
           </div>
           <div className="relative shrink-0 border-l pl-2 border-gray-200">
@@ -248,7 +244,6 @@ const AnalysisTab = ({
         }
         const sortedLevel2 = Object.entries(level2Totals).sort((a,b) => b[1] - a[1]);
 
-        // 🌟 使用這組保證不失效的樣式參數
         const theme = getThemeColors(analysisType);
         
         const isExp = analysisType === "expense" || analysisType === "beneficiary"; 
@@ -333,7 +328,6 @@ const AnalysisTab = ({
               </div>
             </div>
 
-            {/* 卡片化子分類 (第二層) */}
             {selectedAnalysisLevel1 && (
               <div className="animate-in mt-2 space-y-3 p-4 bg-gray-100/80 rounded-[2.5rem] border border-gray-100 shadow-inner">
                 <h4 className="font-black text-gray-800 flex items-center gap-2 pl-1 mb-3 text-sm">

@@ -423,7 +423,7 @@ function App() {
     if (isManual) showStatus("info", "🤖 正在連線 AI 分析...");
 
     try {
-      const cutoffTime = Date.now() - (180 * 24 * 60 * 60 * 1000); 
+      const cutoffTime = Date.now() - (30 * 24 * 60 * 60 * 1000); 
       let dadStr = ""; let momStr = "";
       
       txCache.forEach(tx => {
@@ -435,33 +435,29 @@ function App() {
         }
       });
 
-      const strictFormatPrompt = `
-${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
+      const promptTemplate = sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練。請針對以下帳單給予嚴厲的財務建議與控管警告。";
 
-⚠️ 【強制輸出格式規定】：
-請務必回傳純 JSON 格式。前端將使用「卡片幻燈片」輪播顯示，dad_eval 和 mom_eval 必須是由 8~10 個「具體財務洞察」組成。
-1. 每個洞察約 30~50 字，【必須包含具體金額、消費項目與明確建議】。
-2. 洞察之間「絕對必須」用直線符號「|」隔開（系統將以此切割卡片）。
+      const finalPrompt = `
+${promptTemplate}
 
-🚨【時間範圍限制與語氣要求】：
-- 雖然你看到了過去半年的資料，但你的「評語與洞察」請【絕對只針對最近 30 天內發生的花費】進行點評！絕對不要翻舊帳！
-- 語氣要【專業、一針見血、帶有嚴格的理財教練口吻】。對於不必要的浪費要給予直接、嚴厲的警告，要求下個月立刻改進！
-
-🚨【重要情商判斷與對象解析邏輯】：
-- 若對象包含「爸爸,媽媽,兒子」或備註寫「全家」，這是「家庭基本開銷」，請肯定扛起家庭責任！
-- 若對象是「爸爸,媽媽」或備註有「老婆/老公」，這是「夫妻約會」，請稱讚對方用心經營婚姻！
-- 若對象包含「兒子」，若是教育或必要花費請肯定，若過度買玩具請稍微嚴厲提醒控制預算。
-- 若「對象」僅有個人，且明顯是個人娛樂消耗，請給予【嚴厲的警告與控管建議】，要求下個月必須改善！
-
-範例格式：
+⚠️ 【系統強制格式要求 - 請絕對遵守】：
+請務必回傳純 JSON 格式。包含 "dad_eval" 與 "mom_eval" 兩個 key，必須是由 8~10 個「具體財務洞察」組成，且洞察間用直線符號「|」隔開。
+範例：
 {
-  "dad_eval": "這個月飲料花費高達 $1,500，這筆開銷完全可以省下來！下個月立刻減少手搖飲！🥤 | 帶老婆去吃拉麵花了 $800，這筆花費很值得，用心經營婚姻！✨ | 繳了全家的管理費 $2,500，扛起家庭責任，辛苦了！🏠 | 買給兒子的玩具花了 $1,200，請注意不要過度溺愛，控制玩具預算！🎮 | 車子保養噴了 $5,000，安全第一，這筆錢花得合理！🚗 | 週末幫忙買菜花了 $1,500，分擔家務值得肯定！🥦 | 存了 $10,000 投資理財，保持這個紀律！💰 | 買了自己的衣服花了 $2,000，請確認是否為必要開銷，避免衝動購物！👔",
-  "mom_eval": "買菜錢 $6,000 控制在水準內，繼續保持這個標準！🥦 | 這個月買衣服花了 $3,500 偏高，請克制購物慾望，下個月務必縮減！👗 | 帶兒子去遊樂園花了 $1,500，創造回憶很好，但注意娛樂支出！🎡 | 幫全家買了日用品 $2,000，打理家裡辛苦了！🛒 | 週末和老公看電影花了 $900，夫妻相處的必要投資！🍿 | 保養品花了 $3,000，請檢視是否超過個人月度預算！✨ | 幫兒子繳補習費 $4,000，教育投資必須花！📚 | 喝咖啡花了 $500，適度放鬆可以，別變成習慣！☕"
+  "dad_eval": "洞察1 | 洞察2 | 洞察3...",
+  "mom_eval": "洞察1 | 洞察2 | 洞察3..."
 }
+
+【以下為帳本資料 (僅含近 30 天)】：
+爸爸資料：
+${dadStr}
+
+媽媽資料：
+${momStr}
 `;
 
       const reqBody = {
-        contents: [{ role: "user", parts: [{ text: strictFormatPrompt + "\n\n爸爸資料：\n" + dadStr + "\n媽媽資料：\n" + momStr }] }],
+        contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
         generationConfig: { responseMimeType: "application/json" }
       };
 
@@ -502,9 +498,28 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
   useEffect(() => {
     if (currentUser && isOnline && txCache.length > 0 && sysConfig.apiKey && !hasTriggeredAutoAI.current && deviceValid()) {
       hasTriggeredAutoAI.current = true;
-      executeFrontendAI(false);
+      
+      let shouldTrigger = false;
+      
+      if (!aiEvalData || !aiEvalData.lastUpdated) {
+        shouldTrigger = true; 
+      } else {
+        const lastTime = new Date(aiEvalData.lastUpdated.replace(/-/g, "/")).getTime();
+        const hoursDiff = (Date.now() - lastTime) / (1000 * 60 * 60);
+        
+        const latestTxTime = txCache.reduce((max, tx) => Math.max(max, tx.lastModified || tx.timestamp || 0), 0);
+        const hasNewRecords = latestTxTime > lastTime;
+
+        if (hoursDiff >= 24 && hasNewRecords) {
+          shouldTrigger = true;
+        }
+      }
+      
+      if (shouldTrigger) {
+        executeFrontendAI(false);
+      }
     }
-  }, [currentUser, isOnline, txCache, sysConfig]);
+  }, [currentUser, isOnline, txCache, sysConfig, aiEvalData]);
 
 
   const visibleTransactions = useMemo(() => {
@@ -746,9 +761,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
 
   const toggleGroup = (gId) => { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); };
 
-  // ==========================================
-  // 5. 渲染卡片區塊 (🌟 修復「已編輯」被擠壓換行的問題)
-  // ==========================================
   const renderStandaloneCard = (tx, allowEdit = true) => {
     const benArray = getBenArray(tx.beneficiary, tx.member); 
     const pAction = pendingMap[tx.id];
@@ -769,7 +781,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
               <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
               <div className="flex gap-1 flex-wrap shrink-0">{benArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
             </div>
-            {/* 🌟 版面優化：獨立的一行裝日期跟編輯按鈕 */}
             <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
               <div className="flex items-center gap-2 flex-wrap w-full">
                 <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(tx.date)}</span>
@@ -777,7 +788,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
                   <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(tx); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button> 
                 )}
               </div>
-              {/* 🌟 備註區塊獨立成新行 */}
               {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
             </div>
           </div>
@@ -876,14 +886,15 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
     );
   };
 
-  const renderItemOrGroup = (item, allowEdit) => { if (item.isGroup) return renderGroupCard(item, allowEdit); return renderStandaloneCard(item, allowEdit); };
+  // 🌟 把這個神聖不可侵犯的工具補回來了！
+  const renderItemOrGroup = (item, allowEdit) => { 
+    if (item.isGroup) return renderGroupCard(item, allowEdit); 
+    return renderStandaloneCard(item, allowEdit); 
+  };
+
   const setQuickDateFilter = (filterVal) => { triggerVibration(10); setHistoryDateFilter(filterVal); setAnalysisDateFilter(filterVal); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); };
 
   const isHistoryFiltered = debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all";
-
-  // ==========================================
-  // 6. 主體渲染 (Render) 區塊
-  // ==========================================
 
   if (!currentUser) {
     return (
@@ -972,7 +983,7 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
                  <div className="text-center text-gray-400 py-10 text-sm">回收桶是空的</div> 
                ) : ( 
                  visibleTrash.map(tx => ( 
-                   <div key={tx.id} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex flex-col gap-2 relative overflow-hidden">
+                   <div key={tx.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex flex-col gap-2 relative overflow-hidden">
                      {pendingMap[tx.id] === 'DELETE_TX' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-400"></div>}
                      {pendingMap[tx.id] === 'HARD_DELETE_TX' && <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-center justify-center"><span className="text-red-600 font-black text-xs border border-red-200 bg-red-50 px-2 py-1 rounded">刪除中...</span></div>}
                      {pendingMap[tx.id] === 'RESTORE_TX' && <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-center justify-center"><span className="text-green-600 font-black text-xs border border-green-200 bg-green-50 px-2 py-1 rounded">復原中...</span></div>}
@@ -1101,7 +1112,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
         </div>
       )}
 
-      {/* --- 🌟 頂部狀態列 Header 抽屜 --- */}
       <Header 
         currentUser={currentUser} 
         customSubtitle={customSubtitle} 
@@ -1113,7 +1123,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
 
       <main className="p-6 pb-32 flex-1 overflow-y-auto scrollbar-hide text-gray-800 flex flex-col relative">
         
-        {/* --- 🌟 首頁 Dashboard --- */}
         {activeTab === "dashboard" && (
           <div className="space-y-6 animate-in">
             <DashboardSummary stats={stats} />
@@ -1124,7 +1133,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
           </div>
         )}
 
-        {/* --- 🌟 歷史清單 HistoryTab 抽屜 --- */}
         {activeTab === "history" && (
           <HistoryTab
             setQuickDateFilter={setQuickDateFilter}
@@ -1139,6 +1147,7 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
             setShowTrashModal={setShowTrashModal}
             setConfirmHardDeleteId={setConfirmHardDeleteId}
             setShowConfirmEmptyTrash={setShowConfirmEmptyTrash}
+            showSearchFilterModal={showSearchFilterModal}
             setShowSearchFilterModal={setShowSearchFilterModal}
             debouncedHistorySearch={debouncedHistorySearch}
             debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch}
@@ -1150,7 +1159,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
           />
         )}
 
-        {/* --- 🌟 圖表分析 AnalysisTab 抽屜 --- */}
         {activeTab === "analysis" && (
           <AnalysisTab
             analysisDateFilter={analysisDateFilter}
@@ -1174,13 +1182,12 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
             setAnalysisDetailData={setAnalysisDetailData}
             animTrigger={animTrigger}
             triggerVibration={triggerVibration}
+            renderItemOrGroup={renderItemOrGroup}
           />
         )}
 
-        {/* 新增紀錄表單 */}
         {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
 
-        {/* --- 🌟 設定頁面 SettingsTab 抽屜 --- */}
         {activeTab === "settings" && (
           <SettingsTab
             handleForceAIEval={handleForceAIEval}
@@ -1212,7 +1219,6 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
         )}
       </main>
 
-      {/* --- 🌟 底部導覽列 BottomNav 抽屜 --- */}
       <BottomNav 
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
@@ -1220,7 +1226,7 @@ ${sysConfig.prompt || "你是一位嚴格且專業的家庭理財教練..."}
       />
 
       {statusMsg.text && ( 
-        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
+        <div className="fixed bottom-24 left-0 right-0 flex justify-center z z-[1000] pointer-events-none px-4 text-center">
           <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
             <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
           </div>
