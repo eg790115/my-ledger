@@ -1,7 +1,7 @@
 import { LS } from './constants.js';
 import { safeStringLS, safeNumberLS, sha256Base64 } from './helpers.js';
 
-export const gasUrl = "https://script.google.com/macros/s/AKfycbxJNnUlFXK8NZ9vaIUvRkq8Njy17P3IlETr_AbkCQhycZ2XUbAnaXvd_7QCT5BQR5zCLA/exec";
+export const gasUrl = "https://script.google.com/macros/s/AKfycbxO6JfC9YkWsRAdP3OSN4J0dC0eqyeYp9gQxHfIaKCoq3MxK26Ihy0Yz5EfDbG6x8U8nA/exec";
 
 export async function postGAS(payload) {
   const controller = new AbortController();
