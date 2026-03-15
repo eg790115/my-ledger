@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { SvgIcon } from './Icons';
 
 const HistoryTab = ({
@@ -11,8 +12,6 @@ const HistoryTab = ({
   historyTypeFilter, isHistoryFiltered, historyFilteredStats,
   filteredHistoryGroups, renderItemOrGroup
 }) => {
-  const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
-
   return (
     <div className="space-y-4 animate-in pb-20 text-left">
       
@@ -23,7 +22,7 @@ const HistoryTab = ({
             <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
                <button onClick={()=>{triggerVibration(10); setQuickDateFilter("current_month");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='current_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>本期</button>
                <button onClick={()=>{triggerVibration(10); setQuickDateFilter("last_month");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='last_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>上期</button>
-               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("all"); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='all' && !historySearch && !historyExcludeSearch && historyTypeFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>還原</button>
+               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("all"); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='all' && !historySearch && !historyExcludeSearch && historyTypeFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>全部</button>
             </div>
          </div>
 
@@ -42,33 +41,24 @@ const HistoryTab = ({
          </div>
       </div>
 
-      {/* ========================================= */}
-      {/* 🚀 與列表等寬的推擠式搜尋面板 (優化排版) */}
-      {/* ========================================= */}
+      {/* 🚀 與列表等寬的推擠式搜尋面板 */}
       {showSearchFilterModal && (
         <div className="bg-white rounded-[2rem] p-5 shadow-lg border border-blue-100 flex flex-col gap-4 animate-in slide-in-from-top-4 fade-in duration-300 relative overflow-hidden mt-2">
-          {/* 裝飾線條 */}
           <div className="absolute left-0 top-0 w-1.5 h-full bg-blue-500"></div>
-          
           <h4 className="font-black text-gray-800 text-sm pl-2 flex items-center gap-2">
             <SvgIcon name="search" size={16} className="text-blue-500" />
             進階篩選面板
           </h4>
-
-          {/* 包含與排除關鍵字 */}
           <div className="flex flex-col gap-3 pl-2">
             <div className="bg-gray-50 flex items-center p-2.5 rounded-xl border border-gray-100 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
               <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><SvgIcon name="search" size={14}/></div>
               <input type="text" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="包含關鍵字 (品項、金額...)" className="flex-1 bg-transparent font-bold text-xs outline-none text-gray-800 px-3 w-full" />
             </div>
-            
             <div className="bg-gray-50 flex items-center p-2.5 rounded-xl border border-gray-100 focus-within:border-red-300 focus-within:ring-2 focus-within:ring-red-50 transition-all">
               <div className="w-7 h-7 rounded-lg bg-red-100 text-red-500 flex items-center justify-center shrink-0"><SvgIcon name="close" size={14}/></div>
               <input type="text" value={historyExcludeSearch} onChange={(e) => setHistoryExcludeSearch(e.target.value)} placeholder="排除不想看的關鍵字..." className="flex-1 bg-transparent font-bold text-xs outline-none text-gray-800 px-3 w-full" />
             </div>
           </div>
-
-          {/* 雙欄設計：收支類型 & 時間範圍 */}
           <div className="flex gap-3 pl-2">
             <div className="flex-1 flex flex-col gap-1.5">
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">收支類型</label>
@@ -92,20 +82,14 @@ const HistoryTab = ({
               </select>
             </div>
           </div>
-
-          {/* 底部按鈕區 */}
           <div className="flex gap-3 pt-3 pl-2 mt-1 border-t border-gray-50">
-            <button onClick={() => { triggerVibration(10); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all"); setHistoryDateFilter("current_month"); }} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl font-black text-xs active:scale-95 transition-transform hover:bg-gray-200">
-              清空
-            </button>
-            <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(false); }} className="flex-1 py-3 bg-blue-50 text-blue-600 rounded-xl font-black text-xs active:scale-95 transition-transform flex items-center justify-center gap-1 border border-blue-100">
-              收起面板 <span className="text-[10px]">▲</span>
-            </button>
+            <button onClick={() => { triggerVibration(10); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all"); setHistoryDateFilter("current_month"); }} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl font-black text-xs active:scale-95 transition-transform hover:bg-gray-200">清空</button>
+            <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(false); }} className="flex-1 py-3 bg-blue-50 text-blue-600 rounded-xl font-black text-xs active:scale-95 transition-transform flex items-center justify-center gap-1 border border-blue-100">收起面板 <span className="text-[10px]">▲</span></button>
           </div>
         </div>
       )}
 
-      {/* 🌟 篩選條件輕量級標籤 (縮攏時顯示) */}
+      {/* 🌟 篩選條件輕量級標籤 */}
       {!showSearchFilterModal && (debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all") && (
          <div className="flex flex-wrap gap-2 mb-2 px-1 animate-in fade-in">
             {debouncedHistorySearch && <span className="text-[10px] bg-blue-50 border border-blue-100 text-blue-600 px-2.5 py-1 rounded-md font-black flex items-center gap-1 shadow-sm">🔍 {debouncedHistorySearch}</span>}
@@ -129,21 +113,23 @@ const HistoryTab = ({
           </div>
       )}
 
-      {/* 🌟 歷史紀錄清單 */}
-      <div className="space-y-3 mt-4">
-        {(filteredHistoryGroups || []).slice(0, historyVisibleCount).map(item => renderItemOrGroup ? renderItemOrGroup(item, true) : null)}
-        
-        {historyVisibleCount < (filteredHistoryGroups || []).length && ( 
-          <button onClick={() => {triggerVibration(10); setHistoryVisibleCount(prev => prev + 20);}} className="w-full py-4 bg-white border border-gray-200 text-blue-600 rounded-2xl font-black text-xs active:bg-gray-50 transition-colors shadow-sm mt-4 flex justify-center items-center gap-2">
-            <SvgIcon name="refresh" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {(filteredHistoryGroups || []).length})
-          </button> 
-        )}
-        
-        {(filteredHistoryGroups || []).length === 0 && (
+      {/* 🌟 歷史紀錄清單 (防線一：虛擬滾動實裝！) */}
+      <div className="mt-4 relative z-0">
+        {filteredHistoryGroups.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-[2rem] border border-gray-100 shadow-sm mt-4 flex flex-col items-center justify-center gap-3">
             <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center text-gray-300"><SvgIcon name="search" size={20} /></div>
             <span className="text-sm font-black text-gray-400">沒有符合條件的紀錄</span>
           </div>
+        ) : (
+          <Virtuoso
+            useWindowScroll
+            data={filteredHistoryGroups}
+            itemContent={(index, item) => (
+              <div className="pb-3"> {/* 這裡取代原本的 space-y-3 */}
+                {renderItemOrGroup ? renderItemOrGroup(item, true) : null}
+              </div>
+            )}
+          />
         )}
       </div>
 

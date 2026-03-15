@@ -67,3 +67,10 @@ export const unlockWithPinLocal = async (name, pin) => {
   const h = await sha256Base64(`${name}::${pin}::local`);
   return h === stored;
 };
+
+// 🌟 專屬送貨員：向雲端請求「冷資料明細」
+export const getLazyTxOnline = async (month) => {
+  const data = await postGAS({ action: "GET_LAZY_TX", month: month, deviceToken: getDeviceToken() });
+  if (data.result !== "success") throw new Error(data.message || "讀取舊帳本失敗");
+  return data.lazyTransactions || [];
+};

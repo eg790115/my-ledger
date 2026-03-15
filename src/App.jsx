@@ -59,10 +59,14 @@ function App() {
   const isLoading = loadingCard.show;
   const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
   const [lastServerTime, setLastServerTime] = useState(() => safeNumberLS('last_server_time_v1', 0));
+  
   const [txCache, setTxCache] = useState([]);
   const [trashCache, setTrashCache] = useState([]);
   const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
   
+  // 🌟 新增：冷熱分離的快照快取倉庫
+  const [snapshotsCache, setSnapshotsCache] = useState(() => { try { return JSON.parse(localStorage.getItem('snapshots_cache')) || {}; } catch { return {}; } });
+
   const [aiEvalData, setAiEvalData] = useState(() => { try { return JSON.parse(localStorage.getItem('ai_eval_data')) || null; } catch { return null; } });
   const [isAIEvaluating, setIsAIEvaluating] = useState(false);
   const [sysConfig, setSysConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('sys_config')) || { apiKey: "", prompt: "" }; } catch { return { apiKey: "", prompt: "" }; } });
@@ -316,6 +320,12 @@ function App() {
     if (data.greetings) setGreetingsCache(data.greetings);
     if (data.aiData) setAiEvalData(data.aiData);
     if (data.sysConfig) setSysConfig(data.sysConfig);
+
+    // 🌟 核心：接收雲端送來的歷史快照並存進 localStorage
+    if (data.snapshots) {
+      setSnapshotsCache(data.snapshots);
+      localStorage.setItem('snapshots_cache', JSON.stringify(data.snapshots));
+    }
     
     return changed;
   }, []);
@@ -324,7 +334,8 @@ function App() {
       if (!navigator.onLine || !currentUserRef.current || isSyncingRef.current) { pollingTimerRef.current = setTimeout(silentPollEngine, 5000); return; }
       if (!deviceValid()) { forceReloginForToken(); return; }
       try { 
-        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current }); 
+        // 🌟 核心：加上 enableArchiving 參數，啟動雲端的冷熱分離
+        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true }); 
         if (data.result === "success") { 
           const isDelta = lastServerTimeRef.current > 0; 
           if (applyCloudData(data, isDelta)) showStatus("success", "🔄 已載入雲端最新資料"); 
@@ -343,7 +354,7 @@ function App() {
           let sentQueueCount = currentQueue.length; 
           const isDelta = lastServerTimeRef.current > 0;
           if (sentQueueCount > 0) {
-              const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current });
+              const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true });
               if (res.result !== "success") throw new Error(res.message || "批次同步處理失敗");
               if (res.transactions) applyCloudData(res, isDelta);
               setSyncQueue(prev => { 
@@ -363,7 +374,7 @@ function App() {
                 if (sentQueueCount > 1) showStatus("success", `☁️ 雲端同步完成 (${txt.join('、')})`); else showStatus("success", adds > 0 ? "✅ 已同步至雲端" : upds > 0 ? "✅ 更新已同步" : "🗑️ 操作已完成"); 
               }
           } else {
-              const res = await postGAS({ action: "GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current });
+              const res = await postGAS({ action: "GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true });
               if (res.result !== "success") throw new Error(res.message || "拉取失敗");
               if (res.transactions) { applyCloudData(res, isDelta); if (isSilent) showStatus("success", "🔄 已載入雲端最新資料"); else showStatus("success", "✅ 已是最新資料"); }
           }
@@ -435,7 +446,7 @@ function App() {
         }
       });
 
-      const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財助理。請針對以下帳單給予財務建議。";
+      const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財教練。請針對以下帳單給予財務建議。";
 
       const finalPrompt = `
 ${promptTemplate}
@@ -488,12 +499,10 @@ ${momStr}
 
   const handleForceAIEval = () => executeFrontendAI(true);
 
-  // 🌟 跨裝置防禦機制：確保每天只觸發一次，且等待雲端資料更新後才檢查
   const hasTriggeredAutoAI = useRef(false);
   useEffect(() => {
     if (currentUser && isOnline && txCache.length > 0 && sysConfig.apiKey && !hasTriggeredAutoAI.current && deviceValid()) {
       
-      // 給予 5 秒的冷卻期，讓 App 有時間把其他裝置算好的 AI 報告從雲端抓下來
       const checkTimer = setTimeout(() => {
         hasTriggeredAutoAI.current = true;
         let shouldTrigger = false;
@@ -501,14 +510,10 @@ ${momStr}
         if (!aiEvalData || !aiEvalData.lastUpdated) {
           shouldTrigger = true; 
         } else {
-          // 取得今天日期 (YYYY/MM/DD)
           const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
-          const lastEvalDateStr = aiEvalData.lastUpdated.split(' ')[0]; // 取出紀錄中的日期
+          const lastEvalDateStr = aiEvalData.lastUpdated.split(' ')[0]; 
 
-          // 條件 1：如果是今天已經算過，絕對不觸發 (防跨裝置)
           if (lastEvalDateStr !== todayStr) {
-            
-            // 條件 2：檢查有沒有新紀錄 (最新一筆修改時間 > 上次 AI 時間)
             const lastTimeMs = new Date(aiEvalData.lastUpdated.replace(/-/g, "/")).getTime();
             const latestTxTime = txCache.reduce((max, tx) => Math.max(max, tx.lastModified || tx.timestamp || 0), 0);
 
@@ -1187,6 +1192,7 @@ ${momStr}
             animTrigger={animTrigger}
             triggerVibration={triggerVibration}
             renderItemOrGroup={renderItemOrGroup}
+            snapshotsCache={snapshotsCache} // 🌟 將快照傳遞給分析圖表
           />
         )}
 

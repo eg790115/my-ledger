@@ -2,14 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { SvgIcon } from './Icons';
 import { CHART_COLORS } from '../utils/constants';
 import { getCycleRange, parseDateForSort, getParentCat, getChildCat } from '../utils/helpers';
+import { getLazyTxOnline } from '../utils/api'; // 🌟 匯入我們的專屬雲端送貨員
 
-// 🌟 S25 專屬修復：將 JS 逐字特效改為 CSS 淡入淡出，徹底解決螢幕更新率導致的閃爍問題
+// S25 防閃爍輪播
 const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [fade, setFade] = useState(true);
 
   const defaultMessages = ["正在等待最新的財務洞察... 到「設定」點擊 🤖 手動分析吧！✨"];
-
   const messages = useMemo(() => {
     if (!aiReport) return defaultMessages;
     if (aiReport.includes('|')) return aiReport.split('|').map(s => s.trim()).filter(s => s.length > 5);
@@ -19,19 +19,13 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
 
   useEffect(() => {
     if (isEvaluating || messages.length <= 1) return;
-    
-    // 每 8 秒切換一次卡片，使用淡出/淡入效果
     const interval = setInterval(() => {
-      setFade(false); // 觸發淡出
-      
-      // 等待 300 毫秒（淡出動畫時間）後切換文字並淡入
+      setFade(false); 
       setTimeout(() => {
         setCurrentIndex((prev) => (prev + 1) % messages.length);
-        setFade(true); // 觸發淡入
+        setFade(true); 
       }, 300); 
-      
     }, 8000); 
-    
     return () => clearInterval(interval);
   }, [messages.length, isEvaluating]);
 
@@ -48,10 +42,7 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
     <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100/50 rounded-2xl p-4 flex items-start gap-3 shadow-sm relative mb-4 min-h-[4.8rem] overflow-hidden">
       <span className="shrink-0 text-lg mt-0.5 opacity-80 animate-bounce">📢</span>
       <div className="flex-1 w-full relative flex items-center h-full min-h-[3rem]">
-        {/* 🌟 核心修正：使用 CSS transition 處理淡入淡出，完全不干擾 S25 的 LTPO 螢幕 */}
-        <span 
-          className={`text-[12px] font-black text-indigo-800 leading-relaxed transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}
-        >
+        <span className={`text-[12px] font-black text-indigo-800 leading-relaxed transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
           {messages[currentIndex]}
         </span>
       </div>
@@ -62,13 +53,10 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
 const normalizeBen = (rawBen, currentUserName) => {
   if (!rawBen) return '未分類';
   if (rawBen === '全家') return '全家';
-  
   let arr = rawBen.split(',').map(s => s.trim()).filter(Boolean);
   arr = [...new Set(arr)]; 
-  
   const order = { '爸爸': 1, '媽媽': 2, '妈妈': 2, '兒子': 3 };
   arr.sort((a, b) => (order[a] || 99) - (order[b] || 99));
-  
   const hasDad = arr.includes('爸爸');
   const hasMom = arr.includes('媽媽') || arr.includes('妈妈');
   const hasSon = arr.includes('兒子');
@@ -78,7 +66,6 @@ const normalizeBen = (rawBen, currentUserName) => {
   if (hasDad && hasSon && arr.length === 2) return '父子'; 
   if (hasMom && hasSon && arr.length === 2) return '母子'; 
   if (arr.length === 1 && arr[0] === currentUserName) return '自己';
-  
   return arr.join(', ');
 };
 
@@ -120,8 +107,12 @@ const AnalysisTab = ({
   aiEvalData, currentUser, isAIEvaluating, handleForceAIEval,
   myTransactions, billingStartDay, pendingMap,
   selectedAnalysisLevel1, setAnalysisDetailData,
-  animTrigger, triggerVibration, renderItemOrGroup
+  animTrigger, triggerVibration, snapshotsCache
 }) => {
+  
+  // 🌟 用來記錄目前正在向雲端請求哪一個分類的明細 (顯示 loading 用)
+  const [fetchingCat, setFetchingCat] = useState(null);
+
   return (
     <div className="space-y-6 animate-in pb-20 text-left">
       <div className="flex flex-col gap-3 px-1">
@@ -160,77 +151,101 @@ const AnalysisTab = ({
 
       {(() => {
         let analysisTxs = myTransactions || []; 
-        let prevAnalysisTxs = []; 
-        let yoyAnalysisTxs = []; 
-        const showCompare = (analysisDateFilter === "current_month" || analysisDateFilter === "last_month");
         
+        let startTime = 0; let endTime = Infinity;
         if (analysisDateFilter !== "all") {
           if (analysisDateFilter === "custom") { 
-            const start = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0; const end = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity; 
-            analysisTxs = analysisTxs.filter(item => { const txTime = parseDateForSort(item); return txTime >= start && txTime <= end; }); 
+            startTime = analysisCustomStart ? new Date(`${analysisCustomStart}T00:00:00`).getTime() : 0; 
+            endTime = analysisCustomEnd ? new Date(`${analysisCustomEnd}T23:59:59`).getTime() : Infinity; 
           } else {
-            const now = new Date(); let startTime = 0; let endTime = now.getTime();
+            const now = new Date(); 
             const bDay = Number(billingStartDay) || 1;
 
             if (analysisDateFilter === "current_month") { 
               let start = new Date(now.getFullYear(), now.getMonth(), bDay, 0, 0, 0);
               if (now.getDate() < bDay) start.setMonth(start.getMonth() - 1);
-              let end = new Date(start);
-              end.setMonth(end.getMonth() + 1);
-              end.setDate(end.getDate() - 1);
-              end.setHours(23, 59, 59, 999);
+              let end = new Date(start); end.setMonth(end.getMonth() + 1); end.setDate(end.getDate() - 1); end.setHours(23, 59, 59, 999);
               startTime = start.getTime(); endTime = end.getTime();
             } 
             else if (analysisDateFilter === "last_month") { 
               let start = new Date(now.getFullYear(), now.getMonth(), bDay, 0, 0, 0);
               if (now.getDate() < bDay) start.setMonth(start.getMonth() - 1);
               start.setMonth(start.getMonth() - 1);
-              let end = new Date(start);
-              end.setMonth(end.getMonth() + 1);
-              end.setDate(end.getDate() - 1);
-              end.setHours(23, 59, 59, 999);
+              let end = new Date(start); end.setMonth(end.getMonth() + 1); end.setDate(end.getDate() - 1); end.setHours(23, 59, 59, 999);
               startTime = start.getTime(); endTime = end.getTime();
             } 
             else { 
               const cutoff = new Date(); 
               if (analysisDateFilter === "7d") cutoff.setDate(now.getDate() - 7); else if (analysisDateFilter === "14d") cutoff.setDate(now.getDate() - 14); else if (analysisDateFilter === "1m") cutoff.setMonth(now.getMonth() - 1); else if (analysisDateFilter === "3m") cutoff.setMonth(now.getMonth() - 3); else if (analysisDateFilter === "6m") cutoff.setMonth(now.getMonth() - 6); else if (analysisDateFilter === "1y") cutoff.setFullYear(now.getFullYear() - 1); 
-              startTime = cutoff.getTime(); 
-            }
-            
-            analysisTxs = analysisTxs.filter(item => { const tTime = parseDateForSort(item); return tTime >= startTime && tTime <= endTime; });
-            
-            if (showCompare) { 
-              const baseOffset = analysisDateFilter === "current_month" ? 0 : -1; 
-              const prevR = getCycleRange(now, billingStartDay, baseOffset - 1); const yoyR = getCycleRange(now, billingStartDay, baseOffset - 12); 
-              prevAnalysisTxs = myTransactions.filter(item => { const tTime = parseDateForSort(item); return tTime >= prevR.start && tTime <= prevR.end; }); 
-              yoyAnalysisTxs = myTransactions.filter(item => { const tTime = parseDateForSort(item); return tTime >= yoyR.start && tTime <= yoyR.end; }); 
+              startTime = cutoff.getTime(); endTime = now.getTime();
             }
           }
         }
-
-        if (analysisType === "expense" || analysisType === "beneficiary") { 
-          analysisTxs = analysisTxs.filter(t => t.type === "expense"); prevAnalysisTxs = prevAnalysisTxs.filter(t => t.type === "expense"); yoyAnalysisTxs = yoyAnalysisTxs.filter(t => t.type === "expense"); 
-        } else if (analysisType === "income") {
-          analysisTxs = analysisTxs.filter(t => t.type === "income"); prevAnalysisTxs = prevAnalysisTxs.filter(t => t.type === "income"); yoyAnalysisTxs = yoyAnalysisTxs.filter(t => t.type === "income"); 
-        }
         
-        if (analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm mt-4">該區間尚無紀錄</div>;
+        // 過濾熱資料 (手機端)
+        analysisTxs = analysisTxs.filter(item => { 
+          const tTime = parseDateForSort(item); 
+          return tTime >= startTime && tTime <= endTime; 
+        });
+
+        if (analysisType === "expense" || analysisType === "beneficiary") { analysisTxs = analysisTxs.filter(t => t.type === "expense"); } 
+        else if (analysisType === "income") { analysisTxs = analysisTxs.filter(t => t.type === "income"); }
         
         const getL1Key = (t) => analysisType === "beneficiary" ? normalizeBen(t.beneficiary || t.member, currentUser?.name) : getParentCat(t.category);
         const getL2Key = (t) => analysisType === "beneficiary" ? getParentCat(t.category) : getChildCat(t.category);
 
         const currentFallbackColors = CHART_COLORS[analysisType] || ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']; 
-        let level1Totals = {}; let grandTotal = 0; let prevLevel1Totals = {}; let totalPrev = 0; let yoyLevel1Totals = {}; let totalYoy = 0;
         
-        const aggregateTotals = (txs, totalsObj) => { let total = 0; txs.forEach(t => { if (pendingMap && (pendingMap[t.id] === 'DELETE_TX' || pendingMap[t.id] === 'HARD_DELETE_TX')) return; const amt = Number(t.amount) || 0; total += amt; const pCat = getL1Key(t); totalsObj[pCat] = (totalsObj[pCat] || 0) + amt; }); return total; };
-        grandTotal = aggregateTotals(analysisTxs, level1Totals); 
-        if (showCompare) { totalPrev = aggregateTotals(prevAnalysisTxs, prevLevel1Totals); totalYoy = aggregateTotals(yoyAnalysisTxs, yoyLevel1Totals); }
+        let level1Totals = {}; let grandTotal = 0;
+        
+        // 1. 聚合熱資料
+        const aggregateTotals = (txs, totalsObj) => { 
+          let total = 0; 
+          txs.forEach(t => { 
+            if (pendingMap && (pendingMap[t.id] === 'DELETE_TX' || pendingMap[t.id] === 'HARD_DELETE_TX')) return; 
+            const amt = Number(t.amount) || 0; 
+            total += amt; 
+            const pCat = getL1Key(t); 
+            totalsObj[pCat] = (totalsObj[pCat] || 0) + amt; 
+          }); 
+          return total; 
+        };
+        grandTotal += aggregateTotals(analysisTxs, level1Totals); 
+
+        // 🌟 2. 聚合冷資料 (快照)
+        const isMonthInRange = (monthKey) => {
+            const [y, m] = monthKey.split('/');
+            const monthStart = new Date(y, parseInt(m) - 1, 1).getTime();
+            const monthEnd = new Date(y, parseInt(m), 0, 23, 59, 59).getTime();
+            return (monthEnd >= startTime && monthStart <= endTime);
+        };
+
+        // 判斷當前區間是否涵蓋冷資料
+        const needsColdData = analysisDateFilter === 'all' || analysisDateFilter === '1y' || analysisDateFilter === '6m' || analysisDateFilter === 'custom';
+        let monthsToFetch = [];
+
+        if (needsColdData && snapshotsCache) {
+            Object.entries(snapshotsCache).forEach(([monthKey, snap]) => {
+                if (isMonthInRange(monthKey)) {
+                    monthsToFetch.push(monthKey);
+                    // 快照中的資料
+                    if (analysisType === "expense") grandTotal += snap.expense;
+                    if (analysisType === "income") grandTotal += snap.income;
+                    
+                    if (analysisType !== "beneficiary") {
+                        Object.entries(snap.categories || {}).forEach(([rawCat, amt]) => {
+                            const pCat = getParentCat(rawCat);
+                            level1Totals[pCat] = (level1Totals[pCat] || 0) + amt;
+                        });
+                    }
+                }
+            });
+        }
+
+        if (grandTotal === 0 && analysisTxs.length === 0) return <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-[2rem] border border-gray-100 shadow-sm mt-4">該區間尚無紀錄</div>;
 
         const sortedLevel1 = Object.entries(level1Totals).sort((a,b) => {
-          if (analysisType === "beneficiary") {
-            if (a[0] === '自己') return -1;
-            if (b[0] === '自己') return 1;
-          }
+          if (analysisType === "beneficiary") { if (a[0] === '自己') return -1; if (b[0] === '自己') return 1; }
           return b[1] - a[1];
         }); 
 
@@ -243,39 +258,90 @@ const AnalysisTab = ({
         }); 
         conicStr = conicStr.slice(0, -2);
 
-        let level2Totals = {}; let level1SelectedTotal = 0; let prevLevel2Totals = {}; let yoyLevel2Totals = {};
+        // 第二層細節
+        let level2Totals = {}; let level1SelectedTotal = 0;
         if (selectedAnalysisLevel1) { 
-          const aggregateLevel2 = (txs, totalsObj) => { txs.forEach(t => { if (pendingMap && (pendingMap[t.id] === 'DELETE_TX' || pendingMap[t.id] === 'HARD_DELETE_TX')) return; if (getL1Key(t) === selectedAnalysisLevel1) { const cCat = getL2Key(t); const amt = Number(t.amount) || 0; totalsObj[cCat] = (totalsObj[cCat] || 0) + amt; } }); }; 
-          aggregateLevel2(analysisTxs, level2Totals); Object.values(level2Totals).forEach(v => level1SelectedTotal += v); 
-          if (showCompare) { aggregateLevel2(prevAnalysisTxs, prevLevel2Totals); aggregateLevel2(yoyAnalysisTxs, yoyLevel2Totals); } 
+          // 熱資料 Level 2
+          analysisTxs.forEach(t => { 
+            if (pendingMap && (pendingMap[t.id] === 'DELETE_TX' || pendingMap[t.id] === 'HARD_DELETE_TX')) return; 
+            if (getL1Key(t) === selectedAnalysisLevel1) { 
+                const cCat = getL2Key(t); const amt = Number(t.amount) || 0; 
+                level2Totals[cCat] = (level2Totals[cCat] || 0) + amt; 
+            } 
+          }); 
+
+          // 🌟 冷資料 Level 2
+          if (needsColdData && snapshotsCache && analysisType !== "beneficiary") {
+             Object.entries(snapshotsCache).forEach(([monthKey, snap]) => {
+                if (isMonthInRange(monthKey)) {
+                   Object.entries(snap.categories || {}).forEach(([rawCat, amt]) => {
+                       const pCat = getParentCat(rawCat);
+                       if (pCat === selectedAnalysisLevel1) {
+                           const cCat = getChildCat(rawCat);
+                           level2Totals[cCat] = (level2Totals[cCat] || 0) + amt;
+                       }
+                   });
+                }
+             });
+          }
+          Object.values(level2Totals).forEach(v => level1SelectedTotal += v); 
         }
         const sortedLevel2 = Object.entries(level2Totals).sort((a,b) => b[1] - a[1]);
 
         const theme = getThemeColors(analysisType);
-        
-        const isExp = analysisType === "expense" || analysisType === "beneficiary"; 
-        const clrUp = isExp ? "text-red-500" : "text-green-500"; 
-        const clrDn = isExp ? "text-green-500" : "text-red-500";
-        let diffTotalPrev = grandTotal - totalPrev; let diffTotalYoy = grandTotal - totalYoy;
+
+        // 🌟 核心：隨選載入明細 API 觸發點
+        const fetchAndShowDetails = async (l1Cat, l2Cat) => {
+            triggerVibration(10);
+            
+            // 如果不需要冷資料，直接用熱資料顯示即可，秒開！
+            if (monthsToFetch.length === 0) {
+                setAnalysisDetailData({ 
+                    title: `「${l1Cat} - ${l2Cat}」明細`, 
+                    txs: analysisTxs.filter(t => getL1Key(t) === l1Cat && getL2Key(t) === l2Cat) 
+                });
+                return;
+            }
+
+            // 如果需要冷資料，顯示 Loading 並發動送貨員
+            setFetchingCat(l2Cat);
+            try {
+                let hotTxs = analysisTxs.filter(t => getL1Key(t) === l1Cat && getL2Key(t) === l2Cat);
+                let coldTxs = [];
+                
+                // 派送貨員去雲端撈這幾個月的舊帳本
+                for (const m of monthsToFetch) {
+                    const res = await getLazyTxOnline(m);
+                    coldTxs = [...coldTxs, ...res];
+                }
+
+                // 過濾抓回來的冷資料
+                let filteredColdTxs = coldTxs.filter(t => {
+                    if (analysisType === "expense" && t.type !== "expense") return false;
+                    if (analysisType === "income" && t.type !== "income") return false;
+                    const cL1 = analysisType === "beneficiary" ? normalizeBen(t.beneficiary || t.member, currentUser?.name) : getParentCat(t.category);
+                    const cL2 = analysisType === "beneficiary" ? getParentCat(t.category) : getChildCat(t.category);
+                    return cL1 === l1Cat && cL2 === l2Cat;
+                });
+
+                // 合併熱資料與冷資料，秀給老闆看！
+                setAnalysisDetailData({
+                    title: `「${l1Cat} - ${l2Cat}」歷史明細`,
+                    txs: [...hotTxs, ...filteredColdTxs]
+                });
+            } catch (err) {
+                alert("讀取雲端舊帳本失敗：" + err.message);
+            } finally {
+                setFetchingCat(null);
+            }
+        };
 
         return (
           <div className="space-y-4">
             
-            {showCompare && (diffTotalPrev !== 0 || diffTotalYoy !== 0) && (
-              <div className="text-center text-[11px] font-bold text-gray-500 bg-gray-100/80 py-2.5 rounded-xl border border-gray-100 px-2 animate-in mt-2">
-                較上期 {diffTotalPrev > 0 ? '增加' : '減少'}
-                <span className={`mx-1 font-black ${diffTotalPrev > 0 ? clrUp : clrDn}`}>
-                  {diffTotalPrev !== 0 ? `$${Math.abs(diffTotalPrev).toLocaleString()}` : ''}
-                </span>
-                {diffTotalYoy !== 0 && (
-                  <>
-                    <span className="mx-2 text-gray-300 font-normal">|</span>
-                    較去年 {diffTotalYoy > 0 ? '增加' : '減少'}
-                    <span className={`ml-1 font-black ${diffTotalYoy > 0 ? clrUp : clrDn}`}>
-                      ${Math.abs(diffTotalYoy).toLocaleString()}
-                    </span>
-                  </>
-                )}
+            {needsColdData && monthsToFetch.length > 0 && (
+              <div className="text-center text-[10px] font-bold text-blue-500 bg-blue-50 py-2.5 rounded-xl border border-blue-100 px-2 animate-in mt-2 flex items-center justify-center gap-1.5">
+                <SvgIcon name="cloudSync" size={14} /> 包含封存於雲端的歷史紀錄快照
               </div>
             )}
 
@@ -296,7 +362,6 @@ const AnalysisTab = ({
                 
                 {(sortedLevel1 || []).map(([cat, amt], idx) => {
                   const isSelected = selectedAnalysisLevel1 === cat; 
-                  const diffP = amt - (prevLevel1Totals[cat] || 0); 
                   const rowColor = getDisplayColor(analysisType, cat, idx, currentFallbackColors);
                   const pct = grandTotal > 0 ? ((amt/grandTotal)*100).toFixed(1) : 0;
                   
@@ -323,11 +388,6 @@ const AnalysisTab = ({
                         <div className={`font-black tabular-nums text-[16px] leading-none ${isSelected ? theme.l1Amount : 'text-gray-800'}`}>
                           ${Math.round(amt).toLocaleString()}
                         </div>
-                        {showCompare && diffP !== 0 && (
-                          <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded border shadow-sm ${diffP > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
-                            {diffP > 0 ? '↑' : '↓'} {Math.abs(diffP).toLocaleString()}
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
@@ -344,6 +404,8 @@ const AnalysisTab = ({
                 
                 {(sortedLevel2 || []).map(([cat, amt]) => {
                   const pct = level1SelectedTotal > 0 ? (amt / level1SelectedTotal) * 100 : 0;
+                  const isFetching = fetchingCat === cat;
+
                   return (
                     <div key={cat} className="bg-white p-3.5 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-3">
                       <div className={`w-11 h-11 rounded-xl ${theme.l2IconBg} flex items-center justify-center font-black text-[13px] ${theme.l2IconText} border ${theme.l2IconBorder} shrink-0`}>
@@ -357,17 +419,12 @@ const AnalysisTab = ({
                       </div>
                       <div className="flex flex-col items-end shrink-0">
                         <div className="font-black text-[15px] text-gray-800">${Math.round(amt).toLocaleString()}</div>
-                        <button onClick={(e) => { 
-                            triggerVibration(10); e.stopPropagation(); 
-                            if(renderItemOrGroup) { // 🌟 防止當機防呆
-                              setAnalysisDetailData({ 
-                                title: `「${selectedAnalysisLevel1} - ${cat}」明細`, 
-                                txs: analysisTxs.filter(t => getL1Key(t) === selectedAnalysisLevel1 && getL2Key(t) === cat) 
-                              }); 
-                            }
-                          }} 
-                          className="mt-1.5 px-2.5 py-1 bg-gray-50 text-gray-500 rounded-lg text-[10px] font-black active:scale-95 border border-gray-200">
-                          查看明細
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); fetchAndShowDetails(selectedAnalysisLevel1, cat); }} 
+                          disabled={isFetching}
+                          className={`mt-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black active:scale-95 border flex items-center gap-1 transition-all ${isFetching ? 'bg-blue-50 text-blue-500 border-blue-200' : 'bg-gray-50 text-gray-500 hover:text-blue-500 border-gray-200'}`}
+                        >
+                          {isFetching ? <><SvgIcon name="spinner" size={10} className="animate-spin"/> 撈取雲端中...</> : '查看明細'}
                         </button>
                       </div>
                     </div>
