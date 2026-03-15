@@ -423,7 +423,6 @@ function App() {
     if (isManual) showStatus("info", "🤖 正在連線 AI 分析...");
 
     try {
-      // 🌟 神級修正：餵給 AI 「過去半年(180天)」的資料作為比對基準！
       const cutoffTime = Date.now() - (180 * 24 * 60 * 60 * 1000); 
       let dadStr = ""; let momStr = "";
       
@@ -436,24 +435,10 @@ function App() {
         }
       });
 
-      const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財教練。請針對以下帳單給予財務建議。";
+      const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財助理。請針對以下帳單給予財務建議。";
 
-      // 🌟 強制加上「只准點評 30 天」的緊箍咒
       const finalPrompt = `
 ${promptTemplate}
-
-⚠️ 【系統強制格式要求 - 請絕對遵守】：
-請務必回傳純 JSON 格式。包含 "dad_eval" 與 "mom_eval" 兩個 key，必須是由 8~10 個「具體財務洞察」組成，且洞察間用直線符號「|」隔開。
-範例：
-{
-  "dad_eval": "洞察1 | 洞察2 | 洞察3...",
-  "mom_eval": "洞察1 | 洞察2 | 洞察3..."
-}
-
-⚠️ 【極度重要時間範圍限制 - 絕對禁止翻舊帳】：
-我為你提供了「過去半年 (180天)」的歷史帳本，這是為了讓你了解這個家庭的「長期平均消費水準」與「花費習慣」作為基準。
-但是！你的評語與洞察【絕對只准針對最近 30 天內的花費】進行點評！
-請對比過去半年的均值，來稱讚或警告「最近 30 天」的消費行為。絕對不要對 30 天以前的舊帳單碎碎念或挑毛病！
 
 【以下為帳本資料 (包含近半年歷史供對照，請只點評近 30 天)】：
 爸爸資料：
@@ -485,7 +470,9 @@ ${momStr}
       if (!match) throw new Error("AI 回傳格式錯誤 (非 JSON)");
       
       const parsedResult = JSON.parse(match[0]);
-      parsedResult.lastUpdated = nowStr();
+      
+      const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
+      parsedResult.lastUpdated = `${todayStr} ${new Date().toLocaleTimeString('zh-TW', { hour12: false })}`;
       
       setAiEvalData(parsedResult);
       postGAS({ action: "SAVE_AI_RESULT", aiData: parsedResult, deviceToken: getDeviceToken() }).catch(()=>{});
@@ -501,30 +488,42 @@ ${momStr}
 
   const handleForceAIEval = () => executeFrontendAI(true);
 
+  // 🌟 跨裝置防禦機制：確保每天只觸發一次，且等待雲端資料更新後才檢查
   const hasTriggeredAutoAI = useRef(false);
   useEffect(() => {
     if (currentUser && isOnline && txCache.length > 0 && sysConfig.apiKey && !hasTriggeredAutoAI.current && deviceValid()) {
-      hasTriggeredAutoAI.current = true;
       
-      let shouldTrigger = false;
-      
-      if (!aiEvalData || !aiEvalData.lastUpdated) {
-        shouldTrigger = true; 
-      } else {
-        const lastTime = new Date(aiEvalData.lastUpdated.replace(/-/g, "/")).getTime();
-        const hoursDiff = (Date.now() - lastTime) / (1000 * 60 * 60);
+      // 給予 5 秒的冷卻期，讓 App 有時間把其他裝置算好的 AI 報告從雲端抓下來
+      const checkTimer = setTimeout(() => {
+        hasTriggeredAutoAI.current = true;
+        let shouldTrigger = false;
         
-        const latestTxTime = txCache.reduce((max, tx) => Math.max(max, tx.lastModified || tx.timestamp || 0), 0);
-        const hasNewRecords = latestTxTime > lastTime;
+        if (!aiEvalData || !aiEvalData.lastUpdated) {
+          shouldTrigger = true; 
+        } else {
+          // 取得今天日期 (YYYY/MM/DD)
+          const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
+          const lastEvalDateStr = aiEvalData.lastUpdated.split(' ')[0]; // 取出紀錄中的日期
 
-        if (hoursDiff >= 24 && hasNewRecords) {
-          shouldTrigger = true;
+          // 條件 1：如果是今天已經算過，絕對不觸發 (防跨裝置)
+          if (lastEvalDateStr !== todayStr) {
+            
+            // 條件 2：檢查有沒有新紀錄 (最新一筆修改時間 > 上次 AI 時間)
+            const lastTimeMs = new Date(aiEvalData.lastUpdated.replace(/-/g, "/")).getTime();
+            const latestTxTime = txCache.reduce((max, tx) => Math.max(max, tx.lastModified || tx.timestamp || 0), 0);
+
+            if (latestTxTime > lastTimeMs) {
+              shouldTrigger = true;
+            }
+          }
         }
-      }
-      
-      if (shouldTrigger) {
-        executeFrontendAI(false);
-      }
+        
+        if (shouldTrigger) {
+          executeFrontendAI(false);
+        }
+      }, 5000);
+
+      return () => clearTimeout(checkTimer);
     }
   }, [currentUser, isOnline, txCache, sysConfig, aiEvalData]);
 
@@ -901,7 +900,6 @@ ${momStr}
 
   const isHistoryFiltered = debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all";
 
-  // 🌟 加入 translate="no" 防護罩，徹底阻止 Google 雞婆把 $ 翻譯成「美元」
   if (!currentUser) {
     return (
       <div translate="no" className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
