@@ -3,10 +3,10 @@ import { SvgIcon } from './Icons';
 import { CHART_COLORS } from '../utils/constants';
 import { getCycleRange, parseDateForSort, getParentCat, getChildCat } from '../utils/helpers';
 
+// 🌟 S25 專屬修復：將 JS 逐字特效改為 CSS 淡入淡出，徹底解決螢幕更新率導致的閃爍問題
 const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [displayText, setDisplayText] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [fade, setFade] = useState(true);
 
   const defaultMessages = ["正在等待最新的財務洞察... 到「設定」點擊 🤖 手動分析吧！✨"];
 
@@ -18,18 +18,20 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   }, [aiReport]);
 
   useEffect(() => {
-    if (isEvaluating) return;
-    let i = 0; const fullText = messages[currentIndex] || ""; setDisplayText(""); setIsTyping(true);
-    const typingTimer = setInterval(() => {
-      if (i < fullText.length) { setDisplayText(fullText.substring(0, i + 1)); i++; } 
-      else { setIsTyping(false); clearInterval(typingTimer); }
-    }, 50);
-    return () => clearInterval(typingTimer);
-  }, [currentIndex, messages, isEvaluating]);
-
-  useEffect(() => {
     if (isEvaluating || messages.length <= 1) return;
-    const interval = setInterval(() => setCurrentIndex((prev) => (prev + 1) % messages.length), 8000); 
+    
+    // 每 8 秒切換一次卡片，使用淡出/淡入效果
+    const interval = setInterval(() => {
+      setFade(false); // 觸發淡出
+      
+      // 等待 300 毫秒（淡出動畫時間）後切換文字並淡入
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % messages.length);
+        setFade(true); // 觸發淡入
+      }, 300); 
+      
+    }, 8000); 
+    
     return () => clearInterval(interval);
   }, [messages.length, isEvaluating]);
 
@@ -37,16 +39,21 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
     return (
       <div className="bg-indigo-50/80 border border-indigo-100 rounded-2xl p-4 flex items-center justify-center gap-3 shadow-sm animate-in mb-4 min-h-[4.5rem]">
         <SvgIcon name="spinner" size={20} className="text-indigo-500 animate-spin shrink-0" />
-        <span className="text-sm font-black text-indigo-600">AI 管家正在為您精算本期帳本...</span>
+        <span className="text-sm font-black text-indigo-600">AI 管家正在為您精算帳本...</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100/50 rounded-2xl p-4 flex items-start gap-3 shadow-sm relative mb-4 min-h-[4.8rem] transition-all overflow-hidden">
+    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100/50 rounded-2xl p-4 flex items-start gap-3 shadow-sm relative mb-4 min-h-[4.8rem] overflow-hidden">
       <span className="shrink-0 text-lg mt-0.5 opacity-80 animate-bounce">📢</span>
       <div className="flex-1 w-full relative flex items-center h-full min-h-[3rem]">
-        <span className="text-[12px] font-black text-indigo-800 leading-relaxed">{displayText}</span>
+        {/* 🌟 核心修正：使用 CSS transition 處理淡入淡出，完全不干擾 S25 的 LTPO 螢幕 */}
+        <span 
+          className={`text-[12px] font-black text-indigo-800 leading-relaxed transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}
+        >
+          {messages[currentIndex]}
+        </span>
       </div>
     </div>
   );
@@ -113,7 +120,7 @@ const AnalysisTab = ({
   aiEvalData, currentUser, isAIEvaluating, handleForceAIEval,
   myTransactions, billingStartDay, pendingMap,
   selectedAnalysisLevel1, setAnalysisDetailData,
-  animTrigger, triggerVibration
+  animTrigger, triggerVibration, renderItemOrGroup
 }) => {
   return (
     <div className="space-y-6 animate-in pb-20 text-left">
@@ -352,10 +359,12 @@ const AnalysisTab = ({
                         <div className="font-black text-[15px] text-gray-800">${Math.round(amt).toLocaleString()}</div>
                         <button onClick={(e) => { 
                             triggerVibration(10); e.stopPropagation(); 
-                            setAnalysisDetailData({ 
-                              title: `「${selectedAnalysisLevel1} - ${cat}」明細`, 
-                              txs: analysisTxs.filter(t => getL1Key(t) === selectedAnalysisLevel1 && getL2Key(t) === cat) 
-                            }); 
+                            if(renderItemOrGroup) { // 🌟 防止當機防呆
+                              setAnalysisDetailData({ 
+                                title: `「${selectedAnalysisLevel1} - ${cat}」明細`, 
+                                txs: analysisTxs.filter(t => getL1Key(t) === selectedAnalysisLevel1 && getL2Key(t) === cat) 
+                              }); 
+                            }
                           }} 
                           className="mt-1.5 px-2.5 py-1 bg-gray-50 text-gray-500 rounded-lg text-[10px] font-black active:scale-95 border border-gray-200">
                           查看明細
