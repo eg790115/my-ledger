@@ -955,7 +955,7 @@ ${baseSysPrompt}
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 pb-28 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-20 max-w-md mx-auto relative flex flex-col overflow-x-hidden w-full text-left font-black">
       
       <ProxyNotification transactions={unackedProxyTxs} onAck={() => { triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...unackedProxyTxs.map(t => t.id)])]; localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
 
@@ -1225,7 +1225,7 @@ ${baseSysPrompt}
       />
 
       {statusMsg.text && ( 
-        <div className="fixed bottom-28 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
+        <div className="fixed bottom-20 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
           <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
             <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
           </div>

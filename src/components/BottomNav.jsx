@@ -1,17 +1,49 @@
-// src/components/BottomNav.jsx
 import React from 'react';
-import { SvgIcon } from './Icons'; // 確保能讀取到您的圖示
+import { SvgIcon } from './Icons';
 
 const BottomNav = ({ activeTab, setActiveTab, triggerVibration }) => {
+  const navItems = [
+    { id: "dashboard", label: "首頁", icon: "home" },
+    { id: "history", label: "歷史", icon: "list" },
+    { id: "add", label: "新增", icon: "plus", isMain: true },
+    { id: "analysis", label: "圖表", icon: "chart" },
+    { id: "settings", label: "設定", icon: "settings" }
+  ];
+
+  const handleTabChange = (id) => {
+    triggerVibration(15);
+    setActiveTab(id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
-    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-40 shadow-2xl border border-white/20 safe-bottom">
-      <button onClick={() => { triggerVibration(10); setActiveTab("dashboard"); }} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "dashboard" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="home" className="shrink-0" /></button>
-      <button onClick={() => { triggerVibration(10); setActiveTab("history"); }} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "history" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="history" className="shrink-0" /></button>
-      <div className="px-1 shrink-0">
-        <button onClick={() => { triggerVibration([15, 30, 15]); setActiveTab(prev => prev === "add" ? "dashboard" : "add"); }} className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl active:scale-90 transition-all ${activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white"}`}><SvgIcon name="plus" size={28} className="shrink-0" /></button>
+    /* 🌟 這裡把 bottom-8 改成了 bottom-4，讓它更貼近螢幕底部 */
+    <nav className="fixed bottom-4 left-4 right-4 z-[500] animate-in slide-in-from-bottom duration-500">
+      <div className="bg-white/90 backdrop-blur-xl border border-gray-200/50 shadow-[0_8px_32px_rgba(0,0,0,0.12)] rounded-[2.5rem] p-2 flex items-center justify-between">
+        {navItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => handleTabChange(item.id)}
+            className={`relative flex flex-col items-center justify-center transition-all duration-300 ${
+              item.isMain 
+                ? "w-16 h-16 -mt-8 mb-2 bg-blue-600 text-white rounded-full shadow-lg shadow-blue-500/40 active:scale-90" 
+                : `flex-1 py-2 ${activeTab === item.id ? "text-blue-600" : "text-gray-400"} active:scale-95`
+            }`}
+          >
+            {item.isMain ? (
+              <SvgIcon name={item.icon} size={28} />
+            ) : (
+              <>
+                <SvgIcon name={item.icon} size={22} />
+                <span className="text-[10px] font-black mt-1 tracking-tighter">{item.label}</span>
+                {activeTab === item.id && (
+                  <div className="absolute -bottom-1 w-1 h-1 bg-blue-600 rounded-full animate-pulse"></div>
+                )}
+              </>
+            )}
+          </button>
+        ))}
       </div>
-      <button onClick={() => { triggerVibration(10); setActiveTab("analysis"); }} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "analysis" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="pieChart" className="shrink-0" /></button>
-      <button onClick={() => { triggerVibration(10); setActiveTab("settings"); }} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${activeTab === "settings" ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400"}`}><SvgIcon name="settings" className="shrink-0" /></button>
     </nav>
   );
 };
