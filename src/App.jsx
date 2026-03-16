@@ -1290,6 +1290,8 @@ ${momStr}
         activeTab={activeTab} 
         setActiveTab={setActiveTab} 
         triggerVibration={triggerVibration} 
+        onQuickAdd={handleAdd} 
+        loginUser={currentUser?.name} 
       />
 
       {statusMsg.text && ( 
