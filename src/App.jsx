@@ -951,20 +951,6 @@ ${momStr}
             </div>
           </div>
         )}
-        {showClearCacheModal && (
-          <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setCacheClearPassword("");} }}>
-            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
-              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
-              <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
-              <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：</p>
-              <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
-              <div className="flex gap-3">
-                <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
-                <button onClick={async () => { if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; } if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; } try { setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." }); const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword }); if (res.result !== "success") throw new Error("雲端密碼錯誤"); setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear(); if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); } if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); } setShowClearCacheModal(false); setCacheClearPassword(""); showStatus("success", "✅ 快取已清空，正在重新下載..."); setTimeout(() => { window.location.reload(true); }, 1500); } catch(e) { showStatus("error", e.message || "驗證失敗"); } finally { setLoadingCard({ show: false, text: "" }); } }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1121,6 +1107,21 @@ ${momStr}
         </div>
       )}
 
+      {showClearCacheModal && (
+        <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setCacheClearPassword("");} }}>
+          <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
+            <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
+            <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：</p>
+            <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+            <div className="flex gap-3">
+              <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
+              <button onClick={async () => { if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; } if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; } try { setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." }); const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword }); if (res.result !== "success") throw new Error("雲端密碼錯誤"); setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear(); if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); } if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); } setShowClearCacheModal(false); setCacheClearPassword(""); showStatus("success", "✅ 快取已清空，正在重新下載..."); setTimeout(() => { window.location.reload(true); }, 1500); } catch(e) { showStatus("error", e.message || "驗證失敗"); } finally { setLoadingCard({ show: false, text: "" }); } }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Header 
         currentUser={currentUser} 
         customSubtitle={customSubtitle} 
@@ -1192,7 +1193,7 @@ ${momStr}
             animTrigger={animTrigger}
             triggerVibration={triggerVibration}
             renderItemOrGroup={renderItemOrGroup}
-            snapshotsCache={snapshotsCache} // 🌟 將快照傳遞給分析圖表
+            snapshotsCache={snapshotsCache}
           />
         )}
 
