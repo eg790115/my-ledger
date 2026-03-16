@@ -4,11 +4,17 @@ import { SvgIcon } from './Icons';
 const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, loginUser }) => {
   const [showRadial, setShowRadial] = useState(false);
   const [activeOption, setActiveOption] = useState(null);
-
   const [pendingAmountKey, setPendingAmountKey] = useState(null);
   const [tempAmount, setTempAmount] = useState("");
 
-  // 讀取捷徑設定的共用邏輯
+  const [isListening, setIsListening] = useState(false);
+  const [volume, setVolume] = useState(0);
+
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+
   const loadShortcuts = () => {
     try {
       const saved = JSON.parse(localStorage.getItem('quick_shortcuts'));
@@ -22,7 +28,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
   const [quickShortcuts, setQuickShortcuts] = useState(loadShortcuts);
 
-  // 監聽來自 AddTransactionForm 的更新通知
   useEffect(() => {
     const handleUpdate = () => setQuickShortcuts(loadShortcuts());
     window.addEventListener('shortcuts_updated', handleUpdate);
@@ -32,16 +37,10 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const startPos = useRef({ x: 0, y: 0 });
   const timerRef = useRef(null);
   const isHolding = useRef(false);
-  
-  const stateRef = useRef({ showRadial, activeOption, pendingAmountKey });
-  useEffect(() => {
-    stateRef.current = { showRadial, activeOption, pendingAmountKey };
-  }, [showRadial, activeOption, pendingAmountKey]);
 
   const executeQuickAdd = (shortcutKey, finalAmount) => {
     if (!onQuickAdd || !loginUser) return;
     const data = quickShortcuts[shortcutKey];
-    
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     const dateStr = now.toISOString().slice(0, 16);
@@ -51,11 +50,10 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       type: "expense",
       category: data.category || "食/其他",
       amount: Number(finalAmount),
-      desc: data.memo || data.label, // 🌟 拔除「(極速捷徑)」後綴，還你乾淨備註
+      desc: data.memo || data.label,
       member: loginUser,
       beneficiary: loginUser
     };
-
     onQuickAdd([newTx]);
     setPendingAmountKey(null);
   };
@@ -71,79 +69,62 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
   };
 
-  useEffect(() => {
-    const onMove = (e) => {
-      const { showRadial, pendingAmountKey } = stateRef.current;
-      if (!isHolding.current || pendingAmountKey) return; 
-      if (showRadial && e.cancelable) e.preventDefault(); 
-      
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      
-      const dx = clientX - startPos.current.x;
-      const dy = clientY - startPos.current.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+  const startVoiceMode = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 64;
 
-      if (distance > 30 && distance < 140) {
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        let newActive = null;
-        
-        // 🌟 移除往下滑動的判定，避免誤觸
-        if (angle > -135 && angle <= -45) newActive = 'top';
-        else if (angle > -45 && angle <= 30) newActive = 'right';
-        else if (angle < -135 || angle >= 150) newActive = 'left';
+      const bufferLength = analyserRef.current.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
 
-        setActiveOption(prev => {
-          if (prev !== newActive && newActive !== null) triggerVibration(10);
-          return newActive;
-        });
-      } else {
-        setActiveOption(null);
-      }
-    };
+      const updateVolume = () => {
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        const avg = sum / bufferLength;
+        setVolume(avg);
 
-    const onEnd = () => {
-      if (!isHolding.current) return;
-      isHolding.current = false;
-      clearTimeout(timerRef.current); 
-
-      const { showRadial, activeOption } = stateRef.current;
-
-      if (showRadial) {
-        setShowRadial(false);
-        if (activeOption === 'left' || activeOption === 'right') {
-          triggerVibration([30, 50, 30]);
-          handleQuickSubmit(activeOption); 
-        } else if (activeOption === 'top') {
-          triggerVibration([20, 40, 20]);
-          alert(`啟動 AI 語音記帳... (準備開發中 🚀)`);
+        if (avg < 10) {
+          if (!silenceTimerRef.current) silenceTimerRef.current = setTimeout(() => stopVoiceMode(true), 2000);
+        } else {
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
         }
-        setActiveOption(null);
-      } else {
-        triggerVibration(15);
-        setActiveTab(prev => prev === "add" ? "dashboard" : "add");
-      }
-    };
+        animationRef.current = requestAnimationFrame(updateVolume);
+      };
+      updateVolume();
+      setIsListening(true);
+      triggerVibration(20);
+    } catch (err) { alert("請開啟麥克風權限以使用 AI 記帳"); }
+  };
 
-    window.addEventListener('mousemove', onMove, { passive: false });
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('mouseup', onEnd);
-    window.addEventListener('touchend', onEnd);
-    window.addEventListener('touchcancel', onEnd);
+  const stopVoiceMode = (shouldSubmit = false) => {
+    setIsListening(false);
+    setVolume(0);
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (audioContextRef.current) audioContextRef.current.close();
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    silenceTimerRef.current = null;
+    if (shouldSubmit) {
+      triggerVibration([30, 50, 30]);
+      alert("收音完畢，準備交由 AI 解析... (開發中 🚀)");
+    }
+  };
 
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('mouseup', onEnd);
-      window.removeEventListener('touchend', onEnd);
-      window.removeEventListener('touchcancel', onEnd);
-    };
-  }, [setActiveTab, triggerVibration, onQuickAdd, loginUser, quickShortcuts]);
-
+  // --- 🌟 完美觸控邏輯 (解決短按失效) ---
   const handleStart = (e) => {
-    if (e.button === 2) return; 
+    if (e.type === 'mousedown' && e.button !== 0) return;
+    if (isListening) { stopVoiceMode(false); return; }
+
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
     startPos.current = { x: clientX, y: clientY };
     isHolding.current = true;
     
@@ -153,6 +134,67 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         setShowRadial(true);
       }
     }, 350);
+  };
+
+  const handleMove = (e) => {
+    if (!isHolding.current || isListening) return;
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const dx = clientX - startPos.current.x;
+    const dy = clientY - startPos.current.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (showRadial) {
+      if (e.cancelable) e.preventDefault(); 
+      if (distance > 30 && distance < 140) {
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        let newActive = null;
+        if (angle > -135 && angle <= -45) newActive = 'top';
+        else if (angle > -45 && angle <= 45) newActive = 'right';
+        else if (angle <= -135 || angle > 135) newActive = 'left';
+
+        setActiveOption(prev => {
+          if (prev !== newActive && newActive !== null) triggerVibration(10);
+          return newActive;
+        });
+      } else { setActiveOption(null); }
+    } else {
+      // 判斷是否「向上滑動」觸發語音 (不需要等 350ms)
+      if (dy < -40 && Math.abs(dx) < 40) {
+        clearTimeout(timerRef.current);
+        isHolding.current = false;
+        startVoiceMode();
+      } else if (distance > 20) {
+        clearTimeout(timerRef.current); // 如果滑太遠取消短按/長按
+      }
+    }
+  };
+
+  const handleEnd = (e) => {
+    if (isListening) return;
+    if (!isHolding.current) return; 
+    
+    isHolding.current = false;
+    clearTimeout(timerRef.current);
+
+    if (showRadial) {
+      setShowRadial(false);
+      const selected = activeOption; 
+      setActiveOption(null);
+
+      if (selected === 'left' || selected === 'right') {
+        triggerVibration([30, 50, 30]);
+        handleQuickSubmit(selected);
+      } else if (selected === 'top') {
+        triggerVibration([20, 40, 20]);
+        startVoiceMode();
+      }
+    } else {
+      // 🌟 精準的短按切換邏輯
+      triggerVibration(15);
+      setActiveTab(prev => prev === "add" ? "dashboard" : "add");
+    }
   };
 
   const handleContextMenu = (e) => e.preventDefault();
@@ -165,18 +207,18 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     { id: 'settings', icon: 'settings' }
   ];
 
+  const rippleScale = 1 + (volume / 80) * 1.5;
+
   return (
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* 🌟 補登金額視窗 */}
       {pendingAmountKey && (
-        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in">
+        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in pointer-events-auto">
           <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl relative text-center">
              <div className="text-5xl mb-3">{quickShortcuts[pendingAmountKey].icon}</div>
              <h3 className="font-black text-2xl text-gray-800 mb-1">{quickShortcuts[pendingAmountKey].label}</h3>
              <p className="text-xs text-gray-500 font-bold mb-6 bg-gray-100 px-3 py-1 rounded-full inline-block">{quickShortcuts[pendingAmountKey].category}</p>
-
              <input type="number" autoFocus value={tempAmount} onChange={e => setTempAmount(e.target.value)} placeholder="請輸入金額" className="w-full bg-gray-50 px-4 py-4 rounded-2xl text-center font-black text-3xl mb-8 text-gray-800 tabular-nums border-2 border-blue-100 focus:border-blue-500 outline-none transition-colors" />
              <div className="flex gap-3">
                <button onClick={() => setPendingAmountKey(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95">取消</button>
@@ -191,26 +233,36 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
           if (tab.isFab) {
             return (
               <div key={tab.id} className="px-1 shrink-0 relative flex justify-center">
-                <div className="absolute top-1/2 left-1/2 pointer-events-none z-0">
-                  <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out shadow-lg ${showRadial ? 'opacity-100 translate-x-[-80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'left' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
-                    <span className="text-xl leading-none mb-0.5">{quickShortcuts.left.icon}</span>
-                    <span className={`text-[9px] font-black ${activeOption === 'left' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts.left.label}</span>
+                
+                {isListening && (
+                  <div className="absolute inset-0 bg-blue-500/30 rounded-[1.5rem] pointer-events-none" style={{ transform: `scale(${rippleScale})`, transition: 'transform 0.1s ease-out' }} />
+                )}
+
+                {!isListening && (
+                  <div className="absolute top-1/2 left-1/2 pointer-events-none z-0">
+                    <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out shadow-lg ${showRadial ? 'opacity-100 translate-x-[-80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'left' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
+                      <span className="text-xl leading-none mb-0.5">{quickShortcuts.left.icon}</span>
+                      <span className={`text-[9px] font-black ${activeOption === 'left' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts.left.label}</span>
+                    </div>
+                    <div className={`absolute -ml-8 -mt-8 w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[20ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-0 translate-y-[-110px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'top' ? 'border-white scale-125 shadow-purple-500/50 z-10' : 'border-transparent scale-100 z-0'}`}>
+                      <span className={`text-2xl leading-none mb-0.5 ${activeOption === 'top' ? 'animate-bounce' : ''}`}>🎙️</span>
+                      <span className="text-[10px] font-black text-white">AI 語音</span>
+                    </div>
+                    <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[40ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-[80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'right' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
+                      <span className="text-xl leading-none mb-0.5">{quickShortcuts.right.icon}</span>
+                      <span className={`text-[9px] font-black ${activeOption === 'right' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts.right.label}</span>
+                    </div>
                   </div>
-                  <div className={`absolute -ml-8 -mt-8 w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[20ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-0 translate-y-[-110px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'top' ? 'border-white scale-125 shadow-purple-500/50 z-10' : 'border-transparent scale-100 z-0'}`}>
-                    <span className={`text-2xl leading-none mb-0.5 ${activeOption === 'top' ? 'animate-bounce' : ''}`}>🎙️</span>
-                    <span className="text-[10px] font-black text-white">AI 語音</span>
-                  </div>
-                  <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[40ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-[80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'right' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
-                    <span className="text-xl leading-none mb-0.5">{quickShortcuts.right.icon}</span>
-                    <span className={`text-[9px] font-black ${activeOption === 'right' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts.right.label}</span>
-                  </div>
-                </div>
+                )}
 
                 <button 
-                  onMouseDown={handleStart} onTouchStart={handleStart} onContextMenu={handleContextMenu}
-                  className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl transition-all relative z-10 select-none touch-none ${showRadial ? 'bg-gray-800 text-white scale-90 rotate-[135deg] shadow-gray-900/40' : (activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white active:scale-95")}`}
+                  onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd}
+                  onMouseDown={handleStart} onMouseMove={handleMove} onMouseUp={handleEnd} onMouseLeave={handleEnd}
+                  onContextMenu={handleContextMenu}
+                  className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl transition-all relative z-10 select-none touch-none 
+                    ${isListening ? 'bg-blue-600 text-white shadow-blue-400' : showRadial ? 'bg-gray-800 text-white scale-90 rotate-[135deg] shadow-gray-900/40' : (activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white active:scale-95")}`}
                 >
-                  <SvgIcon name={tab.icon} size={28} className="shrink-0" />
+                  <SvgIcon name={isListening ? "mic" : tab.icon} size={28} className="shrink-0" />
                 </button>
               </div>
             );
