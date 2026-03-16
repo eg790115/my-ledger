@@ -1,143 +1,303 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { SvgIcon } from './Icons';
 
-const HistoryTab = ({
-  setQuickDateFilter, historyDateFilter, setHistoryDateFilter,
-  setHistorySearch, setHistoryExcludeSearch, setHistoryTypeFilter,
-  historySearch, historyExcludeSearch, triggerVibration,
-  setShowTrashModal, setConfirmHardDeleteId, setShowConfirmEmptyTrash,
-  showSearchFilterModal, setShowSearchFilterModal,
-  debouncedHistorySearch, debouncedHistoryExcludeSearch,
-  historyTypeFilter, isHistoryFiltered, historyFilteredStats,
-  filteredHistoryGroups, renderItemOrGroup
-}) => {
-  const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
+const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, loginUser }) => {
+  const [showRadial, setShowRadial] = useState(false);
+  const [activeOption, setActiveOption] = useState(null);
+
+  const [pendingAmountKey, setPendingAmountKey] = useState(null);
+  const [tempAmount, setTempAmount] = useState("");
+
+  // --- 🎙️ 語音雷達專用狀態 ---
+  const [isListening, setIsListening] = useState(false);
+  const [volume, setVolume] = useState(0);
+
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+
+  // 讀取捷徑設定
+  const loadShortcuts = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('quick_shortcuts'));
+      if (saved && saved.left && saved.right) return saved;
+    } catch {}
+    return {
+      left: { icon: "☕️", label: "買飲料", amount: 60, category: "食/零食/飲料", memo: "買飲料" },
+      right: { icon: "⛽️", label: "加油", amount: "", category: "行/加油", memo: "機車加油" }
+    };
+  };
+
+  const [quickShortcuts, setQuickShortcuts] = useState(loadShortcuts);
+
+  useEffect(() => {
+    const handleUpdate = () => setQuickShortcuts(loadShortcuts());
+    window.addEventListener('shortcuts_updated', handleUpdate);
+    return () => window.removeEventListener('shortcuts_updated', handleUpdate);
+  }, []);
+
+  const startPos = useRef({ x: 0, y: 0 });
+  const timerRef = useRef(null);
+  const isHolding = useRef(false);
+
+  // --- ⚡ 執行快速新增 ---
+  const executeQuickAdd = (shortcutKey, finalAmount) => {
+    if (!onQuickAdd || !loginUser) return;
+    const data = quickShortcuts[shortcutKey];
+    
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    const dateStr = now.toISOString().slice(0, 16);
+
+    const newTx = {
+      date: dateStr,
+      type: "expense",
+      category: data.category || "食/其他",
+      amount: Number(finalAmount),
+      desc: data.memo || data.label,
+      member: loginUser,
+      beneficiary: loginUser
+    };
+
+    onQuickAdd([newTx]);
+    setPendingAmountKey(null);
+  };
+
+  const handleQuickSubmit = (shortcutKey) => {
+    if (!loginUser) { alert("⚠️ 此功能需在登入後才能使用喔！"); return; }
+    const data = quickShortcuts[shortcutKey];
+    if (!data.amount || String(data.amount).trim() === "" || Number(data.amount) === 0) {
+      setTempAmount("");
+      setPendingAmountKey(shortcutKey);
+    } else {
+      executeQuickAdd(shortcutKey, data.amount);
+    }
+  };
+
+  // --- 🎙️ 語音偵測核心 (含安靜 2 秒自動停止) ---
+  const startVoiceMode = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      source.connect(analyserRef.current);
+      analyserRef.current.fftSize = 64;
+
+      const bufferLength = analyserRef.current.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const updateVolume = () => {
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        const avg = sum / bufferLength;
+        setVolume(avg);
+
+        // 如果音量極低 (安靜)
+        if (avg < 10) {
+          if (!silenceTimerRef.current) {
+            // 啟動 2 秒倒數
+            silenceTimerRef.current = setTimeout(() => stopVoiceMode(true), 2000);
+          }
+        } else {
+          // 有聲音就重置計時器
+          if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+          }
+        }
+        animationRef.current = requestAnimationFrame(updateVolume);
+      };
+
+      updateVolume();
+      setIsListening(true);
+      triggerVibration(20);
+    } catch (err) {
+      alert("請開啟麥克風權限以使用 AI 記帳");
+    }
+  };
+
+  const stopVoiceMode = (shouldSubmit = false) => {
+    setIsListening(false);
+    setVolume(0);
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (audioContextRef.current) audioContextRef.current.close();
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    silenceTimerRef.current = null;
+    
+    if (shouldSubmit) {
+      triggerVibration([30, 50, 30]);
+      alert("收音完畢，準備交由 AI 解析... (開發中 🚀)");
+    }
+  };
+
+  // --- 👆 統一的指標事件 (精準解決短按失效) ---
+  const handlePointerDown = (e) => {
+    if (e.button === 2) return; 
+    
+    // 如果正在錄音，點擊就強制取消
+    if (isListening) {
+      stopVoiceMode(false);
+      return;
+    }
+
+    // 捕捉指標，確保滑到外面也能感應放開
+    e.currentTarget.setPointerCapture(e.pointerId);
+    startPos.current = { x: e.clientX, y: e.clientY };
+    isHolding.current = true;
+    
+    timerRef.current = setTimeout(() => {
+      if (isHolding.current) {
+        triggerVibration(50);
+        setShowRadial(true);
+      }
+    }, 350);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isHolding.current || !showRadial) return;
+    
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > 30 && distance < 140) {
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      let newActive = null;
+      
+      if (angle > -135 && angle <= -45) newActive = 'top';     // 往上滑
+      else if (angle > -45 && angle <= 45) newActive = 'right'; // 往右滑
+      else if (angle <= -135 || angle > 135) newActive = 'left'; // 往左滑
+
+      setActiveOption(prev => {
+        if (prev !== newActive && newActive !== null) triggerVibration(10);
+        return newActive;
+      });
+    } else {
+      setActiveOption(null);
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    if (isListening) return; // 錄音中不處理放開邏輯
+
+    if (!isHolding.current) return;
+    isHolding.current = false;
+    clearTimeout(timerRef.current);
+    e.currentTarget.releasePointerCapture(e.pointerId); // 釋放指標
+
+    if (showRadial) {
+      setShowRadial(false);
+      const selected = activeOption; // 記住當前選擇
+      setActiveOption(null);
+
+      if (selected === 'left' || selected === 'right') {
+        triggerVibration([30, 50, 30]);
+        handleQuickSubmit(selected);
+      } else if (selected === 'top') {
+        triggerVibration([20, 40, 20]);
+        startVoiceMode(); // 🌟 啟動雷達波紋與語音
+      }
+    } else {
+      // 🌟 短按邏輯：精準切換分頁
+      triggerVibration(15);
+      setActiveTab(prev => prev === "add" ? "dashboard" : "add");
+    }
+  };
+
+  // 防止呼叫右鍵選單
+  const handleContextMenu = (e) => e.preventDefault();
+
+  const tabs = [
+    { id: 'dashboard', icon: 'home' },
+    { id: 'history', icon: 'history' },
+    { id: 'add', icon: 'plus', isFab: true },
+    { id: 'analysis', icon: 'pieChart' },
+    { id: 'settings', icon: 'settings' }
+  ];
+
+  // 波紋隨音量放大 (預設 1 倍，最大約 2.5 倍)
+  const rippleScale = 1 + (volume / 80) * 1.5;
 
   return (
-    <div className="space-y-4 animate-in pb-20 text-left">
-      
-      {/* 🌟 頂部標題與按鈕區 */}
-      <div className="flex justify-between items-center px-1 mb-2 gap-2">
-         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1">
-            <h3 className="font-black text-xl text-gray-800 shrink-0">歷史清單</h3>
-            <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
-               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("current_month");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='current_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>本期</button>
-               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("last_month");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='last_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>上期</button>
-               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("all"); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='all' && !historySearch && !historyExcludeSearch && historyTypeFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>還原</button>
-            </div>
-         </div>
+    <>
+      <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-         {/* 垃圾桶與搜尋按鈕 */}
-         <div className="flex items-center gap-2 shrink-0 relative z-20">
-             <button onClick={() => {triggerVibration(10); setShowTrashModal(true); setConfirmHardDeleteId(null); setShowConfirmEmptyTrash(false);}} className="flex items-center justify-center w-8 h-8 bg-red-50 rounded-full border border-red-100 active:scale-95 transition-all text-red-500 shadow-sm">
-               <SvgIcon name="trash" size={14} />
-             </button>
-             <button 
-               onClick={() => { triggerVibration(10); setShowSearchFilterModal(!showSearchFilterModal); }} 
-               className={`flex items-center justify-center w-8 h-8 rounded-full border active:scale-95 transition-all relative ${showSearchFilterModal ? 'bg-blue-700 border-blue-800 text-white shadow-inner' : 'bg-blue-600 border-blue-700 text-white shadow-md shadow-blue-500/30'}`}
-             >
-               <SvgIcon name={showSearchFilterModal ? "close" : "search"} size={14} />
-               {!showSearchFilterModal && isHistoryFiltered && <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white shadow-sm"></div>}
-             </button>
-         </div>
-      </div>
+      {/* 🌟 補登金額視窗 */}
+      {pendingAmountKey && (
+        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in pointer-events-auto">
+          <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl relative text-center">
+             <div className="text-5xl mb-3">{quickShortcuts[pendingAmountKey].icon}</div>
+             <h3 className="font-black text-2xl text-gray-800 mb-1">{quickShortcuts[pendingAmountKey].label}</h3>
+             <p className="text-xs text-gray-500 font-bold mb-6 bg-gray-100 px-3 py-1 rounded-full inline-block">{quickShortcuts[pendingAmountKey].category}</p>
 
-      {/* 🚀 與列表等寬的推擠式搜尋面板 */}
-      {showSearchFilterModal && (
-        <div className="bg-white rounded-[2rem] p-5 shadow-lg border border-blue-100 flex flex-col gap-4 animate-in slide-in-from-top-4 fade-in duration-300 relative overflow-hidden mt-2">
-          <div className="absolute left-0 top-0 w-1.5 h-full bg-blue-500"></div>
-          <h4 className="font-black text-gray-800 text-sm pl-2 flex items-center gap-2">
-            <SvgIcon name="search" size={16} className="text-blue-500" />
-            進階篩選面板
-          </h4>
-          <div className="flex flex-col gap-3 pl-2">
-            <div className="bg-gray-50 flex items-center p-2.5 rounded-xl border border-gray-100 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-50 transition-all">
-              <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0"><SvgIcon name="search" size={14}/></div>
-              <input type="text" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="包含關鍵字 (品項、金額...)" className="flex-1 bg-transparent font-bold text-xs outline-none text-gray-800 px-3 w-full" />
-            </div>
-            <div className="bg-gray-50 flex items-center p-2.5 rounded-xl border border-gray-100 focus-within:border-red-300 focus-within:ring-2 focus-within:ring-red-50 transition-all">
-              <div className="w-7 h-7 rounded-lg bg-red-100 text-red-500 flex items-center justify-center shrink-0"><SvgIcon name="close" size={14}/></div>
-              <input type="text" value={historyExcludeSearch} onChange={(e) => setHistoryExcludeSearch(e.target.value)} placeholder="排除不想看的關鍵字..." className="flex-1 bg-transparent font-bold text-xs outline-none text-gray-800 px-3 w-full" />
-            </div>
-          </div>
-          <div className="flex gap-3 pl-2">
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">收支類型</label>
-              <select value={historyTypeFilter} onChange={(e) => {triggerVibration(10); setHistoryTypeFilter(e.target.value);}} className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 px-3 text-xs font-black text-gray-800 outline-none focus:border-blue-300 transition-all appearance-none">
-                <option value="all">全部收支</option>
-                <option value="expense">僅看支出</option>
-                <option value="income">僅看收入</option>
-              </select>
-            </div>
-            <div className="flex-1 flex flex-col gap-1.5">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間範圍</label>
-              <select value={historyDateFilter} onChange={(e) => {triggerVibration(10); setHistoryDateFilter(e.target.value);}} className="w-full bg-gray-50 border border-gray-100 rounded-xl py-3 px-3 text-xs font-black text-blue-600 outline-none focus:border-blue-300 transition-all appearance-none">
-                <option value="all">全部時間</option>
-                <option value="current_month">本期</option>
-                <option value="last_month">上期</option>
-                <option value="7d">近 7 日</option>
-                <option value="1m">近一個月</option>
-                <option value="3m">近三個月</option>
-                <option value="6m">近半年</option>
-                <option value="1y">近一年</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-3 pt-3 pl-2 mt-1 border-t border-gray-50">
-            <button onClick={() => { triggerVibration(10); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all"); setHistoryDateFilter("current_month"); }} className="px-5 py-3 bg-gray-100 text-gray-500 rounded-xl font-black text-xs active:scale-95 transition-transform hover:bg-gray-200">清空</button>
-            <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(false); }} className="flex-1 py-3 bg-blue-50 text-blue-600 rounded-xl font-black text-xs active:scale-95 transition-transform flex items-center justify-center gap-1 border border-blue-100">收起面板 <span className="text-[10px]">▲</span></button>
+             <input type="number" autoFocus value={tempAmount} onChange={e => setTempAmount(e.target.value)} placeholder="請輸入金額" className="w-full bg-gray-50 px-4 py-4 rounded-2xl text-center font-black text-3xl mb-8 text-gray-800 tabular-nums border-2 border-blue-100 focus:border-blue-500 outline-none transition-colors" />
+             <div className="flex gap-3">
+               <button onClick={() => setPendingAmountKey(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95">取消</button>
+               <button onClick={() => { if(!tempAmount) return; executeQuickAdd(pendingAmountKey, tempAmount); }} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30">確認記帳</button>
+             </div>
           </div>
         </div>
       )}
 
-      {/* 🌟 篩選條件輕量級標籤 */}
-      {!showSearchFilterModal && (debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all") && (
-         <div className="flex flex-wrap gap-2 mb-2 px-1 animate-in fade-in">
-            {debouncedHistorySearch && <span className="text-[10px] bg-blue-50 border border-blue-100 text-blue-600 px-2.5 py-1 rounded-md font-black flex items-center gap-1 shadow-sm">🔍 {debouncedHistorySearch}</span>}
-            {debouncedHistoryExcludeSearch && <span className="text-[10px] bg-red-50 border border-red-100 text-red-600 px-2.5 py-1 rounded-md font-black flex items-center gap-1 shadow-sm">🚫 {debouncedHistoryExcludeSearch}</span>}
-            {historyTypeFilter !== "all" && <span className="text-[10px] bg-gray-100 border border-gray-200 text-gray-600 px-2.5 py-1 rounded-md font-black flex items-center gap-1 shadow-sm">💰 {historyTypeFilter === 'expense' ? '只看支出' : '只看收入'}</span>}
-         </div>
-      )}
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-[900] shadow-2xl border border-white/20 pb-safe">
+        {tabs.map(tab => {
+          if (tab.isFab) {
+            return (
+              <div key={tab.id} className="px-1 shrink-0 relative flex justify-center">
+                
+                {/* 🌊 雷達波紋 (錄音時顯示) */}
+                {isListening && (
+                  <div 
+                    className="absolute inset-0 bg-blue-500/30 rounded-[1.5rem] shadow-blue-400 pointer-events-none"
+                    style={{ transform: `scale(${rippleScale})`, transition: 'transform 0.1s ease-out' }}
+                  />
+                )}
 
-      {/* 🌟 總計看板 */}
-      {isHistoryFiltered && (
-          <div className="bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex items-center justify-around mt-2 mb-4 animate-in fade-in">
-             <div className="text-center w-1/2">
-               <div className="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-1">符合支出的總計</div>
-               <div className="text-xl font-black text-red-500">${historyFilteredStats.expense.toLocaleString()}</div>
-             </div>
-             <div className="w-px h-10 bg-gray-100"></div>
-             <div className="text-center w-1/2">
-               <div className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">符合收入的總計</div>
-               <div className="text-xl font-black text-green-500">${historyFilteredStats.income.toLocaleString()}</div>
-             </div>
-          </div>
-      )}
+                {/* 🌟 扇形隱藏按鈕群 */}
+                {!isListening && (
+                  <div className="absolute top-1/2 left-1/2 pointer-events-none z-0">
+                    <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out shadow-lg ${showRadial ? 'opacity-100 translate-x-[-80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'left' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
+                      <span className="text-xl leading-none mb-0.5">{quickShortcuts.left.icon}</span>
+                      <span className={`text-[9px] font-black ${activeOption === 'left' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts.left.label}</span>
+                    </div>
+                    <div className={`absolute -ml-8 -mt-8 w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[20ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-0 translate-y-[-110px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'top' ? 'border-white scale-125 shadow-purple-500/50 z-10' : 'border-transparent scale-100 z-0'}`}>
+                      <span className={`text-2xl leading-none mb-0.5 ${activeOption === 'top' ? 'animate-bounce' : ''}`}>🎙️</span>
+                      <span className="text-[10px] font-black text-white">AI 語音</span>
+                    </div>
+                    <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[40ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-[80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'right' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
+                      <span className="text-xl leading-none mb-0.5">{quickShortcuts.right.icon}</span>
+                      <span className={`text-[9px] font-black ${activeOption === 'right' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts.right.label}</span>
+                    </div>
+                  </div>
+                )}
 
-      {/* 🌟 歷史紀錄清單 (已修復截斷問題) */}
-      <div className="mt-4 relative z-0">
-        {filteredHistoryGroups.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-[2rem] border border-gray-100 shadow-sm mt-4 flex flex-col items-center justify-center gap-3">
-            <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center text-gray-300"><SvgIcon name="search" size={20} /></div>
-            <span className="text-sm font-black text-gray-400">沒有符合條件的紀錄</span>
-          </div>
-        ) : (
-          <>
-            <div className="space-y-3">
-              {(filteredHistoryGroups || []).slice(0, historyVisibleCount).map(item => renderItemOrGroup ? renderItemOrGroup(item, true) : null)}
-            </div>
-            
-            {historyVisibleCount < (filteredHistoryGroups || []).length && ( 
-              <button onClick={() => {triggerVibration(10); setHistoryVisibleCount(prev => prev + 20);}} className="w-full py-4 bg-white border border-gray-200 text-blue-600 rounded-2xl font-black text-xs active:scale-95 transition-transform shadow-sm mt-4 flex justify-center items-center gap-2">
-                <SvgIcon name="refresh" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {(filteredHistoryGroups || []).length})
-              </button> 
-            )}
-          </>
-        )}
-      </div>
+                {/* 核心主按鈕 */}
+                <button 
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onContextMenu={handleContextMenu}
+                  className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl transition-all relative z-10 select-none touch-none 
+                    ${isListening ? 'bg-blue-600 text-white shadow-blue-400' : showRadial ? 'bg-gray-800 text-white scale-90 rotate-[135deg] shadow-gray-900/40' : (activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white active:scale-95")}`}
+                >
+                  <SvgIcon name={isListening ? "mic" : tab.icon} size={28} className="shrink-0" />
+                </button>
+              </div>
+            );
+          }
+          const isActive = activeTab === tab.id;
+          return (
+            <button key={tab.id} onClick={() => { triggerVibration(10); setActiveTab(tab.id); }} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${isActive ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400 hover:bg-gray-50"}`}>
+              <SvgIcon name={tab.icon} size={24} className="shrink-0" />
+            </button>
+          );
+        })}
+      </nav>
+    </>
+  );
+};
 
-    </div>
-  )
-}
-
-export default HistoryTab;
+export default BottomNav;
