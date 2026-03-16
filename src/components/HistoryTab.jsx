@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Virtuoso } from 'react-virtuoso';
 import { SvgIcon } from './Icons';
 
 const HistoryTab = ({
@@ -12,6 +11,8 @@ const HistoryTab = ({
   historyTypeFilter, isHistoryFiltered, historyFilteredStats,
   filteredHistoryGroups, renderItemOrGroup
 }) => {
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(20);
+
   return (
     <div className="space-y-4 animate-in pb-20 text-left">
       
@@ -22,7 +23,7 @@ const HistoryTab = ({
             <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
                <button onClick={()=>{triggerVibration(10); setQuickDateFilter("current_month");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='current_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>本期</button>
                <button onClick={()=>{triggerVibration(10); setQuickDateFilter("last_month");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='last_month'?'bg-white text-blue-600 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>上期</button>
-               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("all"); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='all' && !historySearch && !historyExcludeSearch && historyTypeFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>全部</button>
+               <button onClick={()=>{triggerVibration(10); setQuickDateFilter("all"); setHistorySearch(""); setHistoryExcludeSearch(""); setHistoryTypeFilter("all");}} className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${historyDateFilter==='all' && !historySearch && !historyExcludeSearch && historyTypeFilter==='all'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>還原</button>
             </div>
          </div>
 
@@ -113,7 +114,7 @@ const HistoryTab = ({
           </div>
       )}
 
-      {/* 🌟 歷史紀錄清單 (防線一：虛擬滾動實裝！) */}
+      {/* 🌟 歷史紀錄清單 (已修復截斷問題) */}
       <div className="mt-4 relative z-0">
         {filteredHistoryGroups.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-[2rem] border border-gray-100 shadow-sm mt-4 flex flex-col items-center justify-center gap-3">
@@ -121,15 +122,17 @@ const HistoryTab = ({
             <span className="text-sm font-black text-gray-400">沒有符合條件的紀錄</span>
           </div>
         ) : (
-          <Virtuoso
-            useWindowScroll
-            data={filteredHistoryGroups}
-            itemContent={(index, item) => (
-              <div className="pb-3"> {/* 這裡取代原本的 space-y-3 */}
-                {renderItemOrGroup ? renderItemOrGroup(item, true) : null}
-              </div>
+          <>
+            <div className="space-y-3">
+              {(filteredHistoryGroups || []).slice(0, historyVisibleCount).map(item => renderItemOrGroup ? renderItemOrGroup(item, true) : null)}
+            </div>
+            
+            {historyVisibleCount < (filteredHistoryGroups || []).length && ( 
+              <button onClick={() => {triggerVibration(10); setHistoryVisibleCount(prev => prev + 20);}} className="w-full py-4 bg-white border border-gray-200 text-blue-600 rounded-2xl font-black text-xs active:scale-95 transition-transform shadow-sm mt-4 flex justify-center items-center gap-2">
+                <SvgIcon name="refresh" size={14} className="text-blue-500" /> 載入更多紀錄 ({historyVisibleCount} / {(filteredHistoryGroups || []).length})
+              </button> 
             )}
-          />
+          </>
         )}
       </div>
 
