@@ -50,8 +50,12 @@ function App() {
   const [fallbackToPin, setFallbackToPin] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
+  
   const [showClearCacheModal, setShowClearCacheModal] = useState(false);
   const [cacheClearPassword, setCacheClearPassword] = useState("");
+  const [showLoginClearCacheModal, setShowLoginClearCacheModal] = useState(false);
+  const [loginCachePassword, setLoginCachePassword] = useState("");
+
   const [showClearQueueModal, setShowClearQueueModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -63,8 +67,6 @@ function App() {
   const [txCache, setTxCache] = useState([]);
   const [trashCache, setTrashCache] = useState([]);
   const [syncQueue, setSyncQueue] = useState(() => safeArrayLS(LS.pending));
-  
-  // 🌟 新增：冷熱分離的快照快取倉庫
   const [snapshotsCache, setSnapshotsCache] = useState(() => { try { return JSON.parse(localStorage.getItem('snapshots_cache')) || {}; } catch { return {}; } });
 
   const [aiEvalData, setAiEvalData] = useState(() => { try { return JSON.parse(localStorage.getItem('ai_eval_data')) || null; } catch { return null; } });
@@ -286,7 +288,7 @@ function App() {
         desc: String(t.desc || t["備註"] || ""), type: String(t.type || t["類型"] || "expense"), 
         groupId: String(t.groupId || t["GroupID"] || ""), parentDesc: String(t.parentDesc || t["ParentDesc"] || ""), 
         beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知"), 
-        lastModified: Number(t.lastModified) || 0 
+        lastModified: Number(t.lastModified) || 0, editHistory: Array.isArray(t.editHistory) ? t.editHistory : (t["EditHistory"] || []) 
       }; 
     });
 
@@ -320,31 +322,10 @@ function App() {
     if (data.greetings) setGreetingsCache(data.greetings);
     if (data.aiData) setAiEvalData(data.aiData);
     if (data.sysConfig) setSysConfig(data.sysConfig);
-
-    // 🌟 核心：接收雲端送來的歷史快照並存進 localStorage
-    if (data.snapshots) {
-      setSnapshotsCache(data.snapshots);
-      localStorage.setItem('snapshots_cache', JSON.stringify(data.snapshots));
-    }
+    if (data.snapshots) { setSnapshotsCache(data.snapshots); localStorage.setItem('snapshots_cache', JSON.stringify(data.snapshots)); }
     
     return changed;
   }, []);
-
-  const silentPollEngine = useCallback(async () => {
-      if (!navigator.onLine || !currentUserRef.current || isSyncingRef.current) { pollingTimerRef.current = setTimeout(silentPollEngine, 5000); return; }
-      if (!deviceValid()) { forceReloginForToken(); return; }
-      try { 
-        // 🌟 核心：加上 enableArchiving 參數，啟動雲端的冷熱分離
-        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true }); 
-        if (data.result === "success") { 
-          const isDelta = lastServerTimeRef.current > 0; 
-          if (applyCloudData(data, isDelta)) showStatus("success", "🔄 已載入雲端最新資料"); 
-        } 
-      } catch (e) { 
-        if (e.message && (e.message.includes("憑證") || e.message.includes("過期"))) forceReloginForToken(); 
-      }
-      pollingTimerRef.current = setTimeout(silentPollEngine, 5000);
-  }, [forceReloginForToken, applyCloudData, showStatus]);
 
   const syncManager = useCallback(async (isSilent = false) => {
       if (!navigator.onLine || !deviceValid() || isSyncingRef.current) return;
@@ -353,15 +334,27 @@ function App() {
           const currentQueue = safeParse(localStorage.getItem(LS.pending), []).filter(Boolean); 
           let sentQueueCount = currentQueue.length; 
           const isDelta = lastServerTimeRef.current > 0;
+          
           if (sentQueueCount > 0) {
               const res = await postGAS({ action: "BATCH_PROCESS", operations: currentQueue, deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true });
               if (res.result !== "success") throw new Error(res.message || "批次同步處理失敗");
+              
               if (res.transactions) applyCloudData(res, isDelta);
+              
               setSyncQueue(prev => { 
-                const sentOpIds = currentQueue.map(q => q.opId).filter(Boolean); 
-                const nextQ = prev.filter(Boolean).filter(p => p.opId ? !sentOpIds.includes(p.opId) : !currentQueue.find(c => (c.id === p.id && c.action === p.action) || (c.groupId && c.groupId === p.groupId && c.action === p.action))); 
-                localStorage.setItem(LS.pending, JSON.stringify(nextQ)); return nextQ; 
+                const sentIds = currentQueue.map(q => q.id).filter(Boolean);
+                const sentGroupIds = currentQueue.map(q => q.groupId).filter(Boolean);
+                
+                const nextQ = prev.filter(Boolean).filter(p => {
+                    if (p.id && sentIds.includes(p.id)) return false;
+                    if (p.groupId && sentGroupIds.includes(p.groupId)) return false;
+                    return true;
+                });
+                
+                localStorage.setItem(LS.pending, JSON.stringify(nextQ)); 
+                return nextQ; 
               });
+
               if (res.conflicts && res.conflicts.length > 0) { showStatus("error", `⚠️ 發現 ${res.conflicts.length} 筆資料衝突，已為您捨棄本機覆蓋並保留雲端最新版！`); } 
               else if (!isSilent) { 
                 const adds = currentQueue.filter(q => q.action === 'ADD').length; 
@@ -386,6 +379,21 @@ function App() {
         const leftoverQueue = safeParse(localStorage.getItem(LS.pending), []); 
         if (leftoverQueue.length > 0 && navigator.onLine) setTimeout(() => requestSync(true, true), 100); 
       }
+  }, [forceReloginForToken, applyCloudData, showStatus]);
+
+  const silentPollEngine = useCallback(async () => {
+      if (!navigator.onLine || !currentUserRef.current || isSyncingRef.current) { pollingTimerRef.current = setTimeout(silentPollEngine, 5000); return; }
+      if (!deviceValid()) { forceReloginForToken(); return; }
+      try { 
+        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true }); 
+        if (data.result === "success") { 
+          const isDelta = lastServerTimeRef.current > 0; 
+          if (applyCloudData(data, isDelta)) showStatus("success", "🔄 已載入雲端最新資料"); 
+        } 
+      } catch (e) { 
+        if (e.message && (e.message.includes("憑證") || e.message.includes("過期"))) forceReloginForToken(); 
+      }
+      pollingTimerRef.current = setTimeout(silentPollEngine, 5000);
   }, [forceReloginForToken, applyCloudData, showStatus]);
 
   const requestSync = useCallback((isSilent = false, immediate = false) => { 
@@ -606,18 +614,20 @@ ${momStr}
     setActiveTab("dashboard"); appendToQueueAndSync(completeTxs); 
   };
   
+  // 🌟 修復 1：拔掉「(同步中)」文字
   const handleUpdateTx = async (updatedTx) => { 
     triggerVibration([20, 40, 20]); 
     let fd = updatedTx.date; if (fd && fd.includes("T")) fd = fd.replace("T"," ").replace(/-/g,"/").slice(0, 16); 
-    const newHist = [...(updatedTx.editHistory || []), { time: nowStr(), action: "編輯紀錄 (同步中)" }]; 
+    const newHist = [...(updatedTx.editHistory || []), { time: nowStr(), action: "修改明細", oldContent: JSON.stringify(updatedTx) }]; 
     appendToQueueAndSync([{ ...updatedTx, date: fd, editHistory: newHist, isOffline: !navigator.onLine, action: "UPDATE_TX", lastModified: updatedTx.lastModified || 0 }]); setEditingTx(null); 
   };
   
+  // 🌟 修復 2：拔掉「(同步中)」文字
   const handleUpdateGroupParent = async (groupData) => { 
     triggerVibration([20, 40, 20]); 
     let fd = groupData.date; if (fd && fd.includes("T")) fd = fd.replace("T"," ").replace(/-/g,"/").slice(0, 16); 
     let currentQ = [...(syncQueue || [])].filter(Boolean); const newOpId = Date.now() + '_' + Math.random().toString(36).substring(2, 9); 
-    const newHist = [...(groupData.editHistory || []), { time: nowStr(), action: "編輯紀錄 (同步中)" }]; 
+    const newHist = [...(groupData.editHistory || []), { time: nowStr(), action: "修改明細", oldContent: `舊標題/備註: ${groupData.parentTitle} / ${groupData.parentDesc}` }]; 
     const newItem = { ...groupData, date: fd, editHistory: newHist, isOffline: !navigator.onLine, action: "UPDATE_GROUP_PARENT", opId: newOpId }; 
     const idx = currentQ.findIndex(p => p.action === "UPDATE_GROUP_PARENT" && String(p.groupId) === String(newItem.groupId)); 
     if (idx >= 0) { currentQ[idx] = newItem; } else { currentQ.push(newItem); } 
@@ -922,11 +932,42 @@ ${momStr}
           selectingUser={selectingUser} setSelectingUser={setSelectingUser}
           familyConfig={familyConfig} handleUserClick={handleUserClick}
           syncQueue={syncQueue} setShowClearQueueModal={setShowClearQueueModal}
-          triggerVibration={triggerVibration} setShowClearCacheModal={setShowClearCacheModal}
+          triggerVibration={triggerVibration} 
+          setShowClearCacheModal={setShowLoginClearCacheModal}
           fallbackToPin={fallbackToPin} setFallbackToPin={setFallbackToPin}
           handleBioLoginLocal={handleBioLoginLocal} showStatus={showStatus}
           setCurrentUser={setCurrentUser} pinInput={pinInput} setPinInput={setPinInput}
         />
+
+        {showLoginClearCacheModal && (
+          <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowLoginClearCacheModal(false); setLoginCachePassword("");} }}>
+            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
+              <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
+              <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：</p>
+              <input value={loginCachePassword} onChange={(e)=>setLoginCachePassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+              <div className="flex gap-3">
+                <button onClick={() => {setShowLoginClearCacheModal(false); setLoginCachePassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
+                <button onClick={async () => { 
+                  if (!loginCachePassword) { showStatus("error", "請輸入雲端密碼"); return; } 
+                  if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; } 
+                  try { 
+                    setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." }); 
+                    const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: loginCachePassword }); 
+                    if (res.result !== "success") throw new Error("雲端密碼錯誤"); 
+                    setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); 
+                    const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear(); 
+                    if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); } 
+                    if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); } 
+                    setShowLoginClearCacheModal(false); setLoginCachePassword(""); showStatus("success", "✅ 快取已清空，正在重新下載..."); 
+                    setTimeout(() => { window.location.reload(true); }, 1500); 
+                  } catch(e) { showStatus("error", e.message || "驗證失敗"); } 
+                  finally { setLoadingCard({ show: false, text: "" }); } 
+                }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showBootstrapModal && (
           <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
@@ -1031,12 +1072,12 @@ ${momStr}
                   {(viewingHistoryItem.editHistory || []).length === 0 ? ( <div className="text-gray-400 text-sm text-center py-4">無編輯紀錄</div> ) : (
                       (viewingHistoryItem.editHistory || []).map((h, i) => {
                          let fakeTx = null; let displayContent = h.oldContent;
-                         if (displayContent && !displayContent.includes('舊標題')) { try { const rawArr = JSON.parse(displayContent); if (Array.isArray(rawArr) && rawArr.length > 2) { fakeTx = { date: rawArr[0], category: rawArr[1], amount: Number(rawArr[2]), member: rawArr[3], desc: rawArr[4], type: rawArr[5], recorder: rawArr[6], id: rawArr[7] || 'fake', groupId: rawArr[8], parentDesc: rawArr[9], beneficiary: rawArr[10] || rawArr[3] }; } } catch (e) {} }
+                         if (displayContent && !displayContent.includes('舊標題')) { try { const rawArr = JSON.parse(displayContent); if (Array.isArray(rawArr) && rawArr.length > 2) { fakeTx = { date: rawArr[0], category: rawArr[1], amount: Number(rawArr[2]), member: rawArr[3], desc: rawArr[4], type: rawArr[5], recorder: rawArr[6], id: rawArr[7] || 'fake', groupId: rawArr[8], parentDesc: rawArr[9], beneficiary: rawArr[10] || rawArr[3] }; } else if (typeof rawArr === 'object' && rawArr !== null) { fakeTx = rawArr; } } catch (e) {} }
                          return (
                            <div key={i} className="bg-white p-4 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden">
                              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-400"></div>
                              <div className="flex justify-between items-center mb-3 pl-2 border-b border-gray-50 pb-2">
-                               <span className="font-black text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">{h.action.replace("修改明細", "編輯紀錄")}</span>
+                               <span className="font-black text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100">{h.action.replace("修改明細", "編輯紀錄").replace("(同步中)", "").trim()}</span>
                                <span className="text-[9px] text-gray-400 font-bold">{h.time}</span>
                              </div>
                              {fakeTx ? (
@@ -1116,7 +1157,22 @@ ${momStr}
             <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
             <div className="flex gap-3">
               <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
-              <button onClick={async () => { if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; } if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; } try { setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." }); const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword }); if (res.result !== "success") throw new Error("雲端密碼錯誤"); setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear(); if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); } if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); } setShowClearCacheModal(false); setCacheClearPassword(""); showStatus("success", "✅ 快取已清空，正在重新下載..."); setTimeout(() => { window.location.reload(true); }, 1500); } catch(e) { showStatus("error", e.message || "驗證失敗"); } finally { setLoadingCard({ show: false, text: "" }); } }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
+              <button onClick={async () => { 
+                if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; } 
+                if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; } 
+                try { 
+                  setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." }); 
+                  const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword }); 
+                  if (res.result !== "success") throw new Error("雲端密碼錯誤"); 
+                  setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); 
+                  const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear(); 
+                  if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); } 
+                  if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); } 
+                  setShowClearCacheModal(false); setCacheClearPassword(""); showStatus("success", "✅ 快取已清空，正在重新下載..."); 
+                  setTimeout(() => { window.location.reload(true); }, 1500); 
+                } catch(e) { showStatus("error", e.message || "驗證失敗"); } 
+                finally { setLoadingCard({ show: false, text: "" }); } 
+              }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
             </div>
           </div>
         </div>
