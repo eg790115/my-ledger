@@ -4,6 +4,7 @@ import { SvgIcon } from './Icons';
 const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, loginUser }) => {
   const [showRadial, setShowRadial] = useState(false);
   const [activeOption, setActiveOption] = useState(null);
+
   const [pendingAmountKey, setPendingAmountKey] = useState(null);
   const [tempAmount, setTempAmount] = useState("");
 
@@ -37,10 +38,12 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const startPos = useRef({ x: 0, y: 0 });
   const timerRef = useRef(null);
   const isHolding = useRef(false);
+  const wasSwipeOrLongPress = useRef(false); // 🌟 專門用來防堵誤判的攔截器
 
   const executeQuickAdd = (shortcutKey, finalAmount) => {
     if (!onQuickAdd || !loginUser) return;
     const data = quickShortcuts[shortcutKey];
+    
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     const dateStr = now.toISOString().slice(0, 16);
@@ -54,6 +57,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       member: loginUser,
       beneficiary: loginUser
     };
+
     onQuickAdd([newTx]);
     setPendingAmountKey(null);
   };
@@ -89,7 +93,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         setVolume(avg);
 
         if (avg < 10) {
-          if (!silenceTimerRef.current) silenceTimerRef.current = setTimeout(() => stopVoiceMode(true), 2000);
+          if (!silenceTimerRef.current) {
+            silenceTimerRef.current = setTimeout(() => stopVoiceMode(true), 2000);
+          }
         } else {
           if (silenceTimerRef.current) {
             clearTimeout(silenceTimerRef.current);
@@ -98,10 +104,13 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         }
         animationRef.current = requestAnimationFrame(updateVolume);
       };
+
       updateVolume();
       setIsListening(true);
       triggerVibration(20);
-    } catch (err) { alert("請開啟麥克風權限以使用 AI 記帳"); }
+    } catch (err) {
+      alert("請開啟麥克風權限以使用 AI 記帳");
+    }
   };
 
   const stopVoiceMode = (shouldSubmit = false) => {
@@ -111,38 +120,37 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     if (audioContextRef.current) audioContextRef.current.close();
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     silenceTimerRef.current = null;
+    
     if (shouldSubmit) {
       triggerVibration([30, 50, 30]);
       alert("收音完畢，準備交由 AI 解析... (開發中 🚀)");
     }
   };
 
-  // --- 🌟 完美觸控邏輯 (解決短按失效) ---
-  const handleStart = (e) => {
-    if (e.type === 'mousedown' && e.button !== 0) return;
+  // --- 🌟 觸控精準分離邏輯 ---
+  const handlePointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return; // 忽略右鍵
     if (isListening) { stopVoiceMode(false); return; }
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    startPos.current = { x: clientX, y: clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    startPos.current = { x: e.clientX, y: e.clientY };
     isHolding.current = true;
+    wasSwipeOrLongPress.current = false;
     
     timerRef.current = setTimeout(() => {
       if (isHolding.current) {
         triggerVibration(50);
         setShowRadial(true);
+        wasSwipeOrLongPress.current = true;
       }
     }, 350);
   };
 
-  const handleMove = (e) => {
+  const handlePointerMove = (e) => {
     if (!isHolding.current || isListening) return;
     
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const dx = clientX - startPos.current.x;
-    const dy = clientY - startPos.current.y;
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     if (showRadial) {
@@ -158,29 +166,32 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
           if (prev !== newActive && newActive !== null) triggerVibration(10);
           return newActive;
         });
-      } else { setActiveOption(null); }
+      } else {
+        setActiveOption(null);
+      }
     } else {
-      // 判斷是否「向上滑動」觸發語音 (不需要等 350ms)
+      // 判定是否向上滑動啟動語音
       if (dy < -40 && Math.abs(dx) < 40) {
         clearTimeout(timerRef.current);
         isHolding.current = false;
+        wasSwipeOrLongPress.current = true;
         startVoiceMode();
-      } else if (distance > 20) {
-        clearTimeout(timerRef.current); // 如果滑太遠取消短按/長按
+      } else if (distance > 15) {
+        clearTimeout(timerRef.current); 
+        wasSwipeOrLongPress.current = true; // 滑動距離過大，標記為滑動，取消短按
       }
     }
   };
 
-  const handleEnd = (e) => {
+  const handlePointerUp = (e) => {
     if (isListening) return;
-    if (!isHolding.current) return; 
-    
     isHolding.current = false;
     clearTimeout(timerRef.current);
+    e.currentTarget.releasePointerCapture(e.pointerId);
 
     if (showRadial) {
       setShowRadial(false);
-      const selected = activeOption; 
+      const selected = activeOption;
       setActiveOption(null);
 
       if (selected === 'left' || selected === 'right') {
@@ -190,11 +201,17 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         triggerVibration([20, 40, 20]);
         startVoiceMode();
       }
-    } else {
-      // 🌟 精準的短按切換邏輯
-      triggerVibration(15);
-      setActiveTab(prev => prev === "add" ? "dashboard" : "add");
     }
+  };
+
+  // 🌟 短按點擊專屬處理，保證絕對靈敏！
+  const handleClick = (e) => {
+    if (wasSwipeOrLongPress.current || isListening) {
+      wasSwipeOrLongPress.current = false; // 重置
+      return;
+    }
+    triggerVibration(15);
+    setActiveTab(prev => prev === "add" ? "dashboard" : "add");
   };
 
   const handleContextMenu = (e) => e.preventDefault();
@@ -219,6 +236,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
              <div className="text-5xl mb-3">{quickShortcuts[pendingAmountKey].icon}</div>
              <h3 className="font-black text-2xl text-gray-800 mb-1">{quickShortcuts[pendingAmountKey].label}</h3>
              <p className="text-xs text-gray-500 font-bold mb-6 bg-gray-100 px-3 py-1 rounded-full inline-block">{quickShortcuts[pendingAmountKey].category}</p>
+
              <input type="number" autoFocus value={tempAmount} onChange={e => setTempAmount(e.target.value)} placeholder="請輸入金額" className="w-full bg-gray-50 px-4 py-4 rounded-2xl text-center font-black text-3xl mb-8 text-gray-800 tabular-nums border-2 border-blue-100 focus:border-blue-500 outline-none transition-colors" />
              <div className="flex gap-3">
                <button onClick={() => setPendingAmountKey(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95">取消</button>
@@ -235,7 +253,10 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
               <div key={tab.id} className="px-1 shrink-0 relative flex justify-center">
                 
                 {isListening && (
-                  <div className="absolute inset-0 bg-blue-500/30 rounded-[1.5rem] pointer-events-none" style={{ transform: `scale(${rippleScale})`, transition: 'transform 0.1s ease-out' }} />
+                  <div 
+                    className="absolute inset-0 bg-blue-500/30 rounded-[1.5rem] pointer-events-none"
+                    style={{ transform: `scale(${rippleScale})`, transition: 'transform 0.1s ease-out' }}
+                  />
                 )}
 
                 {!isListening && (
@@ -256,8 +277,10 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
                 )}
 
                 <button 
-                  onTouchStart={handleStart} onTouchMove={handleMove} onTouchEnd={handleEnd}
-                  onMouseDown={handleStart} onMouseMove={handleMove} onMouseUp={handleEnd} onMouseLeave={handleEnd}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onClick={handleClick}
                   onContextMenu={handleContextMenu}
                   className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl transition-all relative z-10 select-none touch-none 
                     ${isListening ? 'bg-blue-600 text-white shadow-blue-400' : showRadial ? 'bg-gray-800 text-white scale-90 rotate-[135deg] shadow-gray-900/40' : (activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white active:scale-95")}`}
@@ -267,6 +290,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
               </div>
             );
           }
+          
           const isActive = activeTab === tab.id;
           return (
             <button key={tab.id} onClick={() => { triggerVibration(10); setActiveTab(tab.id); }} className={`flex-1 flex justify-center items-center py-4 rounded-3xl transition-all ${isActive ? "text-blue-600 bg-blue-50 shadow-inner" : "text-gray-400 hover:bg-gray-50"}`}>

@@ -38,6 +38,17 @@ const getSafeCycleRange = (now, startDay, monthOffset = 0) => {
   return { start: start.getTime(), end: end.getTime() };
 };
 
+// 🌟 無敵的日期轉譯器，徹底杜絕歷史清單空白問題！
+const getSafeTime = (tx) => {
+    if (tx && tx.timestamp) return tx.timestamp;
+    if (tx && tx.date) {
+       const cleanStr = String(tx.date).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " "); 
+       const ts = new Date(cleanStr).getTime();
+       if (!isNaN(ts)) return ts;
+    }
+    return 0;
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [familyConfig, setFamilyConfig] = useState(() => safeArrayLS(LS.members).length ? safeArrayLS(LS.members) : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }]);
@@ -446,7 +457,7 @@ function App() {
       let dadStr = ""; let momStr = "";
       
       txCache.forEach(tx => {
-        const ts = parseDateForSort(tx);
+        const ts = getSafeTime(tx);
         if (ts > cutoffTime) {
           const line = `日期:${displayDateClean(tx.date).substring(0,5)} | 類型:${tx.type==='income'?'收入':'支出'} | 項目:${tx.category} | 金額:$${tx.amount} | 對象:${tx.beneficiary || tx.member} | 備註:${tx.desc || '無'}\n`;
           if (tx.member === "爸爸") dadStr += line;
@@ -555,7 +566,7 @@ ${momStr}
     const baseIds = new Set(base.map(t => String(t.id))); 
     const pendingAdds = combinedQueue.filter(q => (q.action === 'ADD' || q.action === 'RESTORE_TX') && q.id && !baseIds.has(String(q.id))); 
     base = [...pendingAdds, ...base]; 
-    return base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
+    return base.sort((a,b) => getSafeTime(b) - getSafeTime(a) || String(b.id).localeCompare(String(a.id)));
   }, [currentUser, txCache, syncQueue]);
 
   const visibleTrash = useMemo(() => {
@@ -565,7 +576,7 @@ ${momStr}
       base = base.filter(t => !combinedQueue.some(q => String(q.id) === String(t.id) && (q.action === 'HARD_DELETE_TX' || q.action === 'RESTORE_TX'))); 
       const pendingDeletes = combinedQueue.filter(q => q.action === 'DELETE_TX'); 
       base = [...pendingDeletes, ...base]; 
-      return base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
+      return base.sort((a,b) => getSafeTime(b) - getSafeTime(a) || String(b.id).localeCompare(String(a.id)));
   }, [currentUser, trashCache, syncQueue]);
 
   const pendingMap = useMemo(() => { 
@@ -614,26 +625,32 @@ ${momStr}
     setActiveTab("dashboard"); appendToQueueAndSync(completeTxs); 
   };
   
-  // 🌟 修復 3：刪除巨型 JSON 編輯紀錄，還給 Google Sheet 清爽版面
+  // 🌟 徹底解決 Google Sheet 塞爆問題：完全改回舊版精簡陣列格式！
   const handleUpdateTx = async (updatedTx) => { 
     triggerVibration([20, 40, 20]); 
     let fd = updatedTx.date; if (fd && fd.includes("T")) fd = fd.replace("T"," ").replace(/-/g,"/").slice(0, 16); 
-    const payload = { ...updatedTx, date: fd, isOffline: !navigator.onLine, action: "UPDATE_TX", lastModified: updatedTx.lastModified || 0 };
-    delete payload.editHistory; 
-    delete payload.EditHistory;
-    appendToQueueAndSync([payload]); 
-    setEditingTx(null); 
+    
+    // 這裡就是「舊的格式記錄」，只存入最短的陣列資料！
+    const oldArrayFormat = [updatedTx.date, updatedTx.category, updatedTx.amount, updatedTx.member, updatedTx.desc, updatedTx.type, updatedTx.recorder, updatedTx.id, updatedTx.groupId, updatedTx.parentDesc, updatedTx.beneficiary];
+    
+    const newHist = [...(updatedTx.editHistory || []), { time: nowStr(), action: "修改明細", oldContent: JSON.stringify(oldArrayFormat) }]; 
+    const payload = { ...updatedTx, date: fd, editHistory: newHist, isOffline: !navigator.onLine, action: "UPDATE_TX", lastModified: updatedTx.lastModified || 0 };
+    
+    delete payload.EditHistory; // 徹底刪除重複字串，還給試算表乾淨的版面
+    appendToQueueAndSync([payload]); setEditingTx(null); 
   };
   
-  // 🌟 修復 3：同上，移除巨型 JSON
   const handleUpdateGroupParent = async (groupData) => { 
     triggerVibration([20, 40, 20]); 
     let fd = groupData.date; if (fd && fd.includes("T")) fd = fd.replace("T"," ").replace(/-/g,"/").slice(0, 16); 
     let currentQ = [...(syncQueue || [])].filter(Boolean); const newOpId = Date.now() + '_' + Math.random().toString(36).substring(2, 9); 
-    const newItem = { ...groupData, date: fd, isOffline: !navigator.onLine, action: "UPDATE_GROUP_PARENT", opId: newOpId }; 
-    delete newItem.editHistory;
-    delete newItem.EditHistory;
+    
+    const newHist = [...(groupData.editHistory || []), { time: nowStr(), action: "修改明細", oldContent: `舊標題/備註: ${groupData.parentTitle} / ${groupData.parentDesc}` }]; 
+    const newItem = { ...groupData, date: fd, editHistory: newHist, isOffline: !navigator.onLine, action: "UPDATE_GROUP_PARENT", opId: newOpId }; 
+    
+    delete newItem.EditHistory; // 徹底刪除重複字串
     delete newItem.children;
+
     const idx = currentQ.findIndex(p => p.action === "UPDATE_GROUP_PARENT" && String(p.groupId) === String(newItem.groupId)); 
     if (idx >= 0) { currentQ[idx] = newItem; } else { currentQ.push(newItem); } 
     setSyncQueue(currentQ); localStorage.setItem(LS.pending, JSON.stringify(currentQ)); setEditingGroup(null); 
@@ -657,7 +674,7 @@ ${momStr}
     let income = 0; let expense = 0; 
     (myTransactions || []).forEach(t => { 
       if (pendingMap[t.id] === 'DELETE_TX' || pendingMap[t.id] === 'HARD_DELETE_TX') return; 
-      const txTime = parseDateForSort(t); 
+      const txTime = getSafeTime(t); 
       if (txTime >= currentCycleRange.start && txTime <= currentCycleRange.end) { 
         if (t.type === "income") income += (Number(t.amount) || 0); 
         if (t.type === "expense") expense += (Number(t.amount) || 0); 
@@ -690,14 +707,14 @@ ${momStr}
   
   const allGroupedAndSorted = useMemo(() => { 
     return groupTransactions(visibleTransactions || []).sort((a, b) => { 
-      const tA = parseDateForSort(a); const tB = parseDateForSort(b); 
+      const tA = getSafeTime(a); const tB = getSafeTime(b); 
       return tB - tA || String(b.isGroup ? b.children[0].id : b.id).localeCompare(String(a.isGroup ? a.children[0].id : a.id)); 
     }); 
   }, [visibleTransactions]);
 
+  // 🌟 歷史紀錄列表的核心邏輯 (加入 trim 過濾)
   const filteredHistoryGroups = useMemo(() => {
     if (!currentUser) return []; 
-    // 🌟 修復 2：加上 `.trim()` 確保爸爸媽媽的歷史紀錄不會因為空白字元消失
     let list = (allGroupedAndSorted || []).filter(item => String(item.member || "").trim() === String(currentUser.name || "").trim()); 
     if (historyTypeFilter !== "all") list = list.filter(item => item.type === historyTypeFilter);
     
@@ -732,13 +749,13 @@ ${momStr}
       let filteredList = []; 
       for (const item of list) { 
         if (item.isGroup) { 
-          const validChildren = (item.children || []).filter(child => { const txTime = parseDateForSort(child); return txTime >= startTime && txTime <= endTime; }); 
+          const validChildren = (item.children || []).filter(child => { const txTime = getSafeTime(child); return txTime >= startTime && txTime <= endTime; }); 
           if (validChildren.length > 0) { 
             let newAmount = 0; validChildren.forEach(c => { if(pendingMap[c.id] !== 'DELETE_TX' && pendingMap[c.id] !== 'HARD_DELETE_TX') newAmount += Number(c.amount || 0); }); 
             filteredList.push({ ...item, children: validChildren, amount: newAmount, date: validChildren[0].date }); 
           } 
         } else { 
-          const txTime = parseDateForSort(item); 
+          const txTime = getSafeTime(item); 
           if (txTime >= startTime && txTime <= endTime) filteredList.push(item); 
         } 
       } 
@@ -870,7 +887,7 @@ ${momStr}
             </div>
             <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
               <div className={`font-black tabular-nums text-lg leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(group.amount||0).toLocaleString()}</div>
-              {group.recorder && group.recorder !== group.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {group.recorder}代記</div> )}
+              {group.recorder && group.recorder !== group.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "妈妈" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {group.recorder}代記</div> )}
             </div>
             {allowEdit && !isPendingDeleteGroup && ( 
               <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingGroup(group); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button> 
@@ -1117,7 +1134,7 @@ ${momStr}
               <h3 className="font-black text-lg mb-1 text-gray-800 pr-8 leading-tight">{analysisDetailData.title}</h3>
               <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-100 px-2 py-1 rounded-md self-start">共 {analysisDetailData.txs.length} 筆明細</p>
               <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
-                  {groupTransactions(analysisDetailData.txs).sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id))).map(item => renderItemOrGroup(item, false))}
+                  {groupTransactions(analysisDetailData.txs).sort((a,b) => getSafeTime(b) - getSafeTime(a) || String(b.id).localeCompare(String(a.id))).map(item => renderItemOrGroup(item, false))}
               </div>
           </div>
         </div>
