@@ -1,4 +1,3 @@
-// src/hooks/useSyncEngine.js
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { STORE_NAME } from '../utils/constants';
 import { saveToIndexedDB, loadFromIndexedDB, safeNumberLS } from '../utils/helpers';
@@ -17,7 +16,8 @@ export const useSyncEngine = ({
 }) => {
   const [syncQueue, setSyncQueue] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastServerTime, setLastServerTime] = useState(() => safeNumberLS('last_server_time_v1', -1));
+  // 恢復為標準的 0
+  const [lastServerTime, setLastServerTime] = useState(() => safeNumberLS('last_server_time_v1', 0));
 
   const syncQueueRef = useRef(syncQueue);
   const isSyncingRef = useRef(false);
@@ -28,14 +28,12 @@ export const useSyncEngine = ({
   useEffect(() => { syncQueueRef.current = syncQueue; }, [syncQueue]);
   useEffect(() => { lastServerTimeRef.current = lastServerTime; }, [lastServerTime]);
 
-  // 初始載入本地待同步佇列
   useEffect(() => {
     loadFromIndexedDB("sync_queue").then(data => { 
       if (data) { setSyncQueue(data); syncQueueRef.current = data; } 
     });
   }, []);
 
-  // 🚀 核心上傳引擎：智慧分批切割 + 迴圈上傳
   const syncManager = useCallback(async (isSilent = false) => {
     if (!navigator.onLine || !deviceValid() || isSyncingRef.current) return;
     isSyncingRef.current = true; 
@@ -80,7 +78,10 @@ export const useSyncEngine = ({
               saveToIndexedDB(STORE_NAME, filteredTx);
             }
 
-            if (res.transactions) applyCloudData(res, isDelta);
+            if (res.transactions) {
+              applyCloudData(res, isDelta);
+              if (res.serverTime) setLastServerTime(res.serverTime);
+            }
 
             const sentIds = currentBatch.map(q => q.id).filter(Boolean);
             const sentGroupIds = currentBatch.map(q => q.groupId).filter(Boolean);
@@ -120,6 +121,7 @@ export const useSyncEngine = ({
          
          if (res.transactions) { 
             applyCloudData(res, isDelta); 
+            if (res.serverTime) setLastServerTime(res.serverTime);
             if (!isSilent) showStatus("success", "🔄 已載入雲端最新資料"); 
          } else {
             if (!isSilent) showStatus("success", "✅ 已是最新資料");
@@ -133,7 +135,6 @@ export const useSyncEngine = ({
     }
   }, [forceReloginForToken, applyCloudData, showStatus, getDeviceToken]);
 
-  // 🚀 背景靜默輪詢引擎
   const silentPollEngine = useCallback(async () => {
     if (!navigator.onLine || !currentUser || isSyncingRef.current) { pollingTimerRef.current = setTimeout(silentPollEngine, 5000); return; }
     if (!deviceValid()) { forceReloginForToken(); return; }
@@ -141,7 +142,10 @@ export const useSyncEngine = ({
       const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true });
       if (data.result === "success") {
         const isDelta = lastServerTimeRef.current > 0;
-        if (applyCloudData(data, isDelta)) showStatus("success", "🔄 已載入雲端最新資料");
+        if (data.transactions) {
+           if (applyCloudData(data, isDelta)) showStatus("success", "🔄 已載入雲端最新資料");
+           if (data.serverTime) setLastServerTime(data.serverTime);
+        }
       }
     } catch (e) {
       if (e.message && (e.message.includes("憑證") || e.message.includes("過期"))) forceReloginForToken();
@@ -149,7 +153,6 @@ export const useSyncEngine = ({
     pollingTimerRef.current = setTimeout(silentPollEngine, 5000);
   }, [forceReloginForToken, applyCloudData, showStatus, currentUser]);
 
-  // 🚀 同步防抖控制器
   const requestSync = useCallback((isSilent = false, immediate = false) => {
     if (!navigator.onLine) return;
     if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
@@ -159,7 +162,6 @@ export const useSyncEngine = ({
   const processRef = useRef(requestSync);
   useEffect(() => { processRef.current = requestSync; }, [requestSync]);
 
-  // 🚀 自動輪詢監聽器
   useEffect(() => {
     if (isOnline && currentUser) {
       if (syncQueue.length === 0) silentPollEngine();
@@ -168,7 +170,6 @@ export const useSyncEngine = ({
     return () => { if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current); };
   }, [isOnline, currentUser, silentPollEngine, syncQueue.length]);
 
-  // 🚀 本地佇列推入引擎
   const appendToQueueAndSync = useCallback((newItemList) => {
     setSyncQueue(prevQueue => {
       let currentQ = [...prevQueue];

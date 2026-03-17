@@ -4,9 +4,11 @@ import { APP_VERSION, STORE_NAME, LS, CHART_COLORS } from './utils/constants';
 import { initIndexedDB, saveToIndexedDB, loadFromIndexedDB, getParentCat, getChildCat, getBenArray, getBenBadgeStyle, safeParse, safeArrayLS, safeStringLS, safeNumberLS, nowStr, displayDateClean, formatDateOnly, parseDateForSort, getSafeCycleRange } from './utils/helpers';
 import { gasUrl, postGAS, getDeviceToken, deviceValid, setDeviceToken, clearDeviceToken, getBioKey, isDeviceBioBound, getBioFailCount, setBioFailCount, getBioLockedUntil, setBioLockedUntil, clearBioFail, verifyPinOnline, saveLocalPinHash, unlockWithPinLocal } from './utils/api';
 
-// 🚀 引入模組化大腦
+// 🚀 引入解耦的 4 大模組化大腦
 import { useSyncEngine } from './hooks/useSyncEngine';
 import { useAuth } from './hooks/useAuth';
+import { useTransactions } from './hooks/useTransactions';
+import { useAI } from './hooks/useAI';
 
 import BottomNav from './components/BottomNav';
 import Header from './components/Header';
@@ -51,11 +53,9 @@ function App() {
   const [txCache, setTxCache] = useState([]);
   const [trashCache, setTrashCache] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
-
   const [snapshotsCache, setSnapshotsCache] = useState(() => { try { return JSON.parse(localStorage.getItem('snapshots_cache')) || {}; } catch { return {}; } });
-  const [aiEvalData, setAiEvalData] = useState(() => { try { return JSON.parse(localStorage.getItem('ai_eval_data')) || null; } catch { return null; } });
-  const [isAIEvaluating, setIsAIEvaluating] = useState(false);
-  const [sysConfig, setSysConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('sys_config')) || { apiKey: "", prompt: "" }; } catch { return { apiKey: "", prompt: "" }; } });
+
+  // 🗑️ 已移除重複宣告的 aiEvalData, sysConfig, isAIEvaluating
 
   const [editingTx, setEditingTx] = useState(null);
   const [editingGroup, setEditingGroup] = useState(null);
@@ -65,6 +65,8 @@ function App() {
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState(null);
   const [showConfirmEmptyTrash, setShowConfirmEmptyTrash] = useState(false);
+  
+  // 歷史搜尋與分析頁狀態
   const [historySearch, setHistorySearch] = useState("");
   const [debouncedHistorySearch, setDebouncedHistorySearch] = useState("");
   const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
@@ -79,6 +81,7 @@ function App() {
   const [selectedAnalysisLevel1, setSelectedAnalysisLevel1] = useState(null);
   const [selectedAnalysisLevel2, setSelectedAnalysisLevel2] = useState(null);
   const [animTrigger, setAnimTrigger] = useState(false);
+  
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [unackedProxyTxs, setUnackedProxyTxs] = useState([]);
@@ -87,9 +90,6 @@ function App() {
   const trashCacheRef = useRef(trashCache);
   useEffect(() => { txCacheRef.current = txCache; }, [txCache]);
   useEffect(() => { trashCacheRef.current = trashCache; }, [trashCache]);
-  
-  useEffect(() => localStorage.setItem('ai_eval_data', JSON.stringify(aiEvalData || {})), [aiEvalData]);
-  useEffect(() => localStorage.setItem('sys_config', JSON.stringify(sysConfig || {})), [sysConfig]);
 
   useEffect(() => {
     loadFromIndexedDB(STORE_NAME).then(data => { if (data && data.length > 0) setTxCache(data); });
@@ -105,24 +105,14 @@ function App() {
     setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000);
   }, []);
 
-  // 🚀 掛載 Auth 認證模組
+  // 🚀 1. 掛載 Auth 認證模組
   const {
-    currentUser, setCurrentUser,
-    selectingUser, setSelectingUser,
-    pinInput, setPinInput,
-    fallbackToPin, setFallbackToPin,
-    biometricAvailable,
-    showBootstrapModal, setShowBootstrapModal,
-    bootstrapSecret, setBootstrapSecret,
-    showUnbindModal, setShowUnbindModal,
-    unbindPin, setUnbindPin,
-    showChangePinModal, setShowChangePinModal,
-    forceReloginForToken,
-    handleBioLoginLocal,
-    handleUserClick,
-    bindDeviceBio,
-    unbindDeviceBio,
-    bioBound
+    currentUser, setCurrentUser, selectingUser, setSelectingUser,
+    pinInput, setPinInput, fallbackToPin, setFallbackToPin, biometricAvailable,
+    showBootstrapModal, setShowBootstrapModal, bootstrapSecret, setBootstrapSecret,
+    showUnbindModal, setShowUnbindModal, unbindPin, setUnbindPin,
+    showChangePinModal, setShowChangePinModal, forceReloginForToken,
+    handleBioLoginLocal, handleUserClick, bindDeviceBio, unbindDeviceBio, bioBound
   } = useAuth({ isOnline, showStatus, setLoadingCard, triggerVibration });
 
   const applyCloudData = useCallback((data, isDelta = false) => {
@@ -159,7 +149,7 @@ function App() {
         category: String(t.category || t["類別"] || "其他"),
         date: rawDate, timestamp: ts,
         member: String(t.member || t["成員"] || "未知").trim(),
-        recorder: String(t.recorder || t["記錄者"] || "系統").trim(),
+        recorder: String(t.recorder || t["記錄者"] || "系统").trim(),
         desc: String(t.desc || t["備註"] || ""),
         type: String(t.type || t["類型"] || "expense"),
         groupId: String(t.groupId || t["GroupID"] || ""),
@@ -202,33 +192,34 @@ function App() {
     setLastSyncText(nowStr());
 
     if (data.greetings) setGreetingsCache(data.greetings);
-    if (data.aiData) setAiEvalData(data.aiData);
-    if (data.sysConfig) setSysConfig(data.sysConfig);
     if (data.snapshots) { setSnapshotsCache(data.snapshots); localStorage.setItem('snapshots_cache', JSON.stringify(data.snapshots)); }
 
     return changed;
   }, []);
 
-  // 🚀 掛載 Sync 同步模組
+  // 🚀 2. 掛載 Sync 同步模組
   const {
-    syncQueue,
-    setSyncQueue,
-    isSyncing,
-    lastServerTime,
-    setLastServerTime,
-    requestSync,
-    appendToQueueAndSync
+    syncQueue, setSyncQueue, isSyncing, lastServerTime, setLastServerTime,
+    requestSync, appendToQueueAndSync
   } = useSyncEngine({
-    currentUser,
-    isOnline,
-    txCacheRef,
-    trashCacheRef,
-    setTxCache,
-    setTrashCache,
-    applyCloudData,
-    showStatus,
-    forceReloginForToken
+    currentUser, isOnline, txCacheRef, trashCacheRef, setTxCache, setTrashCache,
+    applyCloudData, showStatus, forceReloginForToken
   });
+
+  // 🚀 3. 掛載 Transactions 資料庫模組
+  const {
+    pendingMap, visibleTransactions, visibleTrash, myTransactions,
+    handleAdd, handleUpdateTx, handleUpdateGroupParent, handleDeleteTx,
+    handleRestoreTrash, handleHardDeleteTrash, handleEmptyTrash
+  } = useTransactions({
+    currentUser, txCache, trashCache, syncQueue, appendToQueueAndSync, triggerVibration, showStatus,
+    setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal
+  });
+
+  // 🚀 4. 掛載 AI 智慧模組
+  const {
+    aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval
+  } = useAI({ currentUser, isOnline, txCache, showStatus });
 
   useEffect(() => { if (activeTab === "analysis") { setAnimTrigger(false); const timer = setTimeout(() => setAnimTrigger(true), 50); return () => clearTimeout(timer); } }, [activeTab, analysisType, analysisDateFilter]);
 
@@ -280,211 +271,6 @@ function App() {
       if (msg.includes("憑證") || msg.includes("過期")) { showStatus("error", "❌ 雲端憑證無效，請重新綁定"); forceReloginForToken(); } else { showStatus("error", msg); }
     } finally { setLoadingCard({ show:false, text:"" }); }
   };
-
-  const executeFrontendAI = async (isManual = false) => {
-    if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
-      if (isManual) showStatus("error", "尚未設定 API Key");
-      return;
-    }
-
-    setIsAIEvaluating(true);
-    if (isManual) showStatus("info", "🤖 正在連線 AI 分析...");
-
-    try {
-      const cutoffTime = Date.now() - (180 * 24 * 60 * 60 * 1000);
-      let dadStr = ""; let momStr = "";
-
-      txCache.forEach(tx => {
-        const ts = parseDateForSort(tx);
-        if (ts > cutoffTime) {
-          const line = `日期:${displayDateClean(tx.date).substring(0,5)} | 類型:${tx.type==='income'?'收入':'支出'} | 項目:${tx.category} | 金額:$${tx.amount} | 對象:${tx.beneficiary || tx.member} | 備註:${tx.desc || '無'}\n`;
-          if (String(tx.member).trim() === "爸爸") dadStr += line;
-          else if (String(tx.member).trim() === "媽媽" || String(tx.member).trim() === "妈妈") momStr += line;
-        }
-      });
-
-      const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財教練。請針對以下帳單給予財務建議。";
-
-      const finalPrompt = `
-      ${promptTemplate}
-
-      【以下為帳本資料 (近半年歷史，請大膽抓漏)】：
-      爸爸資料：
-      ${dadStr}
-
-      媽媽資料：
-      ${momStr}
-      `;
-
-      const reqBody = {
-        contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
-        generationConfig: { responseMimeType: "application/json" }
-      };
-
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${sysConfig.apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody)
-      });
-
-      const jsonRes = await response.json();
-
-      if (jsonRes.error) throw new Error(jsonRes.error.message);
-      if (!jsonRes.candidates || jsonRes.candidates.length === 0) throw new Error("AI 沒有回傳內容或 API 暫時無回應");
-
-      const aiText = jsonRes.candidates[0].content.parts[0].text;
-
-      const match = aiText.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error("AI 回傳格式錯誤 (非 JSON)");
-
-      const parsedResult = JSON.parse(match[0]);
-
-      const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
-      parsedResult.lastUpdated = `${todayStr} ${new Date().toLocaleTimeString('zh-TW', { hour12: false })}`;
-
-      setAiEvalData(parsedResult);
-      postGAS({ action: "SAVE_AI_RESULT", aiData: parsedResult, deviceToken: getDeviceToken() }).catch(()=>{});
-
-      if (isManual) showStatus("success", "✨ AI 深度分析完成！");
-
-    } catch (e) {
-      if (isManual) showStatus("error", `❌ AI 錯誤: ${e.message}`);
-    } finally {
-      setIsAIEvaluating(false);
-    }
-  };
-
-  const handleForceAIEval = () => executeFrontendAI(true);
-
-  const hasTriggeredAutoAI = useRef(false);
-  useEffect(() => {
-    if (currentUser && isOnline && txCache.length > 0 && sysConfig.apiKey && !hasTriggeredAutoAI.current && deviceValid()) {
-      const checkTimer = setTimeout(() => {
-        hasTriggeredAutoAI.current = true;
-        let shouldTrigger = false;
-
-        if (!aiEvalData || !aiEvalData.lastUpdated) {
-          shouldTrigger = true;
-        } else {
-          const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
-          const lastEvalDateStr = aiEvalData.lastUpdated.split(' ')[0];
-
-          if (lastEvalDateStr !== todayStr) {
-            const lastTimeMs = new Date(aiEvalData.lastUpdated.replace(/-/g, "/")).getTime();
-            const latestTxTime = txCache.reduce((max, tx) => Math.max(max, tx.lastModified || tx.timestamp || 0), 0);
-
-            if (latestTxTime > lastTimeMs) {
-              shouldTrigger = true;
-            }
-          }
-        }
-
-        if (shouldTrigger) {
-          executeFrontendAI(false);
-        }
-      }, 5000);
-
-      return () => clearTimeout(checkTimer);
-    }
-  }, [currentUser, isOnline, txCache, sysConfig, aiEvalData]);
-
-  const visibleTransactions = useMemo(() => {
-    if (!currentUser) return [];
-    let base = [...(txCache || [])].filter(t => t && t.id);
-    const combinedQueue = [...syncQueue].filter(Boolean);
-    base = base.filter(t => !combinedQueue.some(q => String(q.id) === String(t.id) && (q.action === 'DELETE_TX' || q.action === 'HARD_DELETE_TX')));
-    base = base.map(t => {
-      let mod = { ...t };
-      const pendingGUpdate = combinedQueue.find(q => String(q.groupId) === String(t.groupId) && q.action === 'UPDATE_GROUP_PARENT');
-      if (pendingGUpdate) { mod.date = pendingGUpdate.date; mod.parentDesc = pendingGUpdate.parentDesc; }
-      const pendingUpdate = combinedQueue.find(q => String(q.id) === String(t.id) && q.action === 'UPDATE_TX');
-      if (pendingUpdate) mod = { ...mod, ...pendingUpdate }; return mod;
-    });
-    const baseIds = new Set(base.map(t => String(t.id)));
-    const pendingAdds = combinedQueue.filter(q => (q.action === 'ADD' || q.action === 'RESTORE_TX') && q.id && !baseIds.has(String(q.id)));
-    base = [...pendingAdds, ...base];
-    return base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
-  }, [currentUser, txCache, syncQueue]);
-
-  const visibleTrash = useMemo(() => {
-    if (!currentUser) return [];
-    let base = [...(trashCache || [])].filter(t => t && t.id);
-    const combinedQueue = [...syncQueue].filter(Boolean);
-    base = base.filter(t => !combinedQueue.some(q => String(q.id) === String(t.id) && (q.action === 'HARD_DELETE_TX' || q.action === 'RESTORE_TX')));
-    const pendingDeletes = combinedQueue.filter(q => q.action === 'DELETE_TX');
-    base = [...pendingDeletes, ...base];
-    return base.sort((a,b) => parseDateForSort(b) - parseDateForSort(a) || String(b.id).localeCompare(String(a.id)));
-  }, [currentUser, trashCache, syncQueue]);
-
-  const pendingMap = useMemo(() => {
-    const map = {};
-    [...syncQueue].filter(Boolean).forEach(item => {
-      if (item.isOffline) {
-        if (item.id && item.action !== "UPDATE_GROUP_PARENT") map[item.id] = item.action;
-        if (item.groupId && item.action === "UPDATE_GROUP_PARENT") map[item.groupId] = item.action;
-      }
-    });
-    return map;
-  }, [syncQueue]);
-
-  const myTransactions = useMemo(() => {
-    if (!currentUser) return [];
-    return (visibleTransactions || []).filter(t => String(t.member).trim() === String(currentUser.name).trim());
-  }, [visibleTransactions, currentUser]);
-
-  const handleAdd = async (newTxs) => {
-    triggerVibration([20, 40, 20]);
-    const baseDate = newTxs[0].date ? newTxs[0].date.replace("T"," ").replace(/-/g,"/") : nowStr();
-    const baseTimestamp = Date.now(); const isMulti = newTxs.length > 1; const randomSuffix = () => Math.random().toString(36).substring(2, 8);
-    const groupId = isMulti ? `G_${baseTimestamp}_${currentUser.name}_${randomSuffix()}` : ""; const parentDesc = isMulti ? newTxs[0].parentDesc : "";
-    const isOfflineOp = !navigator.onLine;
-    const completeTxs = newTxs.map((tx, idx) => ({ ...tx, date: baseDate, recorder: currentUser.name, id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`, groupId, parentDesc, isOffline: isOfflineOp, action: "ADD" }));
-    setActiveTab("dashboard"); appendToQueueAndSync(completeTxs);
-  };
-
-  const handleUpdateTx = async (updatedTx) => {
-    triggerVibration([20, 40, 20]);
-    let fd = updatedTx.date; if (fd && fd.includes("T")) fd = fd.replace("T"," ").replace(/-/g,"/").slice(0, 16);
-    const payload = { ...updatedTx, date: fd, editHistory: [], isOffline: !navigator.onLine, action: "UPDATE_TX", lastModified: updatedTx.lastModified || 0 };
-    delete payload.EditHistory;
-    appendToQueueAndSync([payload]); setEditingTx(null);
-  };
-
-  const handleUpdateGroupParent = async (groupData) => {
-    triggerVibration([20, 40, 20]);
-    let fd = groupData.date; if (fd && fd.includes("T")) fd = fd.replace("T"," ").replace(/-/g,"/").slice(0, 16);
-    
-    setSyncQueue(prevQueue => {
-      let currentQ = [...prevQueue];
-      const newOpId = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-      const newItem = { ...groupData, date: fd, editHistory: [], isOffline: !navigator.onLine, action: "UPDATE_GROUP_PARENT", opId: newOpId };
-      delete newItem.EditHistory;
-      delete newItem.children;
-      
-      const idx = currentQ.findIndex(p => p.action === "UPDATE_GROUP_PARENT" && String(p.groupId) === String(newItem.groupId));
-      if (idx >= 0) { currentQ[idx] = newItem; } else { currentQ.push(newItem); }
-      
-      saveToIndexedDB("sync_queue", currentQ);
-      return currentQ;
-    });
-    
-    setEditingGroup(null);
-    if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); else requestSync(false, false);
-  };
-
-  const handleDeleteTx = async (id) => {
-    triggerVibration([30, 50, 30]);
-    const txToDelete = (visibleTransactions || []).find(t => String(t.id) === String(id)) || (txCache || []).find(t => String(t.id) === String(id));
-    if (!txToDelete) return;
-    appendToQueueAndSync([{ ...txToDelete, isOffline: !navigator.onLine, action: "DELETE_TX", lastModified: txToDelete.lastModified || 0 }]); setEditingTx(null);
-  };
-
-  const handleRestoreTrash = (tx) => { triggerVibration(15); const newOpId = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-    appendToQueueAndSync([{ ...tx, isOffline: !navigator.onLine, action: "RESTORE_TX", opId: newOpId }]); showStatus("success", "🔄 已加入復原排程"); };
-  const handleHardDeleteTrash = (tx) => { triggerVibration([30, 50, 30]); const newOpId = Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-    appendToQueueAndSync([{ ...tx, isOffline: !navigator.onLine, action: "HARD_DELETE_TX", opId: newOpId }]); setConfirmHardDeleteId(null); };
-  const handleEmptyTrash = () => { triggerVibration([50, 50, 50]); const ops = visibleTrash.map(tx => ({ ...tx, isOffline: !navigator.onLine, action: "HARD_DELETE_TX", opId: Date.now() + '_' + Math.random().toString(36).substring(2, 9) }));
-    appendToQueueAndSync(ops); setShowConfirmEmptyTrash(false); setShowTrashModal(false); showStatus("success", "🗑️ 已清空資源回收桶"); };
 
   const currentCycleRange = useMemo(() => { return getSafeCycleRange(new Date(), billingStartDay, 0); }, [billingStartDay]);
 
@@ -652,10 +438,12 @@ function App() {
     return { income: inc, expense: exp, balance: inc - exp };
   }, [filteredHistoryGroups, pendingMap]);
 
-  // 🚀 補回剛剛遺失的核心渲染工具！
-  const toggleGroup = (gId) => { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); };
+  function toggleGroup(gId) { 
+    triggerVibration(10); 
+    setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); 
+  }
 
-  const renderStandaloneCard = (tx, allowEdit = true) => {
+  function renderStandaloneCard(tx, allowEdit = true) {
     const benArray = getBenArray(tx.beneficiary, tx.member);
     const pAction = pendingMap[tx.id];
     const hasEditRecord = auditLogs.some(log => String(log.txId) === String(tx.id));
@@ -663,15 +451,13 @@ function App() {
     return (
       <div key={tx.id} className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' || pAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
         {pAction && (
-          <div className={`shrink-0 w-6 flex items-center justify-center rounded-2xl shadow-sm border ${pAction==='ADD' || 
-          pAction === 'RESTORE_TX' ?'bg-green-50 border-green-200 text-green-700':pAction==='UPDATE_TX'?'bg-blue-50 border-blue-200 text-blue-700':'bg-red-50 border-red-200 text-red-700'}`}>
+          <div className={`shrink-0 w-6 flex items-center justify-center rounded-2xl shadow-sm border ${pAction==='ADD' || pAction === 'RESTORE_TX' ?'bg-green-50 border-green-200 text-green-700':pAction==='UPDATE_TX'?'bg-blue-50 border-blue-200 text-blue-700':'bg-red-50 border-red-200 text-red-700'}`}>
             <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{(pAction==='ADD' || pAction === 'RESTORE_TX')?'待處理':pAction==='UPDATE_TX'?'待處理':'待處理'}</span>
           </div>
         )}
         <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-start sm:items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
           <div className="relative shrink-0 mt-1 sm:mt-0">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{tx.type==="income" ?
-            "收入" : "支出"}</div>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{tx.type==="income" ? "收入" : "支出"}</div>
             {tx.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{tx.member}</div> )}
           </div>
           <div className="flex-1 min-w-0 pl-1 pt-1">
@@ -699,9 +485,9 @@ function App() {
         </div>
       </div>
     );
-  };
+  }
 
-  const renderGroupCard = (group, allowEdit = true) => {
+  function renderGroupCard(group, allowEdit = true) {
     const isExp = !!expandedGroups[group.groupId];
     const allBens = new Set();
     (group.children || []).forEach(c => { if(c.beneficiary) String(c.beneficiary).split(",").filter(Boolean).forEach(b => allBens.add(b.trim())); });
@@ -714,16 +500,14 @@ function App() {
     return (
       <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${isPendingDeleteGroup ? 'opacity-40 grayscale' : 'opacity-100'}`}>
         {(gAction || hasChildAction) && (
-          <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': isPendingDeleteGroup ? 
-          'bg-red-50 border-red-200 text-red-700' : hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
+          <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': isPendingDeleteGroup ? 'bg-red-50 border-red-200 text-red-700' : hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
             <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{isPendingDeleteGroup?'待處理':gAction==='UPDATE_GROUP_PARENT'?'待處理': '待處理'}</span>
           </div>
         )}
         <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
           <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-start sm:items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
             <div className="relative shrink-0 mt-1 sm:mt-0">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{group.type==="income" ? 
-              "收入" : "支出"}</div>
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{group.type==="income" ? "收入" : "支出"}</div>
               <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
               {group.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div> )}
             </div>
@@ -758,8 +542,7 @@ function App() {
                 const childBenArray = getBenArray(child.beneficiary, group.member);
                 const cAction = pendingMap[child.id];
                 return (
-                  <div key={child.id} className={`w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden transition-opacity ${cAction === 'DELETE_TX' || 
-                  cAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+                  <div key={child.id} className={`w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden transition-opacity ${cAction === 'DELETE_TX' || cAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
                     {cAction && <div className={`absolute left-0 top-0 h-full w-1 ${cAction==='ADD'?'bg-green-400':cAction==='UPDATE_TX'?'bg-blue-400':'bg-red-400'}`}></div>}
                     <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">{idx + 1}</div>
                     <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
@@ -786,15 +569,14 @@ function App() {
         </div>
       </div>
     );
-  };
+  }
 
-  const renderItemOrGroup = (item, allowEdit) => {
+  function renderItemOrGroup(item, allowEdit) {
     if (item.isGroup) return renderGroupCard(item, allowEdit);
     return renderStandaloneCard(item, allowEdit);
-  };
+  }
 
   const setQuickDateFilter = (filterVal) => { triggerVibration(10); setHistoryDateFilter(filterVal); setAnalysisDateFilter(filterVal); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); };
-
   const isHistoryFiltered = debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all";
 
   if (!currentUser) {
@@ -838,8 +620,7 @@ function App() {
                     setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." });
                     const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: loginCachePassword });
                     if (res.result !== "success") throw new Error("雲端密碼錯誤");
-                    // 🚀 執行清理時，植入 -1 萬能鑰匙
-                    setTxCache([]); setSyncQueue([]); setLastServerTime(-1); localStorage.clear(); localStorage.setItem('last_server_time_v1', '-1');
+                    setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); localStorage.setItem('last_server_time_v1', '0');
                     const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear();
                     if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); }
                     if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); }
@@ -1047,7 +828,7 @@ function App() {
                   setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." });
                   const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword });
                   if (res.result !== "success") throw new Error("雲端密碼錯誤");
-                  setTxCache([]); setSyncQueue([]); localStorage.clear(); localStorage.setItem('last_server_time_v1', '-1');
+                  setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); localStorage.setItem('last_server_time_v1', '0');
                   const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear();
                   if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); }
                   if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); }
