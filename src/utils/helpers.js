@@ -1,148 +1,144 @@
-import { DB_NAME, DB_VERSION, STORE_NAME } from './constants.js';
+import { STORE_NAME, LS } from './constants';
 
-// 將 DB_VERSION 升級為 2，並新增 trash_store 資源回收桶專用表
-export function initIndexedDB() {
-  return new Promise((resolve, reject) => {
-    // 強制使用版本 2 來觸發更新
-    const req = indexedDB.open(DB_NAME, 2); 
-    req.onerror = () => reject("IndexedDB Error");
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains("trash_store")) {
-        db.createObjectStore("trash_store", { keyPath: "id" });
-      }
-    };
-  });
-}
-
-// 支援指定 storeName 存入資料
-export async function saveToIndexedDB(storeName, data) {
-  try {
-    const db = await initIndexedDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, "readwrite");
-      const store = tx.objectStore(storeName);
-      store.clear();
-      (data || []).filter(i => i && i.id).forEach(i => store.put(i));
-      tx.oncomplete = resolve;
-      tx.onerror = reject;
-    });
-  } catch (e) {}
-}
-
-// 支援指定 storeName 讀取資料
-export async function loadFromIndexedDB(storeName) {
-  try {
-    const db = await initIndexedDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(storeName, "readonly");
-      const store = tx.objectStore(storeName);
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject([]);
-    });
-  } catch (e) {
-    return [];
-  }
-}
-
-export const getParentCat = c => {
-  if (!c) return "其他";
-  if (String(c).includes('/')) return String(c).split('/')[0];
-  return { "餐飲": "食", "交通": "行", "購物": "衣", "住": "居家", "水電": "居家", "育": "教育", "樂": "娛樂", "薪資": "收入", "投資": "理財", "雜項": "其他" }[c] || "其他";
-};
-
-export const getChildCat = c => String(c).includes('/') ? String(c).substring(String(c).indexOf('/') + 1) : c;
-
-export const getBenArray = (b, m) => {
-  if (!b) return [];
-  const a = Array.from(new Set(String(b).split(",").filter(Boolean).map(s => s.trim())));
-  let f = a;
-  if (a.includes("爸爸") && a.includes("媽媽") && a.includes("兒子")) f = ["全家", ...a.filter(x => x !== "爸爸" && x !== "媽媽" && x !== "兒子")];
-  if (f.length === 1 && f[0] === m) return [];
-  return f;
-};
-
-export const getBenBadgeStyle = n => {
-  if (n === "全家") return "bg-orange-100 text-orange-700 border-orange-200";
-  if (n === "爸爸") return "bg-blue-50 text-blue-600 border-blue-200";
-  if (n === "媽媽") return "bg-pink-50 text-pink-600 border-pink-200";
-  if (n === "兒子") return "bg-amber-50 text-amber-600 border-amber-200";
-  return "bg-gray-50 text-gray-600 border-gray-200";
-};
-
-export const safeParse = (r, f) => {
-  if (r === null || r === "null" || r === "undefined") return f;
-  try { const p = JSON.parse(r); return p !== null ? p : f; } catch { return f; }
-};
-
-export const safeArrayLS = k => {
-  const v = safeParse(localStorage.getItem(k), []);
-  return Array.isArray(v) ? v : [];
-};
-
-export const safeStringLS = (k, f = "") => {
-  const v = localStorage.getItem(k);
-  return (v === null || v === "null" || v === "undefined") ? f : v;
-};
-
-export const safeNumberLS = (k, f = 0) => {
-  const v = Number(localStorage.getItem(k));
-  return Number.isFinite(v) ? v : f;
-};
+export const safeParse = (str, fallback) => { try { return JSON.parse(str) || fallback; } catch { return fallback; } };
+export const safeArrayLS = (key) => safeParse(localStorage.getItem(key), []);
+export const safeStringLS = (key, fallback) => localStorage.getItem(key) || fallback;
+export const safeNumberLS = (key, fallback) => { const v = localStorage.getItem(key); return v ? Number(v) : fallback; };
 
 export const nowStr = () => {
   const d = new Date();
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16).replace('T', ' ');
 };
 
-export const displayDateClean = (val) => {
-  if (!val) return "";
-  let str = String(val).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
-  const parts = str.split(" ");
-  return parts.length > 1 ? `${parts[0]} ${parts[1].split(":").slice(0, 2).join(":")}` : str;
+export const displayDateClean = (d) => {
+  if (!d) return "";
+  return String(d).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ").slice(0, 16);
 };
 
-export const formatDateOnly = ts => {
-  const d = new Date(ts);
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+export const formatDateOnly = (d) => {
+  if (!d) return "";
+  return String(d).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").split(/ |T/)[0];
 };
 
-export const parseDateForSort = i => {
-  if (!i || !i.date) return 0;
-  return new Date(String(i.date).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ")).getTime() || 0;
-};
-
-export const getCycleRange = (td, sd, om = 0) => {
-  let d = new Date(td), cm = d.getMonth(), cy = d.getFullYear(), bm = cm;
-  if (d.getDate() < sd) bm -= 1;
-  bm += om;
-  return {
-    start: new Date(cy, bm, sd, 0, 0, 0, 0).getTime(),
-    end: new Date(cy, bm + 1, sd - 1, 23, 59, 59, 999).getTime()
-  };
-};
-
-export const safeEvaluateMath = (expr) => {
-  if (!expr) return "";
-  const str = String(expr).trim();
-  if (/[\+\-\*\/]/.test(str)) {
-    try {
-      const sanitized = str.replace(/[^\d.\+\-\*\/\(\)]/g, '').replace(/[\+\-\*\/]+$/, '');
-      const result = new Function(`'use strict'; return (${sanitized})`)();
-      return isFinite(result) ? String(Math.round(result)) : str;
-    } catch { return str; }
+export const parseDateForSort = (tx) => {
+  if (tx && tx.timestamp) return tx.timestamp;
+  if (tx && tx.date) {
+    const cleanStr = String(tx.date).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
+    const ts = new Date(cleanStr).getTime();
+    if (!isNaN(ts)) return ts;
   }
-  return str.replace(/[^\d.]/g, '');
+  return 0;
 };
 
-export async function sha256Base64(str) {
-  const enc = new TextEncoder();
-  const data = enc.encode(str);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return btoa(String.fromCharCode(...new Uint8Array(digest)));
-}
+export const getSafeCycleRange = (now, startDay, monthOffset = 0) => {
+  const bDay = Number(startDay) || 1;
+  let start = new Date(now.getFullYear(), now.getMonth(), bDay, 0, 0, 0);
+  if (now.getDate() < bDay) start.setMonth(start.getMonth() - 1);
+  start.setMonth(start.getMonth() + monthOffset);
+  let end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  end.setDate(end.getDate() - 1);
+  end.setHours(23, 59, 59, 999);
+  return { start: start.getTime(), end: end.getTime() };
+};
+
+export const getCycleRange = getSafeCycleRange;
+
+export const safeEvaluateMath = e => {
+  if (!e) return "";
+  const s = String(e).trim();
+  if (/[+\-\*\/]/.test(s)) {
+    try {
+      const san = s.replace(/[^\d.\+\-\*\/\(\)]/g, '');
+      if (!san) return s;
+      const c = san.replace(/[+\-\*\/]+$/, '');
+      const r = new Function(`'use strict'; return (${c})`)();
+      return isFinite(r) ? String(Math.round(r)) : s;
+    } catch { return s; }
+  }
+  return s.replace(/[^\d.]/g, '');
+};
+
+export const sha256Base64 = async (message) => {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashString = String.fromCharCode.apply(null, hashArray);
+  return btoa(hashString).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+
+export const initIndexedDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("FamilyLedgerDB", 2);
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      if (!db.objectStoreNames.contains("trash_store")) db.createObjectStore("trash_store", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("sync_queue")) db.createObjectStore("sync_queue", { keyPath: "opId" });
+      if (!db.objectStoreNames.contains("audit_logs")) db.createObjectStore("audit_logs", { keyPath: "txId" });
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+export const saveToIndexedDB = async (storeName, dataArray) => {
+  try {
+    const db = await initIndexedDB();
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    store.clear();
+    dataArray.forEach(item => store.put(item));
+    return new Promise((resolve) => { tx.oncomplete = () => resolve(true); });
+  } catch (e) { return false; }
+};
+
+export const loadFromIndexedDB = async (storeName) => {
+  try {
+    const db = await initIndexedDB();
+    const tx = db.transaction(storeName, "readonly");
+    const store = tx.objectStore(storeName);
+    const request = store.getAll();
+    return new Promise((resolve) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve([]);
+    });
+  } catch (e) { return []; }
+};
+
+export const getParentCat = (cat) => cat ? String(cat).split('/')[0] : '其他';
+export const getChildCat = (cat) => {
+  if (!cat) return '其他';
+  const parts = String(cat).split('/');
+  return parts.length > 1 ? parts.slice(1).join('/') : parts[0];
+};
+
+// 🌟 修復核心 1：精準還原對象標籤的顯示邏輯
+export const getBenArray = (ben, member) => {
+  if (!ben) ben = member || "未知";
+  let arr = String(ben).split(",").map(s => s.trim()).filter(Boolean);
+  
+  // 規則 A：若只有自己一人，隱藏標籤 (回傳空陣列)
+  if (arr.length === 1 && arr[0] === member) {
+    return [];
+  }
+  
+  // 規則 B：若同時包含一家三口，自動轉換為單一「全家」標籤
+  if (arr.includes("爸爸") && (arr.includes("媽媽") || arr.includes("妈妈")) && arr.includes("兒子")) {
+    return ["全家"];
+  }
+  
+  return arr;
+};
+
+// 🌟 修復核心 2：為兒子與全家補上專屬的色彩辨識
+export const getBenBadgeStyle = (b) => {
+  if (b === "爸爸") return "bg-blue-50 text-blue-600 border-blue-200";
+  if (b === "媽媽" || b === "妈妈") return "bg-pink-50 text-pink-600 border-pink-200";
+  if (b === "兒子") return "bg-yellow-50 text-yellow-600 border-yellow-200";
+  if (b === "全家" || b === "家庭") return "bg-green-50 text-green-600 border-green-200";
+  return "bg-gray-50 text-gray-600 border-gray-200";
+};

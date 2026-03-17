@@ -5,7 +5,8 @@ export const gasUrl = "https://script.google.com/macros/s/AKfycbxO6JfC9YkWsRAdP3
 
 export async function postGAS(payload) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  // 🚀 核心修復：將超時限制從 15 秒大幅放寬至 60 秒 (60000ms)，確保初次全量下載不會被中斷
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
   try {
     const res = await fetch(gasUrl, {
       method: "POST",
