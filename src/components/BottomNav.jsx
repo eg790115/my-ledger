@@ -9,12 +9,12 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [tempAmount, setTempAmount] = useState("");
 
   const [isListening, setIsListening] = useState(false);
-  const [volume, setVolume] = useState(0);
+  // 🌟 將音量狀態從單一數字，改為 5 個頻率區段的陣列，用來繪製聲波
+  const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
 
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
-  const silenceTimerRef = useRef(null);
 
   const loadShortcuts = () => {
     try {
@@ -40,7 +40,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const isHolding = useRef(false);
   const wasSwipeOrLongPress = useRef(false);
 
-  // 🌟 修復 1：強制讀取最新設定，並嚴謹判斷 memo
   const executeQuickAdd = (shortcutKey, finalAmount) => {
     if (!onQuickAdd || !loginUser) return;
     
@@ -61,7 +60,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       type: "expense",
       category: data.category || "食/其他",
       amount: Number(finalAmount),
-      // 確保就算備註是空的，也不會被預設標籤覆蓋
       desc: typeof data.memo === 'string' ? data.memo : data.label,
       member: loginUser,
       beneficiary: loginUser
@@ -101,29 +99,25 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       const bufferLength = analyserRef.current.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
+      // 🌟 拔除「自動停止」邏輯，只負責捕捉音軌頻率
       const updateVolume = () => {
+        if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
-        const avg = sum / bufferLength;
-        setVolume(avg);
-
-        if (avg < 10) {
-          if (!silenceTimerRef.current) {
-            silenceTimerRef.current = setTimeout(() => stopVoiceMode(true), 2000);
-          }
-        } else {
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current);
-            silenceTimerRef.current = null;
-          }
-        }
+        
+        // 抓取 5 個不同頻段的音量大小，做為視覺化的長度
+        const v1 = dataArray[2] || 10;
+        const v2 = dataArray[6] || 10;
+        const v3 = dataArray[10] || 10;
+        const v4 = dataArray[14] || 10;
+        const v5 = dataArray[18] || 10;
+        
+        setVolumeData([v1, v2, v3, v4, v5]);
         animationRef.current = requestAnimationFrame(updateVolume);
       };
 
       updateVolume();
       setIsListening(true);
-      triggerVibration(20);
+      triggerVibration([20, 30]); // 開始時震動提示
     } catch (err) {
       alert("請開啟麥克風權限以使用 AI 記帳");
     }
@@ -131,21 +125,21 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
   const stopVoiceMode = (shouldSubmit = false) => {
     setIsListening(false);
-    setVolume(0);
+    setVolumeData([10, 10, 10, 10, 10]); // 重置波形
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     if (audioContextRef.current) audioContextRef.current.close();
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    silenceTimerRef.current = null;
     
     if (shouldSubmit) {
       triggerVibration([30, 50, 30]);
       alert("收音完畢，準備交由 AI 解析... (開發中 🚀)");
+    } else {
+      triggerVibration(15); // 取消時的輕微震動
     }
   };
 
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return; 
-    if (isListening) { stopVoiceMode(false); return; }
+    if (isListening) return; // 🌟 如果正在聽，不觸發捷徑轉盤
 
     e.currentTarget.setPointerCapture(e.pointerId);
     startPos.current = { x: e.clientX, y: e.clientY };
@@ -237,11 +231,48 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     { id: 'settings', icon: 'settings' }
   ];
 
-  const rippleScale = 1 + (volume / 80) * 1.5;
-
   return (
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
+
+      {/* 🌟 全新的 Siri 風格獨立浮動面板 */}
+      {isListening && (
+        <div className="fixed inset-x-0 bottom-[6.5rem] mx-auto w-[92%] max-w-sm bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 p-6 flex flex-col items-center justify-center animate-in slide-in-from-bottom-8 z-[1000]">
+          
+          {/* 聲波動畫區 */}
+          <div className="flex items-center justify-center gap-1.5 h-16 mb-4">
+            {volumeData.map((v, i) => (
+              <div 
+                key={i} 
+                className="w-2.5 bg-gradient-to-t from-blue-600 to-indigo-400 rounded-full shadow-sm" 
+                style={{ 
+                  height: `${Math.max(12, (v / 255) * 64)}px`, 
+                  transition: 'height 0.05s ease-out' 
+                }} 
+              />
+            ))}
+          </div>
+          
+          <div className="text-gray-800 font-black text-lg mb-1">正在聆聽...</div>
+          <div className="text-gray-400 font-bold text-xs mb-8">請說出記帳內容，例如「早餐一百元」</div>
+          
+          {/* 控制按鈕區 */}
+          <div className="flex gap-3 w-full">
+             <button 
+                onClick={() => stopVoiceMode(false)} 
+                className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-transform"
+             >
+               取消
+             </button>
+             <button 
+                onClick={() => stopVoiceMode(true)} 
+                className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2"
+             >
+               <div className="w-3.5 h-3.5 bg-white rounded-[4px]" /> 停止並解析
+             </button>
+          </div>
+        </div>
+      )}
 
       {pendingAmountKey && (
         <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in pointer-events-auto">
@@ -259,16 +290,12 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         </div>
       )}
 
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-[900] shadow-2xl border border-white/20 pb-safe">
+      <nav className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-[900] shadow-2xl border border-white/20 pb-safe transition-all duration-300 ${isListening ? 'opacity-30 pointer-events-none translate-y-4' : 'opacity-100'}`}>
         {tabs.map(tab => {
           if (tab.isFab) {
             return (
               <div key={tab.id} className="px-1 shrink-0 relative flex justify-center">
                 
-                {isListening && (
-                  <div className="absolute inset-0 bg-blue-500/30 rounded-[1.5rem] pointer-events-none" style={{ transform: `scale(${rippleScale})`, transition: 'transform 0.1s ease-out' }} />
-                )}
-
                 {!isListening && (
                   <div className="absolute top-1/2 left-1/2 pointer-events-none z-0">
                     <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out shadow-lg ${showRadial ? 'opacity-100 translate-x-[-80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'left' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
@@ -292,9 +319,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
                   onPointerUp={handlePointerUp}
                   onClick={handleClick}
                   onContextMenu={handleContextMenu}
-                  className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl transition-all relative z-10 select-none touch-none ${isListening ? 'bg-blue-600 text-white shadow-blue-400' : showRadial ? 'bg-gray-800 text-white scale-90 rotate-[135deg] shadow-gray-900/40' : (activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white active:scale-95")}`}
+                  className={`w-14 h-14 flex items-center justify-center rounded-[1.5rem] shadow-xl transition-all relative z-10 select-none touch-none ${showRadial ? 'bg-gray-800 text-white scale-90 rotate-[135deg] shadow-gray-900/40' : (activeTab === "add" ? "bg-blue-700 text-white rotate-45 shadow-blue-200" : "bg-gray-900 text-white active:scale-95")}`}
                 >
-                  <SvgIcon name={isListening ? "mic" : tab.icon} size={28} className="shrink-0" />
+                  <SvgIcon name={tab.icon} size={28} className="shrink-0" />
                 </button>
               </div>
             );
