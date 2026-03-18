@@ -11,12 +11,22 @@ const SettingsTab = ({
   setCurrentUser, setSelectingUser, setPinInput, setActiveTab,
   syncQueue, setShowClearQueueModal, isLogOpen, setIsLogOpen
 }) => {
+
+  // 🌟 新增：專屬的安全日期格式化，徹底阻絕 NaN 錯誤
+  const safeFormat = (ts) => {
+    if (!ts) return "計算中...";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "日期錯誤";
+    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   return (
     <div className="space-y-4 animate-in text-left pb-20 text-gray-800">
       
       {/* 🌟 這裡完美保留了您的原始 UI，只加上了條件判斷 */}
       {currentUser?.name === '爸爸' && (
         <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-[2.5rem] p-6 shadow-md text-white mb-6 relative overflow-hidden">
+       
           <div className="absolute -right-4 -top-4 opacity-10">
             <SvgIcon name="pieChart" size={100} />
           </div>
@@ -24,6 +34,7 @@ const SettingsTab = ({
             <h3 className="font-black text-lg mb-2 flex items-center gap-2">
               <span className="text-2xl">🤖</span> AI 財務教練
             </h3>
+         
             <p className="text-indigo-100 text-xs font-bold leading-relaxed mb-4">
               系統每天會自動分析一次。若您剛新增了大量紀錄，可以點擊下方按鈕強制 AI 重新深度檢閱最近 30 天的帳本。
             </p>
@@ -42,6 +53,7 @@ const SettingsTab = ({
       <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
         <h3 className="font-black text-xs mb-4 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
           <SvgIcon name="calendar" size={16} className="text-blue-500 shrink-0" /> 記帳週期設定
+ 
         </h3>
         <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 focus-within:border-blue-200 transition-colors">
           <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 leading-none tracking-widest">起始日 (如信用卡結帳日)</label>
@@ -51,7 +63,10 @@ const SettingsTab = ({
             </select>
           </div>
           <div className="mt-3 text-[10px] text-gray-500 font-bold bg-white p-2 rounded-xl border border-gray-100 leading-relaxed">
-            設定後，歷史清單與圖表的「本期/上期」將以此為基準。<br/>👉 目前本期範圍：<span className="text-blue-600 ml-1">{formatDateOnly(currentCycleRange.start)} ~ {formatDateOnly(currentCycleRange.end)}</span>
+            設定後，歷史清單與圖表的「本期/上期」將以此為基準。<br/>👉 目前本期範圍：
+            {/* 🌟 這裡換成 safeFormat 來渲染，防止 NaN */}
+            <span className="text-blue-600 ml-1">{safeFormat(currentCycleRange?.start)} ~ {safeFormat(currentCycleRange?.end)}</span>
+         
           </div>
         </div>
       </div>
@@ -72,18 +87,21 @@ const SettingsTab = ({
       <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
         <h3 className="font-black text-xs mb-5 uppercase flex items-center gap-2 text-gray-800 tracking-widest px-1">
           <SvgIcon name="info" size={16} className="text-blue-500 shrink-0" /> 安全與帳戶管理
+ 
         </h3>
         <div className="space-y-3">
           <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 gap-2">
             <div className="min-w-0">
               <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">使用身份</p>
               <p className="font-black text-gray-800 text-base leading-none mt-1 truncate">{currentUser.name}</p>
+           
             </div>
             <button onClick={() => setShowChangePinModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-all shrink-0">更換密碼</button>
           </div>
           <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 gap-2">
             <div className="min-w-0">
               <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">生物辨識 / 裝置解鎖</p>
+        
               <p className="font-black text-gray-800 text-sm leading-none mt-1 truncate">{bioBound ? "設備已綁定" : "設備未綁定"}</p>
             </div>
             <button onClick={() => bioBound ? (setUnbindPin(""), setShowUnbindModal(true)) : bindDeviceBio()} className={`px-4 py-2 rounded-xl font-black text-xs active:scale-95 transition-all shrink-0 ${bioBound ? "bg-red-50 text-red-600 border border-red-100" : "bg-green-600 text-white shadow-lg"}`}>
@@ -94,6 +112,7 @@ const SettingsTab = ({
             <div className="min-w-0">
               <p className="text-gray-400 text-[10px] font-black uppercase mb-1 leading-none truncate">系統深度清理</p>
               <p className="font-black text-gray-800 text-sm leading-none mt-1 truncate">清空本地所有快取</p>
+   
             </div>
             <button onClick={() => setShowClearCacheModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">執行清理</button>
           </div>
@@ -106,13 +125,15 @@ const SettingsTab = ({
         {syncQueue && syncQueue.length > 0 && (
           <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mt-4 flex justify-between items-center gap-2">
             <div className="min-w-0">
-              <p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none truncate">異常排解</p>
+  
+             <p className="text-red-400 text-[10px] font-black uppercase mb-1 leading-none truncate">異常排解</p>
               <p className="font-black text-red-600 text-sm leading-none mt-1 truncate">有 {syncQueue.length} 筆資料卡住</p>
             </div>
             <button onClick={() => setShowClearQueueModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl font-black text-xs active:scale-95 transition-all shadow-lg shadow-red-500/30 shrink-0">強制清除</button>
           </div>
         )}
-      </div>
+  
+     </div>
 
       <div className="bg-white p-6 rounded-[2rem] border shadow-sm border-gray-100">
         <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsLogOpen(!isLogOpen)}>
@@ -133,6 +154,7 @@ const SettingsTab = ({
             </div>
           </div>
         )}
+     
       </div>
     </div>
   );

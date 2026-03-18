@@ -26,6 +26,23 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
   const [isAIEvaluating, setIsAIEvaluating] = useState(false);
   const hasTriggeredAutoAI = useRef(false);
 
+  // 🌟 核心修復：監聽雲端下載的資料，自動更新 AI 狀態
+  useEffect(() => {
+    const handleCloudSync = (e) => {
+      const data = e.detail;
+      if (data.aiData !== undefined) {
+        setAiEvalData(data.aiData);
+        localStorage.setItem('ai_eval_data', JSON.stringify(data.aiData));
+      }
+      if (data.sysConfig !== undefined) {
+        setSysConfig(data.sysConfig);
+        localStorage.setItem('sys_config', JSON.stringify(data.sysConfig));
+      }
+    };
+    window.addEventListener('cloud_data_synced', handleCloudSync);
+    return () => window.removeEventListener('cloud_data_synced', handleCloudSync);
+  }, []);
+
   useEffect(() => localStorage.setItem('ai_eval_data', JSON.stringify(aiEvalData || {})), [aiEvalData]);
   useEffect(() => localStorage.setItem('sys_config', JSON.stringify(sysConfig || {})), [sysConfig]);
 
@@ -68,7 +85,6 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
 
   const handleForceAIEval = () => executeFrontendAI(true);
 
-  // 🚀 核心：語音記帳解析引擎 (終極進化版：人物族譜 + 數量數學 + 店家提取)
   const processVoiceText = async (voiceText, currentMember) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
       throw new Error("請先至設定頁面填寫 Gemini API Key");

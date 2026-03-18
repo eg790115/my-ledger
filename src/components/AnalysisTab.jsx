@@ -2,9 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { SvgIcon } from './Icons';
 import { CHART_COLORS } from '../utils/constants';
 import { getCycleRange, parseDateForSort, getParentCat, getChildCat } from '../utils/helpers';
-import { getLazyTxOnline } from '../utils/api'; // 🌟 匯入我們的專屬雲端送貨員
+import { getLazyTxOnline } from '../utils/api'; 
 
-// S25 防閃爍輪播
 const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [fade, setFade] = useState(true);
@@ -110,8 +109,34 @@ const AnalysisTab = ({
   animTrigger, triggerVibration, snapshotsCache
 }) => {
   
-  // 🌟 用來記錄目前正在向雲端請求哪一個分類的明細 (顯示 loading 用)
   const [fetchingCat, setFetchingCat] = useState(null);
+
+  // 🌟 強化版：不管雲端 B6 欄位給字串還是物件，都能完美解析提取
+  const getAiReportText = () => {
+    if (!aiEvalData) return null;
+    
+    let data = aiEvalData;
+    // 嘗試解析可能被包裝成字串的 JSON
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } 
+      catch (e) { return data; } // 如果無法解析，就是純文字，直接回傳
+    }
+    
+    if (data.prompt || data.text) return data.prompt || data.text;
+
+    const name = currentUser?.name;
+    if (name === "爸爸" && data.dad_eval) return data.dad_eval;
+    if (name === "媽媽" && data.mom_eval) return data.mom_eval;
+    if (data.general_eval) return data.general_eval;
+    if (data.report) return data.report;
+
+    // 尋找任何夠長的字串，當作評語顯示
+    const values = Object.values(data);
+    const longStrings = values.filter(v => typeof v === 'string' && v.length > 10);
+    if (longStrings.length > 0) return longStrings.join(" | ");
+
+    return JSON.stringify(data);
+  };
 
   return (
     <div className="space-y-6 animate-in pb-20 text-left">
@@ -141,7 +166,7 @@ const AnalysisTab = ({
         )}
       </div>
 
-      <AiInsightsCarousel aiReport={aiEvalData ? (currentUser?.name === "爸爸" ? aiEvalData.dad_eval : aiEvalData.mom_eval) : null} isEvaluating={isAIEvaluating} />
+      <AiInsightsCarousel aiReport={getAiReportText()} isEvaluating={isAIEvaluating} />
       
       <div className="flex bg-gray-100 p-1.5 rounded-2xl text-[13px] text-gray-500 relative z-10">
         <button onClick={() => { triggerVibration(10); setAnalysisType("expense"); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null);}} className={`flex-1 py-1.5 rounded-xl font-black transition-all ${analysisType === "expense" ? "bg-white text-red-500 shadow-sm" : ""}`}>支出</button>
@@ -182,7 +207,6 @@ const AnalysisTab = ({
           }
         }
         
-        // 過濾熱資料 (手機端)
         analysisTxs = analysisTxs.filter(item => { 
           const tTime = parseDateForSort(item); 
           return tTime >= startTime && tTime <= endTime; 
@@ -198,7 +222,6 @@ const AnalysisTab = ({
         
         let level1Totals = {}; let grandTotal = 0;
         
-        // 1. 聚合熱資料
         const aggregateTotals = (txs, totalsObj) => { 
           let total = 0; 
           txs.forEach(t => { 
@@ -212,7 +235,6 @@ const AnalysisTab = ({
         };
         grandTotal += aggregateTotals(analysisTxs, level1Totals); 
 
-        // 🌟 2. 聚合冷資料 (快照)
         const isMonthInRange = (monthKey) => {
             const [y, m] = monthKey.split('/');
             const monthStart = new Date(y, parseInt(m) - 1, 1).getTime();
@@ -220,7 +242,6 @@ const AnalysisTab = ({
             return (monthEnd >= startTime && monthStart <= endTime);
         };
 
-        // 判斷當前區間是否涵蓋冷資料
         const needsColdData = analysisDateFilter === 'all' || analysisDateFilter === '1y' || analysisDateFilter === '6m' || analysisDateFilter === 'custom';
         let monthsToFetch = [];
 
@@ -228,7 +249,6 @@ const AnalysisTab = ({
             Object.entries(snapshotsCache).forEach(([monthKey, snap]) => {
                 if (isMonthInRange(monthKey)) {
                     monthsToFetch.push(monthKey);
-                    // 快照中的資料
                     if (analysisType === "expense") grandTotal += snap.expense;
                     if (analysisType === "income") grandTotal += snap.income;
                     
@@ -258,10 +278,8 @@ const AnalysisTab = ({
         }); 
         conicStr = conicStr.slice(0, -2);
 
-        // 第二層細節
         let level2Totals = {}; let level1SelectedTotal = 0;
         if (selectedAnalysisLevel1) { 
-          // 熱資料 Level 2
           analysisTxs.forEach(t => { 
             if (pendingMap && (pendingMap[t.id] === 'DELETE_TX' || pendingMap[t.id] === 'HARD_DELETE_TX')) return; 
             if (getL1Key(t) === selectedAnalysisLevel1) { 
@@ -270,7 +288,6 @@ const AnalysisTab = ({
             } 
           }); 
 
-          // 🌟 冷資料 Level 2
           if (needsColdData && snapshotsCache && analysisType !== "beneficiary") {
              Object.entries(snapshotsCache).forEach(([monthKey, snap]) => {
                 if (isMonthInRange(monthKey)) {
@@ -290,11 +307,9 @@ const AnalysisTab = ({
 
         const theme = getThemeColors(analysisType);
 
-        // 🌟 核心：隨選載入明細 API 觸發點
         const fetchAndShowDetails = async (l1Cat, l2Cat) => {
             triggerVibration(10);
             
-            // 如果不需要冷資料，直接用熱資料顯示即可，秒開！
             if (monthsToFetch.length === 0) {
                 setAnalysisDetailData({ 
                     title: `「${l1Cat} - ${l2Cat}」明細`, 
@@ -303,19 +318,16 @@ const AnalysisTab = ({
                 return;
             }
 
-            // 如果需要冷資料，顯示 Loading 並發動送貨員
             setFetchingCat(l2Cat);
             try {
                 let hotTxs = analysisTxs.filter(t => getL1Key(t) === l1Cat && getL2Key(t) === l2Cat);
                 let coldTxs = [];
                 
-                // 派送貨員去雲端撈這幾個月的舊帳本
                 for (const m of monthsToFetch) {
                     const res = await getLazyTxOnline(m);
                     coldTxs = [...coldTxs, ...res];
                 }
 
-                // 過濾抓回來的冷資料
                 let filteredColdTxs = coldTxs.filter(t => {
                     if (analysisType === "expense" && t.type !== "expense") return false;
                     if (analysisType === "income" && t.type !== "income") return false;
@@ -324,7 +336,6 @@ const AnalysisTab = ({
                     return cL1 === l1Cat && cL2 === l2Cat;
                 });
 
-                // 合併熱資料與冷資料，秀給老闆看！
                 setAnalysisDetailData({
                     title: `「${l1Cat} - ${l2Cat}」歷史明細`,
                     txs: [...hotTxs, ...filteredColdTxs]

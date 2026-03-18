@@ -17,6 +17,8 @@ const HistoryTab = ({
   const [displayLimit, setDisplayLimit] = useState(30);
   const loaderRef = useRef(null);
 
+  const hasAdvancedFilters = debouncedHistorySearch !== "" || debouncedHistoryExcludeSearch !== "" || historyTypeFilter !== "all";
+
   useEffect(() => {
     setDisplayLimit(30);
   }, [historyDateFilter, debouncedHistorySearch, debouncedHistoryExcludeSearch, historyTypeFilter, safeGroups.length]);
@@ -38,7 +40,7 @@ const HistoryTab = ({
   return (
     <div className="flex flex-col animate-in w-full relative px-1 text-left">
       
-      {/* 🌟 頂部過濾區與垃圾桶 (已完美對齊 AnalysisTab 的灰底膠囊設計) */}
+      {/* 🌟 頂部過濾區與垃圾桶 */}
       <div className="flex justify-between items-center mb-4 gap-2">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1">
           <h3 className="font-black text-xl text-gray-800 shrink-0">歷史紀錄</h3>
@@ -53,31 +55,48 @@ const HistoryTab = ({
         </button>
       </div>
 
-      {/* 🌟 進階搜尋按鈕 */}
-      <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(true); }} className={`w-full bg-white p-3 rounded-2xl border flex items-center justify-between mb-4 shadow-sm active:bg-gray-50 transition-colors ${isHistoryFiltered ? 'border-blue-300 ring-2 ring-blue-100' : 'border-gray-200'}`}>
-        <div className="flex items-center gap-2 text-gray-600 font-bold text-sm">
-          <SvgIcon name="search" size={18} className={isHistoryFiltered ? "text-blue-500" : ""} />
-          {isHistoryFiltered ? <span className="text-blue-600 font-black">已套用進階搜尋過濾器</span> : <span className="text-[12px] font-black">搜尋與進階過濾...</span>}
-        </div>
-        <SvgIcon name="chevronRight" size={16} className="text-gray-400" />
-      </button>
+      {/* 🌟 進階搜尋按鈕 + 一鍵清除按鈕 */}
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(true); }} className={`flex-1 bg-white p-3 rounded-2xl border flex items-center justify-between shadow-sm active:bg-gray-50 transition-colors ${hasAdvancedFilters ? 'border-blue-300 ring-2 ring-blue-100' : 'border-gray-200'}`}>
+          <div className="flex items-center gap-2 text-gray-600 font-bold text-sm">
+            <SvgIcon name="search" size={18} className={hasAdvancedFilters ? "text-blue-500" : ""} />
+            {hasAdvancedFilters ? <span className="text-blue-600 font-black">已套用搜尋</span> : <span className="text-[12px] font-black">搜尋與進階過濾...</span>}
+          </div>
+          <SvgIcon name="chevronRight" size={16} className="text-gray-400" />
+        </button>
 
-      {/* 🌟 統計面板 */}
-      <div className="bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-sm mb-4">
-        <div className="flex justify-between items-end mb-3 px-2">
-          <span className="text-[10px] font-black text-gray-400 tracking-wider">篩選區間結餘</span>
-          <span className={`text-2xl font-black tabular-nums tracking-tight ${safeStats.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        {hasAdvancedFilters && (
+          <button 
+            onClick={() => { 
+              triggerVibration([10, 20]); 
+              setHistorySearch(""); 
+              setHistoryExcludeSearch(""); 
+              setHistoryTypeFilter("all"); 
+              setQuickDateFilter("current_month");
+            }} 
+            className="shrink-0 px-4 bg-red-50 text-red-600 rounded-2xl border border-red-200 font-black text-[13px] active:scale-95 transition-all flex items-center justify-center gap-1 shadow-sm"
+          >
+            <SvgIcon name="close" size={14} /> 清除
+          </button>
+        )}
+      </div>
+
+      {/* 🌟 統計面板 (輕量化簡潔版，對齊首頁風格，讓位給歷史清單) */}
+      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm mb-4 flex flex-col gap-3">
+        <div className="flex justify-between items-center px-1">
+          <span className="text-[11px] font-black text-gray-400">篩選區間結餘</span>
+          <span className={`text-xl font-black tabular-nums tracking-tight ${safeStats.balance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
             ${safeStats.balance.toLocaleString()}
           </span>
         </div>
         <div className="flex gap-2">
-          <div className="flex-1 bg-green-50 rounded-2xl p-3.5 border border-green-100">
-            <div className="text-[10px] font-black text-green-600/70 mb-1">總收入</div>
-            <div className="text-[15px] font-black text-green-700">${safeStats.income.toLocaleString()}</div>
+          <div className="flex-1 bg-gray-50/80 rounded-2xl p-2.5 flex items-center justify-between border border-gray-100">
+            <div className="text-[10px] font-black text-gray-400">總收入</div>
+            <div className="text-[13px] font-black text-green-600">${safeStats.income.toLocaleString()}</div>
           </div>
-          <div className="flex-1 bg-red-50 rounded-2xl p-3.5 border border-red-100">
-            <div className="text-[10px] font-black text-red-600/70 mb-1">總支出</div>
-            <div className="text-[15px] font-black text-red-700">${safeStats.expense.toLocaleString()}</div>
+          <div className="flex-1 bg-gray-50/80 rounded-2xl p-2.5 flex items-center justify-between border border-gray-100">
+            <div className="text-[10px] font-black text-gray-400">總支出</div>
+            <div className="text-[13px] font-black text-red-500">${safeStats.expense.toLocaleString()}</div>
           </div>
         </div>
       </div>

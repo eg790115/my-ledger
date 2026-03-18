@@ -173,6 +173,9 @@ function App() {
     if (data.greetings) setGreetingsCache(data.greetings);
     if (data.snapshots) { setSnapshotsCache(data.snapshots); localStorage.setItem('snapshots_cache', JSON.stringify(data.snapshots)); }
 
+    // 🌟 核心修復：廣播雲端資料給 AI 大腦接收 (包含 B6 的 aiData)
+    window.dispatchEvent(new CustomEvent('cloud_data_synced', { detail: data }));
+
     return changed;
   }, []);
 
@@ -970,7 +973,7 @@ function App() {
           />
         )}
 
-        {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} />}
+        {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} onClose={() => setActiveTab('dashboard')} />}
 
         {activeTab === "settings" && (
           <SettingsTab 

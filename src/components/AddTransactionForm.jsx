@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 
-// --- 模擬依賴項 (為了在單一環境中預覽) ---
 const CATEGORY_MAP = {
   expense: { 
     "食": ["早餐", "午餐", "晚餐", "生鮮食材", "零食/飲料", "外食聚餐", "其他"], 
@@ -63,13 +62,12 @@ const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
     </div>
   );
 };
-// -----------------------------------------------------------
 
-export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, isLoading = false }) => {
+// 🌟 加入 onClose 參數
+export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, onClose, isLoading = false }) => {
   const [formTab, setFormTab] = useState('general');
-  const [toastMsg, setToastMsg] = useState(""); // 🌟 加入專屬 Toast 狀態
+  const [toastMsg, setToastMsg] = useState(""); 
 
-  // --- 一般記帳的狀態 ---
   const inputRef = useRef(null);
   const [isFocused, setIsFocused] = useState(false);
   const [isSplit, setIsSplit] = useState(false);
@@ -78,7 +76,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   const [subItems, setSubItems] = useState([{ id: Date.now(), parentCat: "食", childCat: "晚餐", amount: "", desc: "", beneficiary: [loginUser] }]);
   const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
   
-  // --- 捷徑設定的狀態 ---
   const getCatParts = (catStr) => {
     if (!catStr) return ["食", "其他"];
     const parts = catStr.split("/");
@@ -162,15 +159,17 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   
   const isSubmitDisabled = isSubmitting || isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
-  // 🌟 修改：儲存並切回首頁，同時觸發 Toast
+  // 🌟 修改：儲存後觸發 Toast 並直接關閉頁面
   const saveShortcuts = () => {
     localStorage.setItem('quick_shortcuts', JSON.stringify(shortcuts));
-    window.dispatchEvent(new Event('shortcuts_updated')); // 通知 BottomNav
+    window.dispatchEvent(new Event('shortcuts_updated')); 
     if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) window.navigator.vibrate([20, 50, 20]);
     
-    setFormTab('general'); // 關閉捷徑設定 (切回一般記帳)
-    setToastMsg("✅ 已儲存設定"); // 顯示 Toast
-    setTimeout(() => setToastMsg(""), 3000); // 3 秒後自動隱藏
+    setToastMsg("✅ 已儲存設定"); 
+    setTimeout(() => {
+      setToastMsg("");
+      if (onClose) onClose(); // 觸發關閉跳回首頁
+    }, 500); 
   };
 
   const [pLeft, cLeft] = getCatParts(shortcuts.left.category);
@@ -179,7 +178,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   return (
     <div className="bg-white p-5 sm:p-6 rounded-[2.5rem] shadow-xl border border-gray-100 animate-in text-center relative font-black pb-8">
       
-      {/* 🌟 專屬 Toast 元件 */}
       {toastMsg && ( 
         <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
           <div className="px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto bg-gray-800 text-white border border-gray-600">
@@ -188,7 +186,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
         </div> 
       )}
 
-      {/* 🔖 頂部書籤 (分頁) */}
       <div className="flex gap-2 mb-6">
         <button onClick={() => setFormTab('general')} className={`flex-1 py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'general' ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>📝 一般記帳</button>
         <button onClick={() => setFormTab('shortcuts')} className={`flex-1 py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'shortcuts' ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>⚡ 捷徑設定</button>
@@ -196,7 +193,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
 
       {formTab === 'general' ? (
         <>
-          {/* 一般新增內容 */}
           <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6 text-sm text-gray-500">
             <button onClick={() => handleTypeChange("expense")} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
             <button onClick={() => handleTypeChange("income")} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
