@@ -11,7 +11,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [isListening, setIsListening] = useState(false);
   const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
 
-  // 🌟 即時字幕與優雅的面板內錯誤提示 (取代 alert)
   const [realtimeText, setRealtimeText] = useState("");
   const [voiceError, setVoiceError] = useState("");
 
@@ -21,8 +20,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   
   const recognitionRef = useRef(null); 
   const transcriptRef = useRef(""); 
-  const silenceTimerRef = useRef(null); // 2秒自動停止計時器
-  const swipeDirection = useRef(null); // 用來修正手機瀏覽器語音權限問題
+  const silenceTimerRef = useRef(null); 
 
   const loadShortcuts = () => {
     try {
@@ -119,9 +117,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
       const currentText = transcriptRef.current + interimTranscript;
       setRealtimeText(currentText);
-      setVoiceError(""); // 有聽到聲音就清空錯誤
+      setVoiceError(""); 
 
-      // 🌟 2 秒自動送出機制
+      // 只要有收到聲音，就重置 2 秒自動送出的計時器
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
         if (currentText.trim()) stopVoiceMode(true);
@@ -130,14 +128,22 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
     recognition.onerror = (event) => {
       console.error("語音辨識錯誤:", event.error);
-      if (event.error !== 'no-speech') setVoiceError(`收音錯誤: ${event.error}`);
+      if (event.error !== 'no-speech') {
+         setVoiceError(`收音錯誤: ${event.error}`);
+      }
+    };
+
+    // 若語音引擎意外結束，確保能處理防呆
+    recognition.onend = () => {
+      if (isListening && !transcriptRef.current && !realtimeText && !voiceError) {
+         setVoiceError("沒有聽清楚您說的話，請再試一次！");
+      }
     };
 
     return recognition;
   };
 
   const startVoiceMode = () => {
-    // 重置所有狀態
     transcriptRef.current = "";
     setRealtimeText("");
     setVoiceError("");
@@ -145,7 +151,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     triggerVibration([20, 30]); 
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-    // 啟動語音辨識
     if (!recognitionRef.current) recognitionRef.current = initSpeechRecognition();
     if (recognitionRef.current) {
        try { recognitionRef.current.start(); } catch (e) {}
@@ -153,18 +158,14 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
        setVoiceError("您的設備不支援語音辨識");
     }
 
-    // 若 5 秒內完全沒聲音，直接判定為收音失敗
+    // 啟動後若 5 秒內完全沒聲音，直接提示重試
     silenceTimerRef.current = setTimeout(() => {
        if (!transcriptRef.current && !realtimeText) {
-          setVoiceError("未偵測到聲音，請按取消退出");
-          setVolumeData([10, 10, 10, 10, 10]);
-          if (animationRef.current) cancelAnimationFrame(animationRef.current);
-          if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close().catch(()=>{});
+          setVoiceError("沒有聽清楚您說的話，請再試一次！");
           if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
        }
     }, 5000);
 
-    // 啟動聲波動畫
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -196,17 +197,13 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const stopVoiceMode = (shouldSubmit = false) => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     
-    // 確保抓到包含正在辨識中的字
     const text = (transcriptRef.current + realtimeText.replace(transcriptRef.current, '')).trim();
 
     if (shouldSubmit) {
       if (!text) {
           triggerVibration([50, 50]);
-          setVoiceError("沒有聽清楚，請按取消退出並重試");
-          // 🌟 防卡死機制：切斷麥克風，但保留面板讓使用者看錯誤訊息
-          setVolumeData([10, 10, 10, 10, 10]);
-          if (animationRef.current) cancelAnimationFrame(animationRef.current);
-          if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close().catch(()=>{});
+          setVoiceError("沒有聽清楚您說的話，請再試一次！");
+          // 若沒聽清楚，只停用語音引擎，但不關閉介面，讓使用者可以按「再試一次」
           if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
           return; 
       }
@@ -217,7 +214,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       triggerVibration(15); 
     }
 
-    // 關閉並清理所有狀態
+    // 成功送出或按取消時，才徹底關閉介面與清理狀態
     setIsListening(false);
     setVolumeData([10, 10, 10, 10, 10]); 
     setRealtimeText("");
@@ -239,7 +236,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     startPos.current = { x: e.clientX, y: e.clientY };
     isHolding.current = true;
     wasSwipeOrLongPress.current = false;
-    swipeDirection.current = null;
     
     timerRef.current = setTimeout(() => {
       if (isHolding.current) {
@@ -278,7 +274,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         clearTimeout(timerRef.current);
         isHolding.current = false;
         wasSwipeOrLongPress.current = true;
-        swipeDirection.current = 'up'; // 🌟 標記滑動方向，等待 PointerUp 觸發
+        startVoiceMode();
       } else if (distance > 15) {
         clearTimeout(timerRef.current); 
         wasSwipeOrLongPress.current = true; 
@@ -291,14 +287,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     isHolding.current = false;
     clearTimeout(timerRef.current);
     e.currentTarget.releasePointerCapture(e.pointerId);
-
-    // 🌟 修正手機瀏覽器限制：確保在手指離開螢幕的瞬間啟動語音
-    if (swipeDirection.current === 'up') {
-       swipeDirection.current = null;
-       triggerVibration([20, 40, 20]);
-       startVoiceMode();
-       return;
-    }
 
     if (showRadial) {
       setShowRadial(false);
@@ -373,12 +361,23 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
              >
                取消
              </button>
-             <button 
-                onClick={() => stopVoiceMode(true)} 
-                className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2"
-             >
-               <div className="w-3.5 h-3.5 bg-white rounded-[4px]" /> 停止並解析
-             </button>
+             
+             {/* 🌟 核心切換：有錯誤時顯示「再試一次」，否則顯示「停止並解析」 */}
+             {voiceError ? (
+               <button 
+                  onClick={() => { triggerVibration(10); startVoiceMode(); }} 
+                  className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2"
+               >
+                 ↻ 再試一次
+               </button>
+             ) : (
+               <button 
+                  onClick={() => stopVoiceMode(true)} 
+                  className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2"
+               >
+                 <div className="w-3.5 h-3.5 bg-white rounded-[4px]" /> 停止並解析
+               </button>
+             )}
           </div>
         </div>
       )}
