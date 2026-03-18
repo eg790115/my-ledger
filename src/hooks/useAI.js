@@ -24,9 +24,7 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
   });
   
   const [isAIEvaluating, setIsAIEvaluating] = useState(false);
-  const hasTriggeredAutoAI = useRef(false);
 
-  // 🌟 核心修復：監聽雲端下載的資料，自動更新 AI 狀態
   useEffect(() => {
     const handleCloudSync = (e) => {
       const data = e.detail;
@@ -104,10 +102,12 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
    - 例如：「買了三個30元的蘋果」-> amount: 90。
    - 例如：「3個蘋果90元」-> amount: 90。
 
-3. **備註格式 (desc)**：
+3. **備註格式 (desc) 與智慧精簡**：
    - 格式：[地點/店家] 物品名稱 x數量。
    - 若提到人物長輩，需加註於括號。
-   - 例如：「[全聯] 蘋果x3」、「[7-11] 咖啡」。
+   - ⚠️ **智慧精簡**：如果使用者的語音內容包含了「分類名稱」（例如：早餐、午餐、晚餐、消夜），**請務必將這些字眼從備註中移除**！
+   - 例如：使用者說「晚餐橘子便當」，分類已判定為「食/晚餐」，備註請只留下「橘子便當」。
+   - 例如：「幫媽媽買早餐三明治」-> 備註寫「三明治 (幫我媽買)」。
 
 4. ⚠️ **人物稱謂與 Beneficiary (受益人) 判定邏輯**：
    - 系統標準對象只有：["爸爸", "媽媽", "洋洋", "其他"]。
@@ -117,7 +117,7 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
    - **「我」字長輩特別規則 (關鍵)**：
      - 若提到「**我**爸」或「**我**媽」，不論是誰登入，這代表「家外長輩」，\`beneficiary\` 一律填寫「其他」，並在 \`desc\` 加註 "(幫我爸/媽買)"。
      - 若登入者是爸爸，卻說「幫爸爸買」，指的也是長輩，\`beneficiary\` 填「其他」。
-     - **注意**：若單純說「幫爸爸買」或「幫媽媽買」(沒加「我」字)，則視為核心成員。
+     - 若單純說「幫爸爸買」或「幫媽媽買」(沒加「我」字)，則視為核心成員。
    - **預設值**：若未提及對象，填入登入者「${currentMember}」。
 
 5. **類別 (category)**：必須且只能從下列清單挑選：

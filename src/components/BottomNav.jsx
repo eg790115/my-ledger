@@ -37,7 +37,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     return () => window.removeEventListener('shortcuts_updated', handleUpdate);
   }, []);
 
-  // 🌟 核心修復：使用模擬動態聲波，完全釋放麥克風硬體給語音辨識大腦！
   useEffect(() => {
     let interval;
     if (isListening && !voiceError) {
@@ -49,7 +48,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
           Math.floor(Math.random() * 80) + 30,
           Math.floor(Math.random() * 40) + 20
         ]);
-      }, 120); // 每 120 毫秒跳動一次，視覺效果極佳
+      }, 120); 
     } else {
       setVolumeData([10, 10, 10, 10, 10]);
     }
@@ -119,18 +118,13 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     recognition.interimResults = true; 
 
     recognition.onresult = (event) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
-        }
+      // 🌟 核心修復：放棄容易出錯的組合邏輯，直接從頭抓取整句，完美解決「沒即時字幕」與「重複兩次」的問題！
+      let currentText = '';
+      for (let i = 0; i < event.results.length; ++i) {
+        currentText += event.results[i][0].transcript;
       }
-      if (finalTranscript) transcriptRef.current += finalTranscript;
 
-      const currentText = transcriptRef.current + interimTranscript;
+      transcriptRef.current = currentText;
       setRealtimeText(currentText);
       setVoiceError(""); 
 
@@ -182,7 +176,8 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const stopVoiceMode = (shouldSubmit = false) => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     
-    const text = (transcriptRef.current + realtimeText.replace(transcriptRef.current, '')).trim();
+    // 直接使用 transcriptRef.current，因為我們已經在 onresult 處理好了
+    const text = transcriptRef.current.trim();
 
     if (shouldSubmit) {
       if (!text) {
