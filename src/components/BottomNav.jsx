@@ -14,10 +14,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [realtimeText, setRealtimeText] = useState("");
   const [voiceError, setVoiceError] = useState("");
 
-  const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
-  const animationRef = useRef(null);
-  
   const recognitionRef = useRef(null); 
   const transcriptRef = useRef(""); 
   const silenceTimerRef = useRef(null); 
@@ -40,6 +36,25 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     window.addEventListener('shortcuts_updated', handleUpdate);
     return () => window.removeEventListener('shortcuts_updated', handleUpdate);
   }, []);
+
+  // 🌟 核心修復：使用模擬動態聲波，完全釋放麥克風硬體給語音辨識大腦！
+  useEffect(() => {
+    let interval;
+    if (isListening && !voiceError) {
+      interval = setInterval(() => {
+        setVolumeData([
+          Math.floor(Math.random() * 40) + 20,
+          Math.floor(Math.random() * 80) + 30,
+          Math.floor(Math.random() * 120) + 40,
+          Math.floor(Math.random() * 80) + 30,
+          Math.floor(Math.random() * 40) + 20
+        ]);
+      }, 120); // 每 120 毫秒跳動一次，視覺效果極佳
+    } else {
+      setVolumeData([10, 10, 10, 10, 10]);
+    }
+    return () => clearInterval(interval);
+  }, [isListening, voiceError]);
 
   const startPos = useRef({ x: 0, y: 0 });
   const timerRef = useRef(null);
@@ -119,7 +134,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       setRealtimeText(currentText);
       setVoiceError(""); 
 
-      // 只要有收到聲音，就重置 2 秒自動送出的計時器
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
         if (currentText.trim()) stopVoiceMode(true);
@@ -133,7 +147,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       }
     };
 
-    // 若語音引擎意外結束，確保能處理防呆
     recognition.onend = () => {
       if (isListening && !transcriptRef.current && !realtimeText && !voiceError) {
          setVoiceError("沒有聽清楚您說的話，請再試一次！");
@@ -158,40 +171,12 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
        setVoiceError("您的設備不支援語音辨識");
     }
 
-    // 啟動後若 5 秒內完全沒聲音，直接提示重試
     silenceTimerRef.current = setTimeout(() => {
        if (!transcriptRef.current && !realtimeText) {
           setVoiceError("沒有聽清楚您說的話，請再試一次！");
           if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
        }
     }, 5000);
-
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-        analyserRef.current = audioContextRef.current.createAnalyser();
-        const source = audioContextRef.current.createMediaStreamSource(stream);
-        source.connect(analyserRef.current);
-        analyserRef.current.fftSize = 64;
-
-        const bufferLength = analyserRef.current.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-
-        const updateVolume = () => {
-          if (!analyserRef.current) return;
-          analyserRef.current.getByteFrequencyData(dataArray);
-          setVolumeData([
-             dataArray[2] || 10,
-             dataArray[6] || 10,
-             dataArray[10] || 10,
-             dataArray[14] || 10,
-             dataArray[18] || 10
-          ]);
-          animationRef.current = requestAnimationFrame(updateVolume);
-        };
-        updateVolume();
-      })
-      .catch(err => console.log("視覺化麥克風被擋，但語音可能仍可運作", err));
   };
 
   const stopVoiceMode = (shouldSubmit = false) => {
@@ -202,8 +187,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     if (shouldSubmit) {
       if (!text) {
           triggerVibration([50, 50]);
-          setVoiceError("沒有聽清楚您說的話，請再試一次！");
-          // 若沒聽清楚，只停用語音引擎，但不關閉介面，讓使用者可以按「再試一次」
+          setVoiceError("沒有聽清楚，請按取消退出並重試");
           if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
           return; 
       }
@@ -214,15 +198,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       triggerVibration(15); 
     }
 
-    // 成功送出或按取消時，才徹底關閉介面與清理狀態
     setIsListening(false);
-    setVolumeData([10, 10, 10, 10, 10]); 
     setRealtimeText("");
     setVoiceError("");
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close().catch(()=>{});
-    }
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -362,7 +340,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
                取消
              </button>
              
-             {/* 🌟 核心切換：有錯誤時顯示「再試一次」，否則顯示「停止並解析」 */}
              {voiceError ? (
                <button 
                   onClick={() => { triggerVibration(10); startVoiceMode(); }} 
