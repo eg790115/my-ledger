@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SvgIcon } from './Icons';
 
-const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, loginUser }) => {
+const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, loginUser, onVoiceRecordStop }) => {
   const [showRadial, setShowRadial] = useState(false);
   const [activeOption, setActiveOption] = useState(null);
 
@@ -15,6 +15,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
+  // 🌟 用於存放 SpeechRecognition 實例
+  const recognitionRef = useRef(null); 
+  const transcriptRef = useRef(""); // 暫存語音辨識結果
 
   const loadShortcuts = () => {
     try {
@@ -87,8 +90,52 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
   };
 
+  // 🌟 初始化語音辨識
+  const initSpeechRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("您的瀏覽器不支援語音辨識功能 (建議使用 Chrome 或 Safari)");
+      return null;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-TW';
+    recognition.continuous = true; // 持續辨識
+    recognition.interimResults = true; // 顯示即時結果
+
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        }
+      }
+      if (finalTranscript) {
+         // 將每次的 final 結果接起來
+         transcriptRef.current += finalTranscript;
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error("語音辨識錯誤:", event.error);
+      // 這裡可以加入更細緻的錯誤處理，例如提示使用者再試一次
+    };
+
+    return recognition;
+  };
+
   const startVoiceMode = async () => {
     try {
+      transcriptRef.current = ""; // 清空之前的紀錄
+      
+      // 1. 啟動 Web Speech API 進行文字辨識
+      if (!recognitionRef.current) {
+         recognitionRef.current = initSpeechRecognition();
+      }
+      if (recognitionRef.current) {
+         recognitionRef.current.start();
+      }
+
+      // 2. 啟動 AudioContext 用於繪製聲波動畫
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       analyserRef.current = audioContextRef.current.createAnalyser();
@@ -99,12 +146,11 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       const bufferLength = analyserRef.current.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
-      // 🌟 拔除「自動停止」邏輯，只負責捕捉音軌頻率
       const updateVolume = () => {
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
         
-        // 抓取 5 個不同頻段的音量大小，做為視覺化的長度
+        // 抓取 5 個不同頻段的音量大小
         const v1 = dataArray[2] || 10;
         const v2 = dataArray[6] || 10;
         const v3 = dataArray[10] || 10;
@@ -117,7 +163,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
       updateVolume();
       setIsListening(true);
-      triggerVibration([20, 30]); // 開始時震動提示
+      triggerVibration([20, 30]); 
     } catch (err) {
       alert("請開啟麥克風權限以使用 AI 記帳");
     }
@@ -125,21 +171,36 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
   const stopVoiceMode = (shouldSubmit = false) => {
     setIsListening(false);
-    setVolumeData([10, 10, 10, 10, 10]); // 重置波形
+    setVolumeData([10, 10, 10, 10, 10]); 
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     if (audioContextRef.current) audioContextRef.current.close();
     
+    // 停止語音辨識
+    if (recognitionRef.current) {
+        recognitionRef.current.stop();
+    }
+    
     if (shouldSubmit) {
       triggerVibration([30, 50, 30]);
-      alert("收音完畢，準備交由 AI 解析... (開發中 🚀)");
+      // 如果沒有辨識到任何文字，給予提示
+      const text = transcriptRef.current.trim();
+      if (!text) {
+          alert("沒有聽清楚您說的話，請再試一次！");
+          return;
+      }
+      
+      // 呼叫上層傳入的處理函式，將語音文字傳出去
+      if (onVoiceRecordStop) {
+          onVoiceRecordStop(text);
+      }
     } else {
-      triggerVibration(15); // 取消時的輕微震動
+      triggerVibration(15); 
     }
   };
 
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return; 
-    if (isListening) return; // 🌟 如果正在聽，不觸發捷徑轉盤
+    if (isListening) return; // 正在聽的時候不觸發捷徑轉盤
 
     e.currentTarget.setPointerCapture(e.pointerId);
     startPos.current = { x: e.clientX, y: e.clientY };
@@ -235,7 +296,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* 🌟 全新的 Siri 風格獨立浮動面板 */}
+      {/* 🌟 Siri 風格獨立浮動面板 (強制停止鍵) */}
       {isListening && (
         <div className="fixed inset-x-0 bottom-[6.5rem] mx-auto w-[92%] max-w-sm bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 p-6 flex flex-col items-center justify-center animate-in slide-in-from-bottom-8 z-[1000]">
           

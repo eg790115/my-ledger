@@ -4,7 +4,6 @@ import { APP_VERSION, STORE_NAME, LS, CHART_COLORS } from './utils/constants';
 import { initIndexedDB, saveToIndexedDB, loadFromIndexedDB, getParentCat, getChildCat, getBenArray, getBenBadgeStyle, safeParse, safeArrayLS, safeStringLS, safeNumberLS, nowStr, displayDateClean, formatDateOnly, parseDateForSort, getSafeCycleRange } from './utils/helpers';
 import { gasUrl, postGAS, getDeviceToken, deviceValid, setDeviceToken, clearDeviceToken, getBioKey, isDeviceBioBound, getBioFailCount, setBioFailCount, getBioLockedUntil, setBioLockedUntil, clearBioFail, verifyPinOnline, saveLocalPinHash, unlockWithPinLocal } from './utils/api';
 
-// 🚀 引入解耦的 4 大模組化大腦
 import { useSyncEngine } from './hooks/useSyncEngine';
 import { useAuth } from './hooks/useAuth';
 import { useTransactions } from './hooks/useTransactions';
@@ -55,8 +54,6 @@ function App() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [snapshotsCache, setSnapshotsCache] = useState(() => { try { return JSON.parse(localStorage.getItem('snapshots_cache')) || {}; } catch { return {}; } });
 
-  // 🗑️ 已移除重複宣告的 aiEvalData, sysConfig, isAIEvaluating
-
   const [editingTx, setEditingTx] = useState(null);
   const [editingGroup, setEditingGroup] = useState(null);
   const [expandedGroups, setExpandedGroups] = useState({});
@@ -66,7 +63,9 @@ function App() {
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState(null);
   const [showConfirmEmptyTrash, setShowConfirmEmptyTrash] = useState(false);
   
-  // 歷史搜尋與分析頁狀態
+  // 🌟 AI 語音專用狀態
+  const [voiceReviewTxs, setVoiceReviewTxs] = useState(null);
+
   const [historySearch, setHistorySearch] = useState("");
   const [debouncedHistorySearch, setDebouncedHistorySearch] = useState("");
   const [historyTypeFilter, setHistoryTypeFilter] = useState("all");
@@ -105,7 +104,6 @@ function App() {
     setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000);
   }, []);
 
-  // 🚀 1. 掛載 Auth 認證模組
   const {
     currentUser, setCurrentUser, selectingUser, setSelectingUser,
     pinInput, setPinInput, fallbackToPin, setFallbackToPin, biometricAvailable,
@@ -121,20 +119,12 @@ function App() {
       const cleanStr = String(rawDate).replace(/上午|下午|AM|PM/gi, "").trim().replace(/-/g, "/").replace("T", " ");
       const ts = new Date(cleanStr).getTime() || 0;
       const fallbackId = `${ts}_${String(t.member || t["成員"] || "未知").trim()}_${Math.random().toString(36).substring(2, 7)}`;
-      
       return {
-        id: String(t.id || t[""] || t["ID"] || fallbackId), 
-        amount: parseFloat(t.amount !== undefined ? t.amount : t["金額"]) || 0,
-        category: String(t.category || t["類別"] || "其他"),
-        date: rawDate, timestamp: ts,
-        member: String(t.member || t["成員"] || "未知").trim(),
-        recorder: String(t.recorder || t["記錄者"] || "系統").trim(),
-        desc: String(t.desc || t["備註"] || ""),
-        type: String(t.type || t["類型"] || "expense"),
-        groupId: String(t.groupId || t["GroupID"] || ""),
-        parentDesc: String(t.parentDesc || t["ParentDesc"] || ""),
-        beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知").trim(),
-        lastModified: Number(t.lastModified || t["LastModified"]) || 0
+        id: String(t.id || t[""] || t["ID"] || fallbackId), amount: parseFloat(t.amount !== undefined ? t.amount : t["金額"]) || 0,
+        category: String(t.category || t["類別"] || "其他"), date: rawDate, timestamp: ts, member: String(t.member || t["成員"] || "未知").trim(),
+        recorder: String(t.recorder || t["記錄者"] || "系統").trim(), desc: String(t.desc || t["備註"] || ""), type: String(t.type || t["類型"] || "expense"),
+        groupId: String(t.groupId || t["GroupID"] || ""), parentDesc: String(t.parentDesc || t["ParentDesc"] || ""),
+        beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知").trim(), lastModified: Number(t.lastModified || t["LastModified"]) || 0
       };
     }).filter(t => t && t.id && t.id !== "undefined");
 
@@ -144,18 +134,11 @@ function App() {
       const ts = new Date(cleanStr).getTime() || 0;
       const fallbackId = `${ts}_${String(t.member || t["成員"] || "未知").trim()}_trash_${Math.random().toString(36).substring(2, 7)}`;
       return {
-        id: String(t.id || t[""] || t["ID"] || fallbackId),
-        amount: parseFloat(t.amount !== undefined ? t.amount : t["金額"]) || 0,
-        category: String(t.category || t["類別"] || "其他"),
-        date: rawDate, timestamp: ts,
-        member: String(t.member || t["成員"] || "未知").trim(),
-        recorder: String(t.recorder || t["記錄者"] || "系统").trim(),
-        desc: String(t.desc || t["備註"] || ""),
-        type: String(t.type || t["類型"] || "expense"),
-        groupId: String(t.groupId || t["GroupID"] || ""),
-        parentDesc: String(t.parentDesc || t["ParentDesc"] || ""),
-        beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知").trim(),
-        lastModified: Number(t.lastModified || t["LastModified"]) || 0
+        id: String(t.id || t[""] || t["ID"] || fallbackId), amount: parseFloat(t.amount !== undefined ? t.amount : t["金額"]) || 0,
+        category: String(t.category || t["類別"] || "其他"), date: rawDate, timestamp: ts, member: String(t.member || t["成員"] || "未知").trim(),
+        recorder: String(t.recorder || t["記錄者"] || "系统").trim(), desc: String(t.desc || t["備註"] || ""), type: String(t.type || t["類型"] || "expense"),
+        groupId: String(t.groupId || t["GroupID"] || ""), parentDesc: String(t.parentDesc || t["ParentDesc"] || ""),
+        beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知").trim(), lastModified: Number(t.lastModified || t["LastModified"]) || 0
       };
     });
 
@@ -183,11 +166,7 @@ function App() {
     const newTrashStr = JSON.stringify(newTrashCache);
     if (oldTrashStr !== newTrashStr) { setTrashCache(newTrashCache); saveToIndexedDB("trash_store", newTrashCache); changed = true; }
 
-    if (data.auditLogs) {
-      setAuditLogs(data.auditLogs);
-      saveToIndexedDB("audit_logs", data.auditLogs);
-    }
-
+    if (data.auditLogs) { setAuditLogs(data.auditLogs); saveToIndexedDB("audit_logs", data.auditLogs); }
     if (data.serverTime) { localStorage.setItem('last_server_time_v1', data.serverTime); }
     setLastSyncText(nowStr());
 
@@ -197,29 +176,72 @@ function App() {
     return changed;
   }, []);
 
-  // 🚀 2. 掛載 Sync 同步模組
-  const {
-    syncQueue, setSyncQueue, isSyncing, lastServerTime, setLastServerTime,
-    requestSync, appendToQueueAndSync
-  } = useSyncEngine({
-    currentUser, isOnline, txCacheRef, trashCacheRef, setTxCache, setTrashCache,
-    applyCloudData, showStatus, forceReloginForToken
+  const { syncQueue, setSyncQueue, isSyncing, lastServerTime, setLastServerTime, requestSync, appendToQueueAndSync } = useSyncEngine({
+    currentUser, isOnline, txCacheRef, trashCacheRef, setTxCache, setTrashCache, applyCloudData, showStatus, forceReloginForToken
   });
 
-  // 🚀 3. 掛載 Transactions 資料庫模組
-  const {
-    pendingMap, visibleTransactions, visibleTrash, myTransactions,
-    handleAdd, handleUpdateTx, handleUpdateGroupParent, handleDeleteTx,
-    handleRestoreTrash, handleHardDeleteTrash, handleEmptyTrash
-  } = useTransactions({
-    currentUser, txCache, trashCache, syncQueue, appendToQueueAndSync, triggerVibration, showStatus,
-    setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal
+  const { pendingMap, visibleTransactions, visibleTrash, myTransactions, handleAdd, handleUpdateTx, handleUpdateGroupParent, handleDeleteTx, handleRestoreTrash, handleHardDeleteTrash, handleEmptyTrash } = useTransactions({
+    currentUser, txCache, trashCache, syncQueue, appendToQueueAndSync, triggerVibration, showStatus, setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal
   });
 
-  // 🚀 4. 掛載 AI 智慧模組
-  const {
-    aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval
-  } = useAI({ currentUser, isOnline, txCache, showStatus });
+  const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText } = useAI({ currentUser, isOnline, txCache, showStatus });
+
+  // 🌟 AI 語音停止後，交接給 App.jsx 處理
+  const handleVoiceRecordStop = async (text) => {
+    setLoadingCard({ show: true, text: "🤖 正在連線 AI 大腦解析帳單..." });
+    try {
+      const parsedTxs = await processVoiceText(text, currentUser.name);
+      if (parsedTxs && parsedTxs.length > 0) {
+        setVoiceReviewTxs(parsedTxs); // 打開確認視窗
+      }
+    } catch (e) {
+      showStatus("error", e.message);
+    } finally {
+      setLoadingCard({ show: false, text: "" });
+    }
+  };
+
+  // 🌟 確認並寫入語音資料
+  const handleConfirmVoice = () => {
+    triggerVibration([20, 40, 20]);
+    const baseTimestamp = Date.now();
+    const groupMap = {}; // 用於處理多筆共用同一個 parentTitle 的情況
+    const randomSuffix = () => Math.random().toString(36).substring(2, 8);
+
+    const completeTxs = voiceReviewTxs.map((tx, idx) => {
+      let gId = "";
+      let pDesc = "";
+      if (tx.isGroup && tx.parentTitle) {
+         if (!groupMap[tx.parentTitle]) {
+           groupMap[tx.parentTitle] = `G_${baseTimestamp}_${currentUser.name}_${randomSuffix()}`;
+         }
+         gId = groupMap[tx.parentTitle];
+         pDesc = tx.parentTitle;
+      }
+
+      return {
+         id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`,
+         date: nowStr(),
+         type: "expense",
+         category: tx.category || "其他/雜項",
+         amount: Number(tx.amount) || 0,
+         desc: tx.desc || "",
+         member: currentUser.name,
+         recorder: currentUser.name,
+         beneficiary: tx.beneficiary || currentUser.name,
+         groupId: gId,
+         parentDesc: pDesc,
+         isOffline: !navigator.onLine,
+         action: "ADD"
+      };
+    });
+
+    setActiveTab("dashboard");
+    appendToQueueAndSync(completeTxs);
+    setVoiceReviewTxs(null); // 關閉視窗
+    showStatus("success", "✅ AI 帳單已加入同步排程！");
+  };
+
 
   useEffect(() => { if (activeTab === "analysis") { setAnimTrigger(false); const timer = setTimeout(() => setAnimTrigger(true), 50); return () => clearTimeout(timer); } }, [activeTab, analysisType, analysisDateFilter]);
 
@@ -318,7 +340,6 @@ function App() {
 
   const filteredHistoryGroups = useMemo(() => {
     if (!currentUser) return [];
-
     try {
       const safeSearchTxt = String(debouncedHistorySearch || "").trim().toLowerCase();
       const safeExcludeTxt = String(debouncedHistoryExcludeSearch || "").trim().toLowerCase();
@@ -375,21 +396,10 @@ function App() {
         list = list.filter(item => {
           if (item.isGroup) {
             const groupMatch = isMatch(item.parentTitle, safeSearchTxt) || isMatch(item.parentDesc, safeSearchTxt) || isMatch(item.amount, safeSearchTxt) || isMatch(item.date, safeSearchTxt);
-            const childMatch = (item.children || []).some(tx => 
-              isMatch(getParentCat(tx.category), safeSearchTxt) || 
-              isMatch(getChildCat(tx.category), safeSearchTxt) || 
-              isMatch(tx.desc, safeSearchTxt) || 
-              isMatch(tx.amount, safeSearchTxt) || 
-              isMatch(tx.beneficiary, safeSearchTxt)
-            );
+            const childMatch = (item.children || []).some(tx => isMatch(getParentCat(tx.category), safeSearchTxt) || isMatch(getChildCat(tx.category), safeSearchTxt) || isMatch(tx.desc, safeSearchTxt) || isMatch(tx.amount, safeSearchTxt) || isMatch(tx.beneficiary, safeSearchTxt));
             return groupMatch || childMatch;
           } else {
-            return isMatch(getParentCat(item.category), safeSearchTxt) || 
-                   isMatch(getChildCat(item.category), safeSearchTxt) || 
-                   isMatch(item.desc, safeSearchTxt) || 
-                   isMatch(item.amount, safeSearchTxt) || 
-                   isMatch(item.date, safeSearchTxt) || 
-                   isMatch(item.beneficiary, safeSearchTxt);
+            return isMatch(getParentCat(item.category), safeSearchTxt) || isMatch(getChildCat(item.category), safeSearchTxt) || isMatch(item.desc, safeSearchTxt) || isMatch(item.amount, safeSearchTxt) || isMatch(item.date, safeSearchTxt) || isMatch(item.beneficiary, safeSearchTxt);
           }
         });
       }
@@ -398,31 +408,17 @@ function App() {
         list = list.filter(item => {
           if (item.isGroup) {
             const groupMatch = isMatch(item.parentTitle, safeExcludeTxt) || isMatch(item.parentDesc, safeExcludeTxt) || isMatch(item.amount, safeExcludeTxt) || isMatch(item.date, safeExcludeTxt);
-            const childMatch = (item.children || []).some(tx => 
-              isMatch(getParentCat(tx.category), safeExcludeTxt) || 
-              isMatch(getChildCat(tx.category), safeExcludeTxt) || 
-              isMatch(tx.desc, safeExcludeTxt) || 
-              isMatch(tx.amount, safeExcludeTxt) || 
-              isMatch(tx.beneficiary, safeExcludeTxt)
-            );
+            const childMatch = (item.children || []).some(tx => isMatch(getParentCat(tx.category), safeExcludeTxt) || isMatch(getChildCat(tx.category), safeExcludeTxt) || isMatch(tx.desc, safeExcludeTxt) || isMatch(tx.amount, safeExcludeTxt) || isMatch(tx.beneficiary, safeExcludeTxt));
             return !(groupMatch || childMatch);
           } else {
-            return !(isMatch(getParentCat(item.category), safeExcludeTxt) || 
-                     isMatch(getChildCat(item.category), safeExcludeTxt) || 
-                     isMatch(item.desc, safeExcludeTxt) || 
-                     isMatch(item.amount, safeExcludeTxt) || 
-                     isMatch(item.date, safeExcludeTxt) || 
-                     isMatch(item.beneficiary, safeExcludeTxt));
+            return !(isMatch(getParentCat(item.category), safeExcludeTxt) || isMatch(getChildCat(item.category), safeExcludeTxt) || isMatch(item.desc, safeExcludeTxt) || isMatch(item.amount, safeExcludeTxt) || isMatch(item.date, safeExcludeTxt) || isMatch(item.beneficiary, safeExcludeTxt));
           }
         });
       }
 
       return list;
 
-    } catch (error) {
-      console.error("搜尋引擎捕捉到極端異常:", error);
-      return []; 
-    }
+    } catch (error) { return []; }
   }, [allGroupedAndSorted, currentUser, historyTypeFilter, historyDateFilter, debouncedHistorySearch, debouncedHistoryExcludeSearch, pendingMap, billingStartDay]);
 
   const historyFilteredStats = useMemo(() => {
@@ -438,10 +434,7 @@ function App() {
     return { income: inc, expense: exp, balance: inc - exp };
   }, [filteredHistoryGroups, pendingMap]);
 
-  function toggleGroup(gId) { 
-    triggerVibration(10); 
-    setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); 
-  }
+  function toggleGroup(gId) { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); }
 
   function renderStandaloneCard(tx, allowEdit = true) {
     const benArray = getBenArray(tx.beneficiary, tx.member);
@@ -669,6 +662,66 @@ function App() {
       
       <ProxyNotification transactions={unackedProxyTxs} onAck={() => { triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...unackedProxyTxs.map(t => t.id)])]; 
       localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
+
+      {/* 🌟 語音解析確認清單彈窗 */}
+      {voiceReviewTxs && (
+        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+            <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
+              <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
+            </h3>
+            <p className="text-[10px] text-gray-500 font-bold mb-4">請確認以下由語音自動生成的帳單，點擊可直接修改金額或備註。</p>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide mb-4">
+              {voiceReviewTxs.map((tx, idx) => (
+                <div key={idx} className="bg-gray-50 p-4 rounded-3xl border border-gray-200">
+                  <div className="flex justify-between items-center mb-2.5">
+                    <span className="text-[11px] font-black text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200 shadow-sm">{tx.category}</span>
+                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg shadow-sm">對象: {tx.beneficiary}</span>
+                  </div>
+                  
+                  {tx.isGroup && tx.parentTitle && (
+                    <div className="text-[10px] font-black text-purple-600 mb-1.5 flex items-center gap-1">
+                      🏷️ {tx.parentTitle} (將自動群組)
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="text-lg font-black text-gray-600 shrink-0">$</span>
+                    <input
+                      type="number"
+                      value={tx.amount}
+                      onChange={(e) => {
+                        const newTxs = [...voiceReviewTxs];
+                        newTxs[idx].amount = e.target.value;
+                        setVoiceReviewTxs(newTxs);
+                      }}
+                      className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 font-black text-xl text-gray-800 outline-none focus:border-blue-400 tabular-nums shadow-sm transition-all"
+                    />
+                  </div>
+                  
+                  <input
+                    type="text"
+                    value={tx.desc}
+                    onChange={(e) => {
+                      const newTxs = [...voiceReviewTxs];
+                      newTxs[idx].desc = e.target.value;
+                      setVoiceReviewTxs(newTxs);
+                    }}
+                    placeholder="輸入備註..."
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-bold text-xs text-gray-600 outline-none focus:border-blue-400 shadow-sm transition-all"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all">取消</button>
+              <button onClick={handleConfirmVoice} className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-xl shadow-blue-500/30">確認寫入 ({voiceReviewTxs.length}筆)</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { triggerVibration(10); setEditingTx(null); }} />}
       {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => { triggerVibration(10); setEditingGroup(null); }} />}
@@ -956,6 +1009,7 @@ function App() {
         triggerVibration={triggerVibration} 
         onQuickAdd={handleAdd}
         loginUser={currentUser?.name}
+        onVoiceRecordStop={handleVoiceRecordStop} 
       />
 
       {statusMsg.text && (
