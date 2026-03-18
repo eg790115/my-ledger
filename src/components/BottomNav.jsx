@@ -12,12 +12,17 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   // 🌟 將音量狀態從單一數字，改為 5 個頻率區段的陣列，用來繪製聲波
   const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
 
+  // 🌟 新增：即時字幕與錯誤提示狀態 (取代醜陋的 alert)
+  const [realtimeText, setRealtimeText] = useState("");
+  const [voiceError, setVoiceError] = useState("");
+
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
   // 🌟 用於存放 SpeechRecognition 實例
   const recognitionRef = useRef(null); 
   const transcriptRef = useRef(""); // 暫存語音辨識結果
+  const silenceTimerRef = useRef(null); // 🌟 用來計時 2 秒自動停止
 
   const loadShortcuts = () => {
     try {
@@ -90,11 +95,11 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
   };
 
-  // 🌟 初始化語音辨識
+  // 🌟 初始化語音辨識 (加入即時字幕與 2 秒計時器)
   const initSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("您的瀏覽器不支援語音辨識功能 (建議使用 Chrome 或 Safari)");
+      setVoiceError("您的瀏覽器不支援語音辨識功能 (建議使用 Chrome 或 Safari)");
       return null;
     }
     const recognition = new SpeechRecognition();
@@ -104,20 +109,35 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
     recognition.onresult = (event) => {
       let finalTranscript = '';
+      let interimTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
           finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
         }
       }
       if (finalTranscript) {
          // 將每次的 final 結果接起來
          transcriptRef.current += finalTranscript;
       }
+
+      // 更新畫面即時文字
+      setRealtimeText(transcriptRef.current + interimTranscript);
+      setVoiceError(""); // 有聽到聲音就清空錯誤
+
+      // 🌟 核心：重置 2 秒計時器，2 秒沒聲音就自動停止並送出！
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        stopVoiceMode(true);
+      }, 2000);
     };
 
     recognition.onerror = (event) => {
       console.error("語音辨識錯誤:", event.error);
-      // 這裡可以加入更細緻的錯誤處理，例如提示使用者再試一次
+      if (event.error !== 'no-speech') {
+         setVoiceError("麥克風收音異常，請重試");
+      }
     };
 
     return recognition;
@@ -125,14 +145,21 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
   const startVoiceMode = async () => {
     try {
-      transcriptRef.current = ""; // 清空之前的紀錄
+      // 啟動前清空舊狀態
+      transcriptRef.current = ""; 
+      setRealtimeText("");
+      setVoiceError("");
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       
       // 1. 啟動 Web Speech API 進行文字辨識
       if (!recognitionRef.current) {
          recognitionRef.current = initSpeechRecognition();
       }
       if (recognitionRef.current) {
-         recognitionRef.current.start();
+         try { recognitionRef.current.start(); } catch (e) {}
+      } else {
+         setIsListening(true);
+         return; // 若不支援，直接顯示錯誤面板
       }
 
       // 2. 啟動 AudioContext 用於繪製聲波動畫
@@ -165,36 +192,45 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       setIsListening(true);
       triggerVibration([20, 30]); 
     } catch (err) {
-      alert("請開啟麥克風權限以使用 AI 記帳");
+      setVoiceError("請開啟麥克風權限以使用 AI 記帳");
+      setIsListening(true);
     }
   };
 
   const stopVoiceMode = (shouldSubmit = false) => {
-    setIsListening(false);
-    setVolumeData([10, 10, 10, 10, 10]); 
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    if (audioContextRef.current) audioContextRef.current.close();
-    
-    // 停止語音辨識
-    if (recognitionRef.current) {
-        recognitionRef.current.stop();
-    }
+    // 停止時清除自動送出計時器
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     
     if (shouldSubmit) {
-      triggerVibration([30, 50, 30]);
-      // 如果沒有辨識到任何文字，給予提示
-      const text = transcriptRef.current.trim();
+      // 確保抓取到包含即時（尚未 final）的字串，避免漏字
+      const text = (transcriptRef.current + (realtimeText.replace(transcriptRef.current, ''))).trim();
+
       if (!text) {
-          alert("沒有聽清楚您說的話，請再試一次！");
-          return;
+          triggerVibration([50, 50]);
+          setVoiceError("沒有聽清楚您說的話，請再試一次！");
+          return; // 🌟 沒聽清楚時「不關閉視窗」，直接顯示紅字錯誤
       }
       
+      triggerVibration([30, 50, 30]);
       // 呼叫上層傳入的處理函式，將語音文字傳出去
       if (onVoiceRecordStop) {
           onVoiceRecordStop(text);
       }
     } else {
       triggerVibration(15); 
+    }
+
+    // 關閉相關服務與視窗
+    setIsListening(false);
+    setVolumeData([10, 10, 10, 10, 10]); 
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(()=>{});
+    }
+    
+    // 停止語音辨識
+    if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch(e) {}
     }
   };
 
@@ -296,7 +332,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* 🌟 Siri 風格獨立浮動面板 (強制停止鍵) */}
+      {/* 🌟 語音浮動面板 (樣式與原始檔案完全相同，僅修改文字顯示區塊) */}
       {isListening && (
         <div className="fixed inset-x-0 bottom-[6.5rem] mx-auto w-[92%] max-w-sm bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 p-6 flex flex-col items-center justify-center animate-in slide-in-from-bottom-8 z-[1000]">
           
@@ -315,7 +351,17 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
           </div>
           
           <div className="text-gray-800 font-black text-lg mb-1">正在聆聽...</div>
-          <div className="text-gray-400 font-bold text-xs mb-8">請說出記帳內容，例如「早餐一百元」</div>
+          
+          {/* 🌟 取代原本固定的文字，改為即時字幕與錯誤顯示 */}
+          <div className="min-h-[3rem] flex items-center justify-center mb-6 w-full px-2">
+            {voiceError ? (
+              <span className="text-red-500 font-bold text-sm text-center bg-red-50 py-1.5 px-3 rounded-lg animate-pulse">{voiceError}</span>
+            ) : realtimeText ? (
+              <span className="text-blue-600 font-black text-[15px] text-center break-words leading-snug">{realtimeText}</span>
+            ) : (
+              <span className="text-gray-400 font-bold text-xs text-center">請說出記帳內容，例如「早餐一百元」</span>
+            )}
+          </div>
           
           {/* 控制按鈕區 */}
           <div className="flex gap-3 w-full">
