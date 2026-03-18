@@ -9,20 +9,19 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [tempAmount, setTempAmount] = useState("");
 
   const [isListening, setIsListening] = useState(false);
-  // 🌟 將音量狀態從單一數字，改為 5 個頻率區段的陣列，用來繪製聲波
   const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
 
-  // 🌟 新增：即時字幕與錯誤提示狀態 (取代醜陋的 alert)
+  // 即時字幕與錯誤提示
   const [realtimeText, setRealtimeText] = useState("");
   const [voiceError, setVoiceError] = useState("");
 
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
-  // 🌟 用於存放 SpeechRecognition 實例
+  
   const recognitionRef = useRef(null); 
-  const transcriptRef = useRef(""); // 暫存語音辨識結果
-  const silenceTimerRef = useRef(null); // 🌟 用來計時 2 秒自動停止
+  const transcriptRef = useRef(""); 
+  const silenceTimerRef = useRef(null); 
 
   const loadShortcuts = () => {
     try {
@@ -58,7 +57,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     } catch {}
 
     const data = currentShortcuts[shortcutKey];
-    
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     const dateStr = now.toISOString().slice(0, 16);
@@ -95,17 +93,16 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
   };
 
-  // 🌟 初始化語音辨識 (加入即時字幕與 2 秒計時器)
   const initSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setVoiceError("您的瀏覽器不支援語音辨識功能 (建議使用 Chrome 或 Safari)");
+      setVoiceError("此瀏覽器不支援語音辨識 (建議使用 Chrome/Safari)");
       return null;
     }
     const recognition = new SpeechRecognition();
     recognition.lang = 'zh-TW';
-    recognition.continuous = true; // 持續辨識
-    recognition.interimResults = true; // 顯示即時結果
+    recognition.continuous = true; 
+    recognition.interimResults = true; 
 
     recognition.onresult = (event) => {
       let finalTranscript = '';
@@ -117,126 +114,109 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
           interimTranscript += event.results[i][0].transcript;
         }
       }
-      if (finalTranscript) {
-         // 將每次的 final 結果接起來
-         transcriptRef.current += finalTranscript;
-      }
+      if (finalTranscript) transcriptRef.current += finalTranscript;
 
-      // 更新畫面即時文字
-      setRealtimeText(transcriptRef.current + interimTranscript);
-      setVoiceError(""); // 有聽到聲音就清空錯誤
+      const currentText = transcriptRef.current + interimTranscript;
+      setRealtimeText(currentText);
+      setVoiceError(""); 
 
-      // 🌟 核心：重置 2 秒計時器，2 秒沒聲音就自動停止並送出！
+      // 🌟 重新計時，若 2 秒沒說話且有辨識到文字，自動停止
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
-        stopVoiceMode(true);
+        if (currentText.trim()) stopVoiceMode(true);
       }, 2000);
     };
 
     recognition.onerror = (event) => {
       console.error("語音辨識錯誤:", event.error);
-      if (event.error !== 'no-speech') {
-         setVoiceError("麥克風收音異常，請重試");
-      }
+      if (event.error !== 'no-speech') setVoiceError(`收音錯誤: ${event.error}`);
     };
 
     return recognition;
   };
 
-  const startVoiceMode = async () => {
-    try {
-      // 啟動前清空舊狀態
-      transcriptRef.current = ""; 
-      setRealtimeText("");
-      setVoiceError("");
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      
-      // 1. 啟動 Web Speech API 進行文字辨識
-      if (!recognitionRef.current) {
-         recognitionRef.current = initSpeechRecognition();
-      }
-      if (recognitionRef.current) {
-         try { recognitionRef.current.start(); } catch (e) {}
-      } else {
-         setIsListening(true);
-         return; // 若不支援，直接顯示錯誤面板
-      }
+  const startVoiceMode = () => {
+    // 重置所有狀態
+    transcriptRef.current = "";
+    setRealtimeText("");
+    setVoiceError("");
+    setIsListening(true);
+    triggerVibration([20, 30]); 
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-      // 2. 啟動 AudioContext 用於繪製聲波動畫
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      source.connect(analyserRef.current);
-      analyserRef.current.fftSize = 64;
-
-      const bufferLength = analyserRef.current.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const updateVolume = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        
-        // 抓取 5 個不同頻段的音量大小
-        const v1 = dataArray[2] || 10;
-        const v2 = dataArray[6] || 10;
-        const v3 = dataArray[10] || 10;
-        const v4 = dataArray[14] || 10;
-        const v5 = dataArray[18] || 10;
-        
-        setVolumeData([v1, v2, v3, v4, v5]);
-        animationRef.current = requestAnimationFrame(updateVolume);
-      };
-
-      updateVolume();
-      setIsListening(true);
-      triggerVibration([20, 30]); 
-    } catch (err) {
-      setVoiceError("請開啟麥克風權限以使用 AI 記帳");
-      setIsListening(true);
+    // 🌟 核心修復：為了突破手機瀏覽器限制，必須在此「瞬間同步」啟動語音辨識
+    if (!recognitionRef.current) recognitionRef.current = initSpeechRecognition();
+    if (recognitionRef.current) {
+       try { recognitionRef.current.start(); } catch (e) {}
+    } else {
+       setVoiceError("您的設備不支援語音辨識");
     }
+
+    // 🌟 啟動聲波動畫 (以非同步方式啟動，不阻擋語音辨識)
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        source.connect(analyserRef.current);
+        analyserRef.current.fftSize = 64;
+
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const updateVolume = () => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(dataArray);
+          setVolumeData([
+             dataArray[2] || 10,
+             dataArray[6] || 10,
+             dataArray[10] || 10,
+             dataArray[14] || 10,
+             dataArray[18] || 10
+          ]);
+          animationRef.current = requestAnimationFrame(updateVolume);
+        };
+        updateVolume();
+      })
+      .catch(err => console.log("視覺化麥克風被擋，但語音可能仍可運作", err));
   };
 
   const stopVoiceMode = (shouldSubmit = false) => {
-    // 停止時清除自動送出計時器
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     
-    if (shouldSubmit) {
-      // 確保抓取到包含即時（尚未 final）的字串，避免漏字
-      const text = (transcriptRef.current + (realtimeText.replace(transcriptRef.current, ''))).trim();
+    // 確保抓到畫面上最新顯示的文字
+    const finalText = realtimeText.trim();
 
-      if (!text) {
-          triggerVibration([50, 50]);
-          setVoiceError("沒有聽清楚您說的話，請再試一次！");
-          return; // 🌟 沒聽清楚時「不關閉視窗」，直接顯示紅字錯誤
-      }
-      
-      triggerVibration([30, 50, 30]);
-      // 呼叫上層傳入的處理函式，將語音文字傳出去
-      if (onVoiceRecordStop) {
-          onVoiceRecordStop(text);
-      }
-    } else {
-      triggerVibration(15); 
-    }
-
-    // 關閉相關服務與視窗
+    // 🌟 核心修復：無論如何，先無條件關閉 UI 面板，絕對不卡死！
     setIsListening(false);
     setVolumeData([10, 10, 10, 10, 10]); 
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(()=>{});
     }
-    
-    // 停止語音辨識
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
+    }
+
+    // 關閉面版後，再處理送出邏輯
+    if (shouldSubmit) {
+      if (!finalText) {
+          triggerVibration([50, 50]);
+          // 延遲一點點跳出警告，讓畫面先關閉
+          setTimeout(() => alert("沒有聽清楚您說的話，請再試一次！"), 100);
+          return; 
+      }
+      
+      triggerVibration([30, 50, 30]);
+      if (onVoiceRecordStop) onVoiceRecordStop(finalText);
+    } else {
+      triggerVibration(15); 
     }
   };
 
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return; 
-    if (isListening) return; // 正在聽的時候不觸發捷徑轉盤
+    if (isListening) return; 
 
     e.currentTarget.setPointerCapture(e.pointerId);
     startPos.current = { x: e.clientX, y: e.clientY };
@@ -303,7 +283,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         triggerVibration([30, 50, 30]);
         handleQuickSubmit(selected);
       } else if (selected === 'top') {
-        triggerVibration([20, 40, 20]);
         startVoiceMode();
       }
     }
@@ -332,11 +311,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* 🌟 語音浮動面板 (樣式與原始檔案完全相同，僅修改文字顯示區塊) */}
       {isListening && (
         <div className="fixed inset-x-0 bottom-[6.5rem] mx-auto w-[92%] max-w-sm bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 p-6 flex flex-col items-center justify-center animate-in slide-in-from-bottom-8 z-[1000]">
           
-          {/* 聲波動畫區 */}
           <div className="flex items-center justify-center gap-1.5 h-16 mb-4">
             {volumeData.map((v, i) => (
               <div 
@@ -352,7 +329,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
           
           <div className="text-gray-800 font-black text-lg mb-1">正在聆聽...</div>
           
-          {/* 🌟 取代原本固定的文字，改為即時字幕與錯誤顯示 */}
           <div className="min-h-[3rem] flex items-center justify-center mb-6 w-full px-2">
             {voiceError ? (
               <span className="text-red-500 font-bold text-sm text-center bg-red-50 py-1.5 px-3 rounded-lg animate-pulse">{voiceError}</span>
@@ -363,7 +339,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
             )}
           </div>
           
-          {/* 控制按鈕區 */}
           <div className="flex gap-3 w-full">
              <button 
                 onClick={() => stopVoiceMode(false)} 
