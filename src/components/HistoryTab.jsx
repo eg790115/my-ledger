@@ -9,7 +9,9 @@ const HistoryTab = ({
   setShowTrashModal, showSearchFilterModal, setShowSearchFilterModal,
   debouncedHistorySearch, debouncedHistoryExcludeSearch, historyTypeFilter,
   isHistoryFiltered, historyFilteredStats, filteredHistoryGroups,
-  renderItemOrGroup
+  renderItemOrGroup,
+  // 🌟 接收從 App.jsx 傳來的觀看歷程觸發函數
+  onViewHistory 
 }) => {
   const safeGroups = filteredHistoryGroups || [];
   const safeStats = historyFilteredStats || { balance: 0, income: 0, expense: 0 };
@@ -81,7 +83,7 @@ const HistoryTab = ({
         )}
       </div>
 
-      {/* 🌟 統計面板 (輕量化簡潔版，對齊首頁風格，讓位給歷史清單) */}
+      {/* 🌟 統計面板 */}
       <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm mb-4 flex flex-col gap-3">
         <div className="flex justify-between items-center px-1">
           <span className="text-[11px] font-black text-gray-400">篩選區間結餘</span>
@@ -101,8 +103,8 @@ const HistoryTab = ({
         </div>
       </div>
 
-      {/* 🌟 歷史清單：套用黃金 30 筆渲染 */}
-      <div className="space-y-3 pb-6">
+      {/* 🌟 歷史清單 */}
+      <div className="space-y-3 pb-6 relative">
         {displayedGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400 animate-in">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -111,7 +113,37 @@ const HistoryTab = ({
             <p className="font-black text-sm tracking-widest">沒有符合條件的紀錄</p>
           </div>
         ) : (
-          displayedGroups.map(item => renderItemOrGroup(item, true))
+          displayedGroups.map(item => {
+            // 檢查這筆紀錄（或這個群組的任一子紀錄）是否被編輯過
+            const isItemEdited = item.isGroup 
+                ? item.children.some(child => child.isEdited) 
+                : item.isEdited;
+            
+            // 決定要看哪一筆的歷程（群組就看第一筆代表）
+            const historyIdTarget = item.isGroup ? item.children[0].id : item.id;
+
+            return (
+              <div key={item.isGroup ? item.groupId : item.id} className="relative group">
+                {/* 呼叫你原本的渲染函數 */}
+                {renderItemOrGroup(item, true)}
+                
+                {/* 🌟 若有被編輯過，疊加「已編輯」標籤上去 */}
+                {isItemEdited && onViewHistory && (
+                  <button 
+                    onClick={(e) => { 
+                       e.stopPropagation(); 
+                       triggerVibration(10); 
+                       onViewHistory(historyIdTarget); 
+                    }}
+                    className="absolute top-2 right-12 z-20 flex items-center gap-1 bg-white/90 backdrop-blur-sm text-gray-500 px-2 py-1 rounded-lg border border-gray-200 shadow-sm active:scale-95 transition-all hover:bg-gray-50"
+                  >
+                    <SvgIcon name="edit" size={12} />
+                    <span className="text-[9px] font-black tracking-widest">已編輯</span>
+                  </button>
+                )}
+              </div>
+            );
+          })
         )}
 
         {/* 🚀 隱形感測器與載入提示 */}

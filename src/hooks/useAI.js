@@ -30,7 +30,7 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
     return () => window.removeEventListener('cloud_data_synced', handleCloudSync);
   }, []);
 
-  const handleForceAIEval = () => { /* 保留既有邏輯 */ };
+  const handleForceAIEval = () => { /* 這裡保留，實際由 SettingsTab 呼叫時處理 */ };
 
   const processVoiceText = async (voiceText, currentMember) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) throw new Error("請先至設定頁面填寫 Gemini API Key");
@@ -39,36 +39,65 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
 你是一位精準的家庭記帳助手。請解析使用者的語音輸入，並輸出結構化 JSON。
 使用者當前登入身分：「${currentMember}」。
 
-【核心解析規則】：
-1. **收支類型 (type) 與金額計算**：
-   - 判定是支出 ("expense") 還是收入 ("income")。若語音表達為獲得金錢、薪水、中獎、收到錢等，請判定為 "income"，否則為 "expense"。
-   - 務必計算出「總金額」填入 \`amount\` (例如: 3個30元的蘋果 -> amount: 90)。
+【核心解析規則 (極度重要)】：
+1. **明細嚴格拆分 (絕對不可擅自加總不同品項)**：
+   - 若使用者說出多個「不同的品項」，**必須拆分成陣列內的多個獨立物件**！
+   - 例如：「買牛奶100元、雞蛋90元」 -> 必須輸出 2 筆物件，一筆100，一筆90。
+   - 只有「同一品項有多個數量」時才計算總價，例如「3個30元蘋果」 -> 輸出 1 筆 90。
 
-2. **備註格式 (desc) 與智慧精簡**：
-   - 格式：[地點/店家] 物品名稱 x數量。
-   - ⚠️ **智慧精簡**：如果使用者的語音包含了「分類名稱」(如: 早餐、午餐、晚餐)，**請將這些字眼從備註中刪除**！
-   - 例如：使用者說「晚餐橘子便當」，分類為「食/晚餐」，備註請只留下「橘子便當」。
+2. **同地點多筆 (發票群組情境)**：
+   - 若在「同一個地點/店家」買了多樣東西（例如：「在全聯買牛奶100、可樂50」）。
+   - 必須輸出 2 筆物件，且這兩筆的 \`isGroup\` 都要設為 true，\`parentTitle\` 都要設為該店家名稱 (如 "全聯")。
 
-3. ⚠️ **人物稱謂與 Beneficiary 判定邏輯**：
-   - 系統對象：["爸爸", "媽媽", "洋洋", "其他"]。
-   - 若提到「**我**爸」或「**我**媽」，這代表「家外長輩」，\`beneficiary\` 填寫「其他」，並在 \`desc\` 加註 "(幫我爸/媽買)"。
-   - 若單純說「幫爸爸/媽媽買」(沒加「我」字)，視為核心成員。
+3. **不同地點 或 混合情境**：
+   - 若在不同地點購買（例如：「A店買牛奶100，B店買雞蛋90」），這是不相干的獨立消費。
+   - 必須輸出 2 筆物件，\`isGroup\` 皆設為 false，並將店名寫在備註的最前面：\`desc\`: "[A店] 牛奶"、"[B店] 雞蛋"。
+   - 若是混合情境 (如全聯買兩樣，小七買一樣)，請準確為全聯的兩樣設定 isGroup: true，小七的設定 isGroup: false。
+
+4. **備註 (desc) 智慧精簡**：
+   - 若為群組 (\`isGroup: true\`)，店名已有 \`parentTitle\`，備註只需填物品名 (如: "牛奶")。
+   - 請將分類字眼 (如: 早餐、午餐、晚餐、消夜) 從備註中**徹底刪除**。
+   - 若有提到「我爸/我媽」等長輩，請在備註後方加註 "(幫我媽買)"。
+
+5. **對象 (beneficiary) 與收支判定**：
+   - \`type\`: 預設 "expense"，若是獲得金錢/薪水則為 "income"。
+   - 對象名單：["爸爸", "媽媽", "洋洋", "其他"]。
+   - 「我爸/我媽」-> 填「其他」。
+   - 「老公/先生」-> 填「爸爸」；「老婆」-> 填「媽媽」；「兒子/屁孩」-> 填「洋洋」。
    - 若未提及對象，填入登入者「${currentMember}」。
 
-4. **類別 (category)**：必須從下列清單挑選：
+6. **類別 (category)**：必須從下列清單挑選最符合的：
 ${JSON.stringify(ALL_CATEGORIES)}
 
-【回傳格式】：
+【回傳格式範例】：
 {
   "transactions": [
     {
-      "type": "expense", // 或 "income"
-      "amount": 總金額(Number),
-      "category": "主類別/子類別",
-      "desc": "[店家] 物品x數量",
-      "beneficiary": "對象姓名",
-      "isGroup": true/false,
-      "parentTitle": "地點名稱"
+      "type": "expense",
+      "amount": 100,
+      "category": "食/生鮮食材",
+      "desc": "牛奶",
+      "beneficiary": "媽媽",
+      "isGroup": true,
+      "parentTitle": "全聯"
+    },
+    {
+      "type": "expense",
+      "amount": 90,
+      "category": "食/生鮮食材",
+      "desc": "雞蛋",
+      "beneficiary": "媽媽",
+      "isGroup": true,
+      "parentTitle": "全聯"
+    },
+    {
+      "type": "expense",
+      "amount": 50,
+      "category": "食/零食/飲料",
+      "desc": "[7-11] 可樂",
+      "beneficiary": "媽媽",
+      "isGroup": false,
+      "parentTitle": ""
     }
   ]
 }
