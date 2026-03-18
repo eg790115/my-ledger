@@ -191,16 +191,16 @@ function App() {
 
   // 🌟 AI 語音停止後，交接給 App.jsx 處理
   const handleVoiceRecordStop = async (text) => {
-    setLoadingCard({ show: true, text: "🤖 正在連線 AI 大腦解析帳單..." });
+    setLoadingCard({ show: true, text: "🤖 正在呼叫 AI 大腦解析中..." });
     try {
       const parsedTxs = await processVoiceText(text, currentUser.name);
       if (parsedTxs && parsedTxs.length > 0) {
-        setVoiceReviewTxs(parsedTxs); // 打開確認視窗
+        setVoiceReviewTxs(parsedTxs); // 解析成功，打開確認視窗
       }
     } catch (e) {
       showStatus("error", e.message);
     } finally {
-      setLoadingCard({ show: false, text: "" });
+      setLoadingCard({ show: false, text: "" }); // 關閉等待視窗
     }
   };
 
@@ -208,7 +208,7 @@ function App() {
   const handleConfirmVoice = () => {
     triggerVibration([20, 40, 20]);
     const baseTimestamp = Date.now();
-    const groupMap = {}; // 用於處理多筆共用同一個 parentTitle 的情況
+    const groupMap = {}; 
     const randomSuffix = () => Math.random().toString(36).substring(2, 8);
 
     const completeTxs = voiceReviewTxs.map((tx, idx) => {
@@ -225,7 +225,7 @@ function App() {
       return {
          id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`,
          date: nowStr(),
-         type: "expense",
+         type: tx.type || "expense", // 🌟 支援 AI 判定的收入/支出
          category: tx.category || "其他/雜項",
          amount: Number(tx.amount) || 0,
          desc: tx.desc || "",
@@ -241,7 +241,7 @@ function App() {
 
     setActiveTab("dashboard");
     appendToQueueAndSync(completeTxs);
-    setVoiceReviewTxs(null); // 關閉視窗
+    setVoiceReviewTxs(null); 
     showStatus("success", "✅ AI 帳單已加入同步排程！");
   };
 
@@ -666,6 +666,16 @@ function App() {
       <ProxyNotification transactions={unackedProxyTxs} onAck={() => { triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...unackedProxyTxs.map(t => t.id)])]; 
       localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
 
+{/* 🌟 修正：將 AI 運算等待視窗拉到全域顯示 */}
+      {isLoading && (
+        <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-5 animate-in slide-in-from-bottom-4">
+            <SvgIcon name="spinner" size={40} className="animate-spin text-blue-600" />
+            <p className="font-black text-gray-800 text-sm tracking-widest">{loadingCard.text || "處理中..."}</p>
+          </div>
+        </div>
+      )}
+
       {/* 🌟 語音解析確認清單彈窗 */}
       {voiceReviewTxs && (
         <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in">
@@ -673,59 +683,83 @@ function App() {
             <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
               <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
             </h3>
-            <p className="text-[10px] text-gray-500 font-bold mb-4">請確認以下由語音自動生成的帳單，點擊可直接修改金額或備註。</p>
+            <p className="text-[10px] text-gray-500 font-bold mb-4">請確認以下由語音自動生成的帳單，點擊可直接修改或刪除。</p>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide mb-4">
-              {voiceReviewTxs.map((tx, idx) => (
-                <div key={idx} className="bg-gray-50 p-4 rounded-3xl border border-gray-200">
-                  <div className="flex justify-between items-center mb-2.5">
-                    <span className="text-[11px] font-black text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200 shadow-sm">{tx.category}</span>
-                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg shadow-sm">對象: {tx.beneficiary}</span>
-                  </div>
-                  
-                  {tx.isGroup && tx.parentTitle && (
-                    <div className="text-[10px] font-black text-purple-600 mb-1.5 flex items-center gap-1">
-                      🏷️ {tx.parentTitle} (將自動群組)
+              {voiceReviewTxs.length === 0 ? (
+                <div className="text-center text-gray-400 py-8 text-sm font-bold">所有紀錄已刪除</div>
+              ) : (
+                voiceReviewTxs.map((tx, idx) => (
+                  <div key={idx} className="bg-gray-50 p-4 rounded-3xl border border-gray-200 relative overflow-hidden">
+                    <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${tx.type === 'income' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    
+                    <div className="flex justify-between items-center mb-2.5 pl-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black text-white px-1.5 py-0.5 rounded shadow-sm ${tx.type === 'income' ? 'bg-green-500' : 'bg-red-500'}`}>
+                          {tx.type === 'income' ? '收入' : '支出'}
+                        </span>
+                        <span className="text-[11px] font-black text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200 shadow-sm">{tx.category}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg shadow-sm">對象: {tx.beneficiary}</span>
+                        <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="w-6 h-6 flex items-center justify-center bg-red-100 text-red-500 rounded-full active:scale-90 transition-transform">
+                          <SvgIcon name="trash" size={14} />
+                        </button>
+                      </div>
                     </div>
-                  )}
+                    
+                    {tx.isGroup && tx.parentTitle && (
+                      <div className="text-[10px] font-black text-purple-600 mb-1.5 flex items-center gap-1 pl-1.5">
+                        🏷️ {tx.parentTitle} (將自動群組)
+                      </div>
+                    )}
 
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <span className="text-lg font-black text-gray-600 shrink-0">$</span>
-                    <input
-                      type="number"
-                      value={tx.amount}
-                      onChange={(e) => {
-                        const newTxs = [...voiceReviewTxs];
-                        newTxs[idx].amount = e.target.value;
-                        setVoiceReviewTxs(newTxs);
-                      }}
-                      className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 font-black text-xl text-gray-800 outline-none focus:border-blue-400 tabular-nums shadow-sm transition-all"
-                    />
+                    <div className="flex items-center gap-2 mb-2.5 pl-1.5">
+                      <span className={`text-lg font-black shrink-0 ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>$</span>
+                      <input
+                        type="number"
+                        value={tx.amount}
+                        onChange={(e) => {
+                          const newTxs = [...voiceReviewTxs];
+                          newTxs[idx].amount = e.target.value;
+                          setVoiceReviewTxs(newTxs);
+                        }}
+                        className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 font-black text-xl text-gray-800 outline-none focus:border-blue-400 tabular-nums shadow-sm transition-all"
+                      />
+                    </div>
+                    
+                    <div className="pl-1.5">
+                      <input
+                        type="text"
+                        value={tx.desc}
+                        onChange={(e) => {
+                          const newTxs = [...voiceReviewTxs];
+                          newTxs[idx].desc = e.target.value;
+                          setVoiceReviewTxs(newTxs);
+                        }}
+                        placeholder="輸入備註..."
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-bold text-xs text-gray-600 outline-none focus:border-blue-400 shadow-sm transition-all"
+                      />
+                    </div>
                   </div>
-                  
-                  <input
-                    type="text"
-                    value={tx.desc}
-                    onChange={(e) => {
-                      const newTxs = [...voiceReviewTxs];
-                      newTxs[idx].desc = e.target.value;
-                      setVoiceReviewTxs(newTxs);
-                    }}
-                    placeholder="輸入備註..."
-                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-bold text-xs text-gray-600 outline-none focus:border-blue-400 shadow-sm transition-all"
-                  />
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all">取消</button>
-              <button onClick={handleConfirmVoice} className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-xl shadow-blue-500/30">確認寫入 ({voiceReviewTxs.length}筆)</button>
+              <button 
+                onClick={handleConfirmVoice} 
+                disabled={voiceReviewTxs.length === 0}
+                className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
+              >
+                確認寫入 ({voiceReviewTxs.length}筆)
+              </button>
             </div>
           </div>
         </div>
       )}
-
       {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { triggerVibration(10); setEditingTx(null); }} />}
       {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => { triggerVibration(10); setEditingGroup(null); }} />}
       {showChangePinModal && <ChangePinModal currentUser={currentUser} onCancel={() => setShowChangePinModal(false)} onSuccess={() => {setShowChangePinModal(false); setCurrentUser(null); setSelectingUser(null); setPinInput(""); showStatus("success", "✅ 密碼已更新，請重新登入");}} forceReloginForToken={forceReloginForToken} />}
