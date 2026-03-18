@@ -114,30 +114,22 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     recognition.interimResults = true; 
 
     recognition.onresult = (event) => {
-      // 🌟 核心修復：MDN 官方分流寫法，完美解決疊加重複與速度延遲！
-      let finalTranscript = '';
-      let interimTranscript = '';
-      
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
-        }
+      // 🌟 終極暴力解法：放棄手動拼接，每次有聲音，直接從頭遍歷陣列重建整句！
+      // 這樣 Android Chrome 怎麼搞鬼都不會重複或漏字！
+      let fullTranscript = '';
+      for (let i = 0; i < event.results.length; ++i) {
+        fullTranscript += event.results[i][0].transcript;
       }
       
-      if (finalTranscript) {
-         transcriptRef.current += finalTranscript;
-      }
-
-      const currentText = transcriptRef.current + interimTranscript;
-      setRealtimeText(currentText);
+      // 🌟 將「唯一真理」寫入 Ref，避免非同步狀態造成的誤判
+      transcriptRef.current = fullTranscript;
+      setRealtimeText(fullTranscript);
       setVoiceError(""); 
 
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
-        if (currentText.trim()) stopVoiceMode(true);
-      }, 3000); // 🌟 改為 3 秒
+        if (transcriptRef.current.trim()) stopVoiceMode(true);
+      }, 3000); 
     };
 
     recognition.onerror = (event) => {
@@ -163,17 +155,18 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
 
     silenceTimerRef.current = setTimeout(() => {
-       if (!transcriptRef.current && !realtimeText) {
+       if (!transcriptRef.current) {
           setVoiceError("沒有聽清楚您說的話，請再試一次！");
           if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
        }
-    }, 6000); // 放寬初始等待
+    }, 6000); 
   };
 
   const stopVoiceMode = (shouldSubmit = false) => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     
-    const text = realtimeText.trim();
+    // 🌟 核心修復：直接從 Ref 拿出最新的字，絕對不會因為畫面沒更新而抓空！
+    const text = transcriptRef.current.trim();
 
     if (shouldSubmit) {
       if (!text) {
@@ -327,7 +320,22 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         </div>
       )}
 
-      {/* 略：其餘程式碼未變更 */}
+      {pendingAmountKey && (
+        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in pointer-events-auto">
+          <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl relative text-center">
+             <div className="text-5xl mb-3">{quickShortcuts[pendingAmountKey]?.icon}</div>
+             <h3 className="font-black text-2xl text-gray-800 mb-1">{quickShortcuts[pendingAmountKey]?.label}</h3>
+             <p className="text-xs text-gray-500 font-bold mb-6 bg-gray-100 px-3 py-1 rounded-full inline-block">{quickShortcuts[pendingAmountKey]?.category}</p>
+
+             <input type="number" autoFocus value={tempAmount} onChange={e => setTempAmount(e.target.value)} placeholder="請輸入金額" className="w-full bg-gray-50 px-4 py-4 rounded-2xl text-center font-black text-3xl mb-8 text-gray-800 tabular-nums border-2 border-blue-100 focus:border-blue-500 outline-none transition-colors" />
+             <div className="flex gap-3">
+               <button onClick={() => setPendingAmountKey(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95">取消</button>
+               <button onClick={() => { if(!tempAmount) return; executeQuickAdd(pendingAmountKey, tempAmount); }} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30">確認記帳</button>
+             </div>
+          </div>
+        </div>
+      )}
+
       <nav className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-[900] shadow-2xl border border-white/20 pb-safe transition-all duration-300 ${isListening ? 'opacity-30 pointer-events-none translate-y-4' : 'opacity-100'}`}>
         {tabs.map(tab => {
           if (tab.isFab) {
