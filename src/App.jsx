@@ -675,126 +675,114 @@ function App() {
           </div>
         </div>
       )}
-{/* 🌟 語音解析確認清單彈窗 (歷史清單同款高級圖卡) */}
-      {voiceReviewTxs && (
-        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
-            <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
-              <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
-            </h3>
-            <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-50 p-2 rounded-lg">請確認自動生成的帳單，可直接點擊卡片內各欄位修改內容。</p>
+{/* 🌟 語音解析確認清單彈窗 (歷史清單同款高級圖卡 + 真實編輯頁面) */}
+      {voiceReviewTxs && (() => {
+        // 檢查是否有一筆紀錄正在被點擊編輯
+        const editingIdx = voiceReviewTxs.findIndex(t => t.isEditing);
+        
+        // 如果有，直接呼叫系統標準的 EditTransactionModal (與歷史清單完全共用)
+        if (editingIdx !== -1) {
+          return (
+            <EditTransactionModal 
+              tx={voiceReviewTxs[editingIdx]} 
+              loginUser={currentUser.name} 
+              onSave={(updatedTx) => {
+                const newTxs = [...voiceReviewTxs];
+                delete updatedTx.isEditing;
+                newTxs[editingIdx] = updatedTx;
+                setVoiceReviewTxs(newTxs);
+              }} 
+              onDelete={() => {
+                setVoiceReviewTxs(prev => prev.filter((_, i) => i !== editingIdx));
+              }} 
+              onCancel={() => { 
+                triggerVibration(10); 
+                const newTxs = [...voiceReviewTxs];
+                delete newTxs[editingIdx].isEditing;
+                setVoiceReviewTxs(newTxs);
+              }} 
+            />
+          );
+        }
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide mb-4">
-              {voiceReviewTxs.length === 0 ? (
-                <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl">已清空所有紀錄</div>
-              ) : (
-                voiceReviewTxs.map((tx, idx) => (
-                  <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-200 shadow-sm flex items-start gap-3 relative overflow-hidden transition-all">
-                    
-                    {/* 左側：收支切換按鈕 (與歷史清單同視覺) */}
-                    <div className="relative shrink-0">
-                      <button 
-                        onClick={() => {
-                          const newTxs = [...voiceReviewTxs];
-                          newTxs[idx].type = tx.type === 'expense' ? 'income' : 'expense';
-                          setVoiceReviewTxs(newTxs);
-                        }}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none transition-colors active:scale-95 ${tx.type === "income" ? "bg-green-600 text-white shadow-sm shadow-green-500/30" : "bg-red-600 text-white shadow-sm shadow-red-500/30"}`}
-                      >
-                        {tx.type === "income" ? "收入" : "支出"}
+        // 如果沒有在編輯，就顯示確認清單列表
+        return (
+          <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
+            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
+              <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
+                <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
+              </h3>
+              <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-50 p-2 rounded-lg">請確認自動生成的帳單，點擊右下角編輯圖示即可進入修改明細。</p>
+
+              <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4">
+                {voiceReviewTxs.length === 0 ? (
+                  <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl border border-gray-100">已清空所有紀錄</div>
+                ) : (
+                  voiceReviewTxs.map((tx, idx) => (
+                    <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-start gap-3 shadow-sm relative overflow-hidden transition-colors mb-3">
+                      
+                      <div className="relative shrink-0 mt-1">
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white shadow-sm shadow-green-500/30" : "bg-red-600 text-white shadow-sm shadow-red-500/30"}`}>{tx.type==="income" ? "收入" : "支出"}</div>
+                      </div>
+                      
+                      <div className="flex-1 min-w-0 pl-1 pt-1 pb-4">
+                        <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
+                          <span className="truncate flex-shrink">{tx.category}</span>
+                          <div className="flex gap-1 flex-wrap shrink-0">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">{tx.beneficiary}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
+                          {tx.isGroup && tx.parentTitle && (
+                            <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 self-start">🏷️ 準備群組: {tx.parentTitle}</span>
+                          )}
+                          {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-end justify-start shrink-0 pl-1 z-10 mt-1">
+                        <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
+                      </div>
+                      
+                      {/* 編輯按鈕：點擊後掛載 isEditing 標籤，喚叫系統編輯視窗 */}
+                      <button onClick={() => {
+                        triggerVibration(10);
+                        const newTxs = [...voiceReviewTxs];
+                        newTxs[idx].isEditing = true;
+                        // 暫時給予隨機 ID 與日期以防 EditModal 錯誤
+                        if (!newTxs[idx].id) newTxs[idx].id = "temp_" + Date.now();
+                        if (!newTxs[idx].date) {
+                           const now = new Date();
+                           now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                           newTxs[idx].date = now.toISOString().slice(0, 16);
+                        }
+                        setVoiceReviewTxs(newTxs);
+                      }} className="absolute bottom-2 right-10 p-1.5 text-gray-300 hover:text-blue-500 active:scale-90 transition-all">
+                        <SvgIcon name="edit" size={15} />
+                      </button>
+                      
+                      <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-red-500 active:scale-90 transition-all">
+                        <SvgIcon name="trash" size={15} />
                       </button>
                     </div>
+                  ))
+                )}
+              </div>
 
-                    {/* 中間與右側：分類、對象、備註與金額 */}
-                    <div className="flex-1 min-w-0 pt-0.5">
-                      
-                      <div className="flex justify-between items-start mb-1.5 gap-2">
-                        {/* 分類與對象輸入 */}
-                        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-                          <input 
-                            type="text" 
-                            value={tx.category}
-                            onChange={(e) => {
-                              const newTxs = [...voiceReviewTxs];
-                              newTxs[idx].category = e.target.value;
-                              setVoiceReviewTxs(newTxs);
-                            }}
-                            className="w-full font-black text-[14px] text-gray-800 outline-none border-b border-dashed border-gray-300 focus:border-blue-500 pb-0.5 truncate"
-                            placeholder="主分類/子分類"
-                          />
-                          <div className="flex gap-1 items-center">
-                            <span className="text-[9px] font-black text-gray-400 shrink-0">對象</span>
-                            <input 
-                              type="text" 
-                              value={tx.beneficiary}
-                              onChange={(e) => {
-                                const newTxs = [...voiceReviewTxs];
-                                newTxs[idx].beneficiary = e.target.value;
-                                setVoiceReviewTxs(newTxs);
-                              }}
-                              className="flex-1 bg-gray-50 px-1.5 py-0.5 rounded text-[10px] font-black text-gray-600 outline-none border border-transparent focus:border-blue-300 transition-colors truncate"
-                            />
-                          </div>
-                        </div>
-
-                        {/* 金額與刪除按鈕 */}
-                        <div className="flex flex-col items-end shrink-0 gap-2">
-                          <div className="flex items-center">
-                            <span className={`font-black text-sm ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>$</span>
-                            <input
-                              type="number"
-                              value={tx.amount}
-                              onChange={(e) => {
-                                const newTxs = [...voiceReviewTxs];
-                                newTxs[idx].amount = e.target.value;
-                                setVoiceReviewTxs(newTxs);
-                              }}
-                              className={`w-16 font-black tabular-nums text-lg text-right outline-none bg-transparent ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}
-                              placeholder="0"
-                            />
-                          </div>
-                          <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 rounded-full active:scale-90 transition-all">
-                            <SvgIcon name="trash" size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 備註與多筆群組標示 */}
-                      <div className="flex flex-col gap-1.5 w-full mt-1">
-                        {tx.isGroup && tx.parentTitle && (
-                          <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded self-start">🏷️ 自動群組: {tx.parentTitle}</span>
-                        )}
-                        <input
-                          type="text"
-                          value={tx.desc}
-                          onChange={(e) => {
-                            const newTxs = [...voiceReviewTxs];
-                            newTxs[idx].desc = e.target.value;
-                            setVoiceReviewTxs(newTxs);
-                          }}
-                          placeholder="輸入備註 (選填)"
-                          className="w-full bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100 text-[11px] font-bold text-gray-600 outline-none focus:border-blue-400 shadow-sm transition-all"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="flex gap-2 pt-3 border-t border-gray-100">
-              <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">放棄取消</button>
-              <button 
-                onClick={handleConfirmVoice} 
-                disabled={voiceReviewTxs.length === 0}
-                className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                <SvgIcon name="plus" size={16} /> 確認並寫入 ({voiceReviewTxs.length})
-              </button>
+              <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1">
+                <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">取消退出</button>
+                <button 
+                  onClick={handleConfirmVoice} 
+                  disabled={voiceReviewTxs.length === 0}
+                  className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
+                >
+                  確認並寫入 ({voiceReviewTxs.length}筆)
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { triggerVibration(10); setEditingTx(null); }} />}
       {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => { triggerVibration(10); setEditingGroup(null); }} />}
       {showChangePinModal && <ChangePinModal currentUser={currentUser} onCancel={() => setShowChangePinModal(false)} onSuccess={() => {setShowChangePinModal(false); setCurrentUser(null); setSelectingUser(null); setPinInput(""); showStatus("success", "✅ 密碼已更新，請重新登入");}} forceReloginForToken={forceReloginForToken} />}
