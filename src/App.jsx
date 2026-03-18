@@ -675,86 +675,121 @@ function App() {
           </div>
         </div>
       )}
-
-      {/* 🌟 語音解析確認清單彈窗 */}
+{/* 🌟 語音解析確認清單彈窗 (歷史清單同款高級圖卡) */}
       {voiceReviewTxs && (
-        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in">
-          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
             <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
               <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
             </h3>
-            <p className="text-[10px] text-gray-500 font-bold mb-4">請確認以下由語音自動生成的帳單，點擊可直接修改或刪除。</p>
+            <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-50 p-2 rounded-lg">請確認自動生成的帳單，可直接點擊卡片內各欄位修改內容。</p>
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide mb-4">
               {voiceReviewTxs.length === 0 ? (
-                <div className="text-center text-gray-400 py-8 text-sm font-bold">所有紀錄已刪除</div>
+                <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl">已清空所有紀錄</div>
               ) : (
                 voiceReviewTxs.map((tx, idx) => (
-                  <div key={idx} className="bg-gray-50 p-4 rounded-3xl border border-gray-200 relative overflow-hidden">
-                    <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${tx.type === 'income' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-200 shadow-sm flex items-start gap-3 relative overflow-hidden transition-all">
                     
-                    <div className="flex justify-between items-center mb-2.5 pl-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-black text-white px-1.5 py-0.5 rounded shadow-sm ${tx.type === 'income' ? 'bg-green-500' : 'bg-red-500'}`}>
-                          {tx.type === 'income' ? '收入' : '支出'}
-                        </span>
-                        <span className="text-[11px] font-black text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200 shadow-sm">{tx.category}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-2 py-1 rounded-lg shadow-sm">對象: {tx.beneficiary}</span>
-                        <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="w-6 h-6 flex items-center justify-center bg-red-100 text-red-500 rounded-full active:scale-90 transition-transform">
-                          <SvgIcon name="trash" size={14} />
-                        </button>
-                      </div>
+                    {/* 左側：收支切換按鈕 (與歷史清單同視覺) */}
+                    <div className="relative shrink-0">
+                      <button 
+                        onClick={() => {
+                          const newTxs = [...voiceReviewTxs];
+                          newTxs[idx].type = tx.type === 'expense' ? 'income' : 'expense';
+                          setVoiceReviewTxs(newTxs);
+                        }}
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-[15px] leading-none transition-colors active:scale-95 ${tx.type === "income" ? "bg-green-600 text-white shadow-sm shadow-green-500/30" : "bg-red-600 text-white shadow-sm shadow-red-500/30"}`}
+                      >
+                        {tx.type === "income" ? "收入" : "支出"}
+                      </button>
                     </div>
-                    
-                    {tx.isGroup && tx.parentTitle && (
-                      <div className="text-[10px] font-black text-purple-600 mb-1.5 flex items-center gap-1 pl-1.5">
-                        🏷️ {tx.parentTitle} (將自動群組)
-                      </div>
-                    )}
 
-                    <div className="flex items-center gap-2 mb-2.5 pl-1.5">
-                      <span className={`text-lg font-black shrink-0 ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>$</span>
-                      <input
-                        type="number"
-                        value={tx.amount}
-                        onChange={(e) => {
-                          const newTxs = [...voiceReviewTxs];
-                          newTxs[idx].amount = e.target.value;
-                          setVoiceReviewTxs(newTxs);
-                        }}
-                        className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 font-black text-xl text-gray-800 outline-none focus:border-blue-400 tabular-nums shadow-sm transition-all"
-                      />
-                    </div>
-                    
-                    <div className="pl-1.5">
-                      <input
-                        type="text"
-                        value={tx.desc}
-                        onChange={(e) => {
-                          const newTxs = [...voiceReviewTxs];
-                          newTxs[idx].desc = e.target.value;
-                          setVoiceReviewTxs(newTxs);
-                        }}
-                        placeholder="輸入備註..."
-                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 font-bold text-xs text-gray-600 outline-none focus:border-blue-400 shadow-sm transition-all"
-                      />
+                    {/* 中間與右側：分類、對象、備註與金額 */}
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      
+                      <div className="flex justify-between items-start mb-1.5 gap-2">
+                        {/* 分類與對象輸入 */}
+                        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                          <input 
+                            type="text" 
+                            value={tx.category}
+                            onChange={(e) => {
+                              const newTxs = [...voiceReviewTxs];
+                              newTxs[idx].category = e.target.value;
+                              setVoiceReviewTxs(newTxs);
+                            }}
+                            className="w-full font-black text-[14px] text-gray-800 outline-none border-b border-dashed border-gray-300 focus:border-blue-500 pb-0.5 truncate"
+                            placeholder="主分類/子分類"
+                          />
+                          <div className="flex gap-1 items-center">
+                            <span className="text-[9px] font-black text-gray-400 shrink-0">對象</span>
+                            <input 
+                              type="text" 
+                              value={tx.beneficiary}
+                              onChange={(e) => {
+                                const newTxs = [...voiceReviewTxs];
+                                newTxs[idx].beneficiary = e.target.value;
+                                setVoiceReviewTxs(newTxs);
+                              }}
+                              className="flex-1 bg-gray-50 px-1.5 py-0.5 rounded text-[10px] font-black text-gray-600 outline-none border border-transparent focus:border-blue-300 transition-colors truncate"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 金額與刪除按鈕 */}
+                        <div className="flex flex-col items-end shrink-0 gap-2">
+                          <div className="flex items-center">
+                            <span className={`font-black text-sm ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>$</span>
+                            <input
+                              type="number"
+                              value={tx.amount}
+                              onChange={(e) => {
+                                const newTxs = [...voiceReviewTxs];
+                                newTxs[idx].amount = e.target.value;
+                                setVoiceReviewTxs(newTxs);
+                              }}
+                              className={`w-16 font-black tabular-nums text-lg text-right outline-none bg-transparent ${tx.type === 'income' ? 'text-green-600' : 'text-red-600'}`}
+                              placeholder="0"
+                            />
+                          </div>
+                          <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="w-7 h-7 flex items-center justify-center bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 rounded-full active:scale-90 transition-all">
+                            <SvgIcon name="trash" size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 備註與多筆群組標示 */}
+                      <div className="flex flex-col gap-1.5 w-full mt-1">
+                        {tx.isGroup && tx.parentTitle && (
+                          <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded self-start">🏷️ 自動群組: {tx.parentTitle}</span>
+                        )}
+                        <input
+                          type="text"
+                          value={tx.desc}
+                          onChange={(e) => {
+                            const newTxs = [...voiceReviewTxs];
+                            newTxs[idx].desc = e.target.value;
+                            setVoiceReviewTxs(newTxs);
+                          }}
+                          placeholder="輸入備註 (選填)"
+                          className="w-full bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100 text-[11px] font-bold text-gray-600 outline-none focus:border-blue-400 shadow-sm transition-all"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))
               )}
             </div>
 
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-all">取消</button>
+            <div className="flex gap-2 pt-3 border-t border-gray-100">
+              <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">放棄取消</button>
               <button 
                 onClick={handleConfirmVoice} 
                 disabled={voiceReviewTxs.length === 0}
-                className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
+                className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                確認寫入 ({voiceReviewTxs.length}筆)
+                <SvgIcon name="plus" size={16} /> 確認並寫入 ({voiceReviewTxs.length})
               </button>
             </div>
           </div>

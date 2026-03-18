@@ -8,15 +8,17 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [pendingAmountKey, setPendingAmountKey] = useState(null);
   const [tempAmount, setTempAmount] = useState("");
 
-  const [isListening, setIsListening] = useState(false);
+  // 🌟 全新語音狀態管理
+  const [showVoicePanel, setShowVoicePanel] = useState(false);
+  const [voiceState, setVoiceState] = useState('idle'); // 'listening', 'review', 'error'
+  const [capturedText, setCapturedText] = useState("");
+  const [voiceError, setVoiceError] = useState("");
   const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
 
-  const [realtimeText, setRealtimeText] = useState("");
-  const [voiceError, setVoiceError] = useState("");
-
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationRef = useRef(null);
   const recognitionRef = useRef(null); 
-  const transcriptRef = useRef(""); 
-  const silenceTimerRef = useRef(null); 
 
   const loadShortcuts = () => {
     try {
@@ -37,9 +39,10 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     return () => window.removeEventListener('shortcuts_updated', handleUpdate);
   }, []);
 
+  // 模擬聲波 (當處於 listening 狀態時跳動)
   useEffect(() => {
     let interval;
-    if (isListening && !voiceError) {
+    if (voiceState === 'listening') {
       interval = setInterval(() => {
         setVolumeData([
           Math.floor(Math.random() * 40) + 20,
@@ -53,7 +56,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       setVolumeData([10, 10, 10, 10, 10]);
     }
     return () => clearInterval(interval);
-  }, [isListening, voiceError]);
+  }, [voiceState]);
 
   const startPos = useRef({ x: 0, y: 0 });
   const timerRef = useRef(null);
@@ -105,91 +108,80 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const initSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setVoiceError("此瀏覽器不支援語音辨識 (建議使用 Chrome/Safari)");
+      setVoiceError("此瀏覽器不支援語音辨識");
+      setVoiceState('error');
       return null;
     }
     const recognition = new SpeechRecognition();
     recognition.lang = 'zh-TW';
-    recognition.continuous = true; 
-    recognition.interimResults = true; 
+    // 🌟 關閉連續與即時，講完一句話自動停止！徹底解決重複 Bug
+    recognition.continuous = false; 
+    recognition.interimResults = false; 
 
     recognition.onresult = (event) => {
-      // 🌟 終極暴力解法：放棄手動拼接，每次有聲音，直接從頭遍歷陣列重建整句！
-      // 這樣 Android Chrome 怎麼搞鬼都不會重複或漏字！
-      let fullTranscript = '';
-      for (let i = 0; i < event.results.length; ++i) {
-        fullTranscript += event.results[i][0].transcript;
-      }
-      
-      // 🌟 將「唯一真理」寫入 Ref，避免非同步狀態造成的誤判
-      transcriptRef.current = fullTranscript;
-      setRealtimeText(fullTranscript);
-      setVoiceError(""); 
-
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => {
-        if (transcriptRef.current.trim()) stopVoiceMode(true);
-      }, 3000); 
+      const text = event.results[0][0].transcript;
+      setCapturedText(prev => (prev ? prev + "，" + text : text));
+      setVoiceState('review'); // 自動進入確認畫面
+      triggerVibration(15);
     };
 
     recognition.onerror = (event) => {
-      if (event.error !== 'no-speech') setVoiceError(`收音錯誤: ${event.error}`);
+      if (event.error === 'no-speech') {
+         setVoiceState('review'); // 沒講話也退回確認畫面
+      } else {
+         setVoiceError(`收音錯誤: ${event.error}`);
+         setVoiceState('error');
+      }
+    };
+
+    recognition.onend = () => {
+      // 確保引擎關閉後切換狀態
+      setVoiceState(prev => prev === 'listening' ? 'review' : prev);
     };
 
     return recognition;
   };
 
-  const startVoiceMode = () => {
-    transcriptRef.current = "";
-    setRealtimeText("");
+  const startVoiceMode = (append = false) => {
+    if (!append) setCapturedText("");
     setVoiceError("");
-    setIsListening(true);
+    setShowVoicePanel(true);
+    setVoiceState('listening');
     triggerVibration([20, 30]); 
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
     if (!recognitionRef.current) recognitionRef.current = initSpeechRecognition();
     if (recognitionRef.current) {
        try { recognitionRef.current.start(); } catch (e) {}
-    } else {
-       setVoiceError("您的設備不支援語音辨識");
     }
-
-    silenceTimerRef.current = setTimeout(() => {
-       if (!transcriptRef.current) {
-          setVoiceError("沒有聽清楚您說的話，請再試一次！");
-          if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
-       }
-    }, 6000); 
   };
 
-  const stopVoiceMode = (shouldSubmit = false) => {
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    
-    // 🌟 核心修復：直接從 Ref 拿出最新的字，絕對不會因為畫面沒更新而抓空！
-    const text = transcriptRef.current.trim();
-
-    if (shouldSubmit) {
-      if (!text) {
-          triggerVibration([50, 50]);
-          setVoiceError("沒有聽清楚，請按取消退出並重試");
-          if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
-          return; 
-      }
-      triggerVibration([30, 50, 30]);
-      if (onVoiceRecordStop) onVoiceRecordStop(text);
-    } else {
-      triggerVibration(15); 
+  const stopListeningEarly = () => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch(e) {}
     }
+    setVoiceState('review');
+  };
 
-    setIsListening(false);
-    setRealtimeText("");
-    setVoiceError("");
-    if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e) {}
+  const closeVoicePanel = () => {
+    setShowVoicePanel(false);
+    setVoiceState('idle');
+    if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
+  };
+
+  const submitToAI = () => {
+    if (!capturedText.trim()) {
+      setVoiceError("請先說點什麼才能解析喔！");
+      setVoiceState('error');
+      return;
+    }
+    triggerVibration([30, 50, 30]);
+    if (onVoiceRecordStop) onVoiceRecordStop(capturedText);
+    closeVoicePanel();
   };
 
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return; 
-    if (isListening) return; 
+    if (showVoicePanel) return; 
 
     e.currentTarget.setPointerCapture(e.pointerId);
     startPos.current = { x: e.clientX, y: e.clientY };
@@ -206,7 +198,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   };
 
   const handlePointerMove = (e) => {
-    if (!isHolding.current || isListening) return;
+    if (!isHolding.current || showVoicePanel) return;
     
     const dx = e.clientX - startPos.current.x;
     const dy = e.clientY - startPos.current.y;
@@ -233,7 +225,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         clearTimeout(timerRef.current);
         isHolding.current = false;
         wasSwipeOrLongPress.current = true;
-        startVoiceMode();
+        startVoiceMode(false);
       } else if (distance > 15) {
         clearTimeout(timerRef.current); 
         wasSwipeOrLongPress.current = true; 
@@ -242,7 +234,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   };
 
   const handlePointerUp = (e) => {
-    if (isListening) return;
+    if (showVoicePanel) return;
     isHolding.current = false;
     clearTimeout(timerRef.current);
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -257,13 +249,13 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         handleQuickSubmit(selected);
       } else if (selected === 'top') {
         triggerVibration([20, 40, 20]);
-        startVoiceMode();
+        startVoiceMode(false);
       }
     }
   };
 
   const handleClick = (e) => {
-    if (wasSwipeOrLongPress.current || isListening) {
+    if (wasSwipeOrLongPress.current || showVoicePanel) {
       wasSwipeOrLongPress.current = false; 
       return;
     }
@@ -285,38 +277,71 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {isListening && (
+      {/* 🌟 全新語音面板：聆聽中 / 確認中 / 錯誤 狀態切換 */}
+      {showVoicePanel && (
         <div className="fixed inset-x-0 bottom-[6.5rem] mx-auto w-[92%] max-w-sm bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 p-6 flex flex-col items-center justify-center animate-in slide-in-from-bottom-8 z-[1000]">
           
-          <div className="flex items-center justify-center gap-1.5 h-16 mb-4">
-            {volumeData.map((v, i) => (
-              <div key={i} className="w-2.5 bg-gradient-to-t from-blue-600 to-indigo-400 rounded-full shadow-sm" style={{ height: `${Math.max(12, (v / 255) * 64)}px`, transition: 'height 0.05s ease-out' }} />
-            ))}
-          </div>
-          
-          <div className="text-gray-800 font-black text-lg mb-1">正在聆聽...</div>
-          
-          <div className="min-h-[3rem] flex items-center justify-center mb-6 w-full px-2">
-            {voiceError ? (
-              <span className="text-red-500 font-bold text-sm text-center bg-red-50 py-1.5 px-3 rounded-lg animate-pulse">{voiceError}</span>
-            ) : realtimeText ? (
-              <span className="text-blue-600 font-black text-[15px] text-center break-words leading-snug">{realtimeText}</span>
-            ) : (
-              <span className="text-gray-400 font-bold text-xs text-center">請說出記帳內容，例如「早餐一百元」</span>
-            )}
-          </div>
-          
-          <div className="flex gap-3 w-full">
-             <button onClick={() => stopVoiceMode(false)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-transform">取消</button>
-             
-             {voiceError ? (
-               <button onClick={() => { triggerVibration(10); startVoiceMode(); }} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2">↻ 再試一次</button>
-             ) : (
-               <button onClick={() => stopVoiceMode(true)} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2">
-                 <div className="w-3.5 h-3.5 bg-white rounded-[4px]" /> 停止並解析
-               </button>
-             )}
-          </div>
+          {voiceState === 'listening' && (
+            <>
+              <div className="flex items-center justify-center gap-1.5 h-16 mb-4">
+                {volumeData.map((v, i) => (
+                  <div key={i} className="w-2.5 bg-gradient-to-t from-blue-600 to-indigo-400 rounded-full shadow-sm" style={{ height: `${Math.max(12, (v / 255) * 64)}px`, transition: 'height 0.05s ease-out' }} />
+                ))}
+              </div>
+              <div className="text-gray-800 font-black text-lg mb-1">正在聆聽... (說完將自動停止)</div>
+              <div className="text-blue-600 font-black text-sm text-center break-words leading-snug mb-6 min-h-[1.5rem]">
+                {capturedText || "說完請稍等一秒..."}
+              </div>
+              
+              <div className="flex gap-3 w-full">
+                <button onClick={closeVoicePanel} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-transform">取消</button>
+                <button onClick={stopListeningEarly} className="flex-[2] py-4 bg-gray-800 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-gray-900/30 flex items-center justify-center gap-2">
+                  <div className="w-3.5 h-3.5 bg-white rounded-[4px]" /> 手動停止
+                </button>
+              </div>
+            </>
+          )}
+
+          {voiceState === 'review' && (
+            <>
+              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-3">
+                <SvgIcon name="edit" size={24} />
+              </div>
+              <div className="text-gray-800 font-black text-lg mb-2">請確認語音內容</div>
+              <div className="w-full bg-gray-50 border border-gray-200 p-3 rounded-2xl text-blue-700 font-black text-[15px] text-center break-words leading-snug mb-6 min-h-[3rem] shadow-inner">
+                {capturedText || <span className="text-gray-400">未偵測到聲音</span>}
+              </div>
+              
+              <div className="flex gap-2 w-full mb-2">
+                <button onClick={closeVoicePanel} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-xl font-black text-[13px] active:scale-95 transition-transform">取消退出</button>
+                <button onClick={() => startVoiceMode(false)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-xl font-black text-[13px] active:scale-95 transition-transform">↻ 重錄</button>
+                <button onClick={() => startVoiceMode(true)} className="flex-1 py-3.5 bg-blue-50 text-blue-600 rounded-xl font-black text-[13px] active:scale-95 transition-transform">+ 補充</button>
+              </div>
+              <button onClick={submitToAI} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-transform shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2">
+                <SvgIcon name="sparkles" size={18} /> 確認送出分析
+              </button>
+            </>
+          )}
+
+          {voiceState === 'error' && (
+            <>
+              <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-3">
+                <span className="text-2xl font-black">!</span>
+              </div>
+              <div className="text-gray-800 font-black text-lg mb-2">發生錯誤</div>
+              <div className="w-full bg-red-50 text-red-600 border border-red-200 p-3 rounded-2xl font-black text-sm text-center mb-6">
+                {voiceError}
+              </div>
+              
+              <div className="flex gap-3 w-full">
+                <button onClick={closeVoicePanel} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95 transition-transform">取消</button>
+                <button onClick={() => startVoiceMode(false)} className="flex-[2] py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-xl shadow-blue-500/30">
+                  ↻ 再試一次
+                </button>
+              </div>
+            </>
+          )}
+
         </div>
       )}
 
@@ -336,12 +361,12 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         </div>
       )}
 
-      <nav className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-[900] shadow-2xl border border-white/20 pb-safe transition-all duration-300 ${isListening ? 'opacity-30 pointer-events-none translate-y-4' : 'opacity-100'}`}>
+      <nav className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-sm bg-white/90 backdrop-blur-md rounded-[2.5rem] p-2 flex justify-between items-center z-[900] shadow-2xl border border-white/20 pb-safe transition-all duration-300 ${showVoicePanel ? 'opacity-30 pointer-events-none translate-y-4' : 'opacity-100'}`}>
         {tabs.map(tab => {
           if (tab.isFab) {
             return (
               <div key={tab.id} className="px-1 shrink-0 relative flex justify-center">
-                {!isListening && (
+                {!showVoicePanel && (
                   <div className="absolute top-1/2 left-1/2 pointer-events-none z-0">
                     <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out shadow-lg ${showRadial ? 'opacity-100 translate-x-[-80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'left' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
                       <span className="text-xl leading-none mb-0.5">{quickShortcuts?.left?.icon}</span>
