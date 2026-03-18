@@ -11,7 +11,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [isListening, setIsListening] = useState(false);
   const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
 
-  // 即時字幕與錯誤提示
+  // 🌟 即時字幕與優雅的面板內錯誤提示 (取代 alert)
   const [realtimeText, setRealtimeText] = useState("");
   const [voiceError, setVoiceError] = useState("");
 
@@ -21,7 +21,8 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   
   const recognitionRef = useRef(null); 
   const transcriptRef = useRef(""); 
-  const silenceTimerRef = useRef(null); 
+  const silenceTimerRef = useRef(null); // 2秒自動停止計時器
+  const swipeDirection = useRef(null); // 用來修正手機瀏覽器語音權限問題
 
   const loadShortcuts = () => {
     try {
@@ -118,9 +119,9 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 
       const currentText = transcriptRef.current + interimTranscript;
       setRealtimeText(currentText);
-      setVoiceError(""); 
+      setVoiceError(""); // 有聽到聲音就清空錯誤
 
-      // 🌟 重新計時，若 2 秒沒說話且有辨識到文字，自動停止
+      // 🌟 2 秒自動送出機制
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = setTimeout(() => {
         if (currentText.trim()) stopVoiceMode(true);
@@ -144,7 +145,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     triggerVibration([20, 30]); 
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-    // 🌟 核心修復：為了突破手機瀏覽器限制，必須在此「瞬間同步」啟動語音辨識
+    // 啟動語音辨識
     if (!recognitionRef.current) recognitionRef.current = initSpeechRecognition();
     if (recognitionRef.current) {
        try { recognitionRef.current.start(); } catch (e) {}
@@ -152,7 +153,18 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
        setVoiceError("您的設備不支援語音辨識");
     }
 
-    // 🌟 啟動聲波動畫 (以非同步方式啟動，不阻擋語音辨識)
+    // 若 5 秒內完全沒聲音，直接判定為收音失敗
+    silenceTimerRef.current = setTimeout(() => {
+       if (!transcriptRef.current && !realtimeText) {
+          setVoiceError("未偵測到聲音，請按取消退出");
+          setVolumeData([10, 10, 10, 10, 10]);
+          if (animationRef.current) cancelAnimationFrame(animationRef.current);
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close().catch(()=>{});
+          if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
+       }
+    }, 5000);
+
+    // 啟動聲波動畫
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then(stream => {
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -184,33 +196,38 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const stopVoiceMode = (shouldSubmit = false) => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     
-    // 確保抓到畫面上最新顯示的文字
-    const finalText = realtimeText.trim();
+    // 確保抓到包含正在辨識中的字
+    const text = (transcriptRef.current + realtimeText.replace(transcriptRef.current, '')).trim();
 
-    // 🌟 核心修復：無論如何，先無條件關閉 UI 面板，絕對不卡死！
+    if (shouldSubmit) {
+      if (!text) {
+          triggerVibration([50, 50]);
+          setVoiceError("沒有聽清楚，請按取消退出並重試");
+          // 🌟 防卡死機制：切斷麥克風，但保留面板讓使用者看錯誤訊息
+          setVolumeData([10, 10, 10, 10, 10]);
+          if (animationRef.current) cancelAnimationFrame(animationRef.current);
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close().catch(()=>{});
+          if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
+          return; 
+      }
+      
+      triggerVibration([30, 50, 30]);
+      if (onVoiceRecordStop) onVoiceRecordStop(text);
+    } else {
+      triggerVibration(15); 
+    }
+
+    // 關閉並清理所有狀態
     setIsListening(false);
     setVolumeData([10, 10, 10, 10, 10]); 
+    setRealtimeText("");
+    setVoiceError("");
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(()=>{});
     }
     if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch(e) {}
-    }
-
-    // 關閉面版後，再處理送出邏輯
-    if (shouldSubmit) {
-      if (!finalText) {
-          triggerVibration([50, 50]);
-          // 延遲一點點跳出警告，讓畫面先關閉
-          setTimeout(() => alert("沒有聽清楚您說的話，請再試一次！"), 100);
-          return; 
-      }
-      
-      triggerVibration([30, 50, 30]);
-      if (onVoiceRecordStop) onVoiceRecordStop(finalText);
-    } else {
-      triggerVibration(15); 
     }
   };
 
@@ -222,6 +239,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     startPos.current = { x: e.clientX, y: e.clientY };
     isHolding.current = true;
     wasSwipeOrLongPress.current = false;
+    swipeDirection.current = null;
     
     timerRef.current = setTimeout(() => {
       if (isHolding.current) {
@@ -260,7 +278,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         clearTimeout(timerRef.current);
         isHolding.current = false;
         wasSwipeOrLongPress.current = true;
-        startVoiceMode();
+        swipeDirection.current = 'up'; // 🌟 標記滑動方向，等待 PointerUp 觸發
       } else if (distance > 15) {
         clearTimeout(timerRef.current); 
         wasSwipeOrLongPress.current = true; 
@@ -274,6 +292,14 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     clearTimeout(timerRef.current);
     e.currentTarget.releasePointerCapture(e.pointerId);
 
+    // 🌟 修正手機瀏覽器限制：確保在手指離開螢幕的瞬間啟動語音
+    if (swipeDirection.current === 'up') {
+       swipeDirection.current = null;
+       triggerVibration([20, 40, 20]);
+       startVoiceMode();
+       return;
+    }
+
     if (showRadial) {
       setShowRadial(false);
       const selected = activeOption;
@@ -283,6 +309,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
         triggerVibration([30, 50, 30]);
         handleQuickSubmit(selected);
       } else if (selected === 'top') {
+        triggerVibration([20, 40, 20]);
         startVoiceMode();
       }
     }
