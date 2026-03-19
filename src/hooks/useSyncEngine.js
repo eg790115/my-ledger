@@ -63,8 +63,7 @@ export const useSyncEngine = ({
 
             const hardDeletedIds = new Set(currentBatch.filter(q => q.action === 'HARD_DELETE_TX').map(q => String(q.id)));
             const restoredIds = new Set(currentBatch.filter(q => q.action === 'RESTORE_TX').map(q => String(q.id)));
-            const deletedIds = new Set(currentBatch.filter(q => q.action === 'DELETE_TX').map(q => String(q.id)));
-
+            const deletedIds = new Set(currentBatch.filter(q => q.action === 'DELETE_TX' || q.action === 'HARD_DELETE_TX').map(q => String(q.id)));
             if (hardDeletedIds.size > 0 || restoredIds.size > 0) {
               const filteredTrash = trashCacheRef.current.filter(t => !hardDeletedIds.has(String(t.id)) && !restoredIds.has(String(t.id)));
               trashCacheRef.current = filteredTrash;
