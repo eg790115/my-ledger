@@ -235,14 +235,17 @@ function App() {
          pDesc = tx.parentTitle;
       }
 
+      // 🌟 修正：保存 AI 判斷的日期與出錢者，並把 T 轉回 DB 用的空格格式
+      const finalDate = (tx.date || nowStr()).replace('T', ' ');
+
       return {
          id: `${baseTimestamp + idx}_${safeName}_${randomSuffix()}`,
-         date: nowStr(),
+         date: finalDate,
          type: tx.type || "expense",
          category: tx.category || "其他/雜項",
          amount: Number(tx.amount) || 0,
          desc: tx.desc || "",
-         member: safeName,
+         member: tx.member || safeName,
          recorder: safeName,
          beneficiary: tx.beneficiary || safeName,
          groupId: gId,
@@ -651,10 +654,17 @@ function App() {
                         <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
                           <span className="truncate flex-shrink">{tx.category}</span>
                           <div className="flex gap-1 flex-wrap shrink-0">
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">{tx.beneficiary}</span>
+                            {/* 🌟 新增：清楚顯示扣款人與受益人 */}
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-gray-50 text-gray-500 border-gray-200">出錢:{tx.member || "未知"}</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">對象:{tx.beneficiary}</span>
                           </div>
                         </div>
                         <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
+                          {/* 🌟 新增：讓時間直接顯示在卡片上 */}
+                          <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                            🕒 {tx.date ? tx.date.replace('T', ' ') : '未定'}
+                          </span>
+
                           {tx.isGroup && tx.parentTitle && (
                             <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 self-start">🏷️ 準備群組: {tx.parentTitle}</span>
                           )}
