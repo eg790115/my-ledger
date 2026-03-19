@@ -29,3 +29,4 @@ export const SvgIcon = ({ name, size = 24, className = "" }) => {
     </svg>
   );
 };
+

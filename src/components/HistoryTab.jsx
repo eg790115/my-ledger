@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { createPortal } from 'react-dom';
 import { SvgIcon } from './Icons';
+// 🌟 引入終極效能救星：虛擬列表
+import { Virtuoso } from 'react-virtuoso';
 
 const HistoryTab = ({
   setQuickDateFilter, historyDateFilter, setHistoryDateFilter,
@@ -9,41 +11,28 @@ const HistoryTab = ({
   setShowTrashModal, showSearchFilterModal, setShowSearchFilterModal,
   debouncedHistorySearch, debouncedHistoryExcludeSearch, historyTypeFilter,
   isHistoryFiltered, historyFilteredStats, filteredHistoryGroups,
-  renderItemOrGroup,
-  // 🌟 接收從 App.jsx 傳來的觀看歷程觸發函數
-  onViewHistory 
+  renderItemOrGroup
 }) => {
   const safeGroups = filteredHistoryGroups || [];
   const safeStats = historyFilteredStats || { balance: 0, income: 0, expense: 0 };
 
-  const [displayLimit, setDisplayLimit] = useState(30);
-  const loaderRef = useRef(null);
-
   const hasAdvancedFilters = debouncedHistorySearch !== "" || debouncedHistoryExcludeSearch !== "" || historyTypeFilter !== "all";
 
-  useEffect(() => {
-    setDisplayLimit(30);
-  }, [historyDateFilter, debouncedHistorySearch, debouncedHistoryExcludeSearch, historyTypeFilter, safeGroups.length]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      const target = entries[0];
-      if (target.isIntersecting) {
-        setDisplayLimit(prev => Math.min(prev + 30, safeGroups.length));
-      }
-    }, { root: null, rootMargin: "0px", threshold: 0.1 });
-
-    if (loaderRef.current) observer.observe(loaderRef.current);
-    return () => { if (loaderRef.current) observer.unobserve(loaderRef.current); };
-  }, [safeGroups.length]);
-
-  const displayedGroups = safeGroups.slice(0, displayLimit);
+  // 🌟 Virtuoso 所需的單筆渲染函式
+  const itemContent = (index, item) => {
+    return (
+      <div className="pb-3">
+        {renderItemOrGroup(item, true)}
+      </div>
+    );
+  };
 
   return (
+    // 🌟 注意：為了讓 useWindowScroll 正常運作，外層容器不應該有限制高度或 overflow
     <div className="flex flex-col animate-in w-full relative px-1 text-left">
       
       {/* 🌟 頂部過濾區與垃圾桶 */}
-      <div className="flex justify-between items-center mb-4 gap-2">
+      <div className="flex justify-between items-center mb-4 gap-2 shrink-0">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide flex-1">
           <h3 className="font-black text-xl text-gray-800 shrink-0">歷史紀錄</h3>
           <div className="flex bg-gray-200/60 p-0.5 rounded-xl gap-0.5 shrink-0">
@@ -58,7 +47,7 @@ const HistoryTab = ({
       </div>
 
       {/* 🌟 進階搜尋按鈕 + 一鍵清除按鈕 */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 shrink-0">
         <button onClick={() => { triggerVibration(10); setShowSearchFilterModal(true); }} className={`flex-1 bg-white p-3 rounded-2xl border flex items-center justify-between shadow-sm active:bg-gray-50 transition-colors ${hasAdvancedFilters ? 'border-blue-300 ring-2 ring-blue-100' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2 text-gray-600 font-bold text-sm">
             <SvgIcon name="search" size={18} className={hasAdvancedFilters ? "text-blue-500" : ""} />
@@ -84,7 +73,7 @@ const HistoryTab = ({
       </div>
 
       {/* 🌟 統計面板 */}
-      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm mb-4 flex flex-col gap-3">
+      <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm mb-4 flex flex-col gap-3 shrink-0">
         <div className="flex justify-between items-center px-1">
           <span className="text-[11px] font-black text-gray-400">篩選區間結餘</span>
           <span className={`text-xl font-black tabular-nums tracking-tight ${safeStats.balance >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
@@ -103,9 +92,9 @@ const HistoryTab = ({
         </div>
       </div>
 
-      {/* 🌟 歷史清單 */}
-      <div className="space-y-3 pb-6 relative">
-        {displayedGroups.length === 0 ? (
+      {/* 🌟 歷史清單：Virtuoso 虛擬列表引擎 */}
+      <div className="flex-1 w-full pb-24">
+        {safeGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400 animate-in">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
               <SvgIcon name="search" size={24} className="opacity-50" />
@@ -113,50 +102,20 @@ const HistoryTab = ({
             <p className="font-black text-sm tracking-widest">沒有符合條件的紀錄</p>
           </div>
         ) : (
-          displayedGroups.map(item => {
-            // 檢查這筆紀錄（或這個群組的任一子紀錄）是否被編輯過
-            const isItemEdited = item.isGroup 
-                ? item.children.some(child => child.isEdited) 
-                : item.isEdited;
-            
-            // 決定要看哪一筆的歷程（群組就看第一筆代表）
-            const historyIdTarget = item.isGroup ? item.children[0].id : item.id;
-
-            return (
-              <div key={item.isGroup ? item.groupId : item.id} className="relative group">
-                {/* 呼叫你原本的渲染函數 */}
-                {renderItemOrGroup(item, true)}
-                
-                {/* 🌟 若有被編輯過，疊加「已編輯」標籤上去 */}
-                {isItemEdited && onViewHistory && (
-                  <button 
-                    onClick={(e) => { 
-                       e.stopPropagation(); 
-                       triggerVibration(10); 
-                       onViewHistory(historyIdTarget); 
-                    }}
-                    className="absolute top-2 right-12 z-20 flex items-center gap-1 bg-white/90 backdrop-blur-sm text-gray-500 px-2 py-1 rounded-lg border border-gray-200 shadow-sm active:scale-95 transition-all hover:bg-gray-50"
-                  >
-                    <SvgIcon name="edit" size={12} />
-                    <span className="text-[9px] font-black tracking-widest">已編輯</span>
-                  </button>
-                )}
-              </div>
-            );
-          })
-        )}
-
-        {/* 🚀 隱形感測器與載入提示 */}
-        {displayLimit < safeGroups.length && (
-          <div ref={loaderRef} className="py-8 w-full flex flex-col items-center justify-center gap-2 text-gray-400 animate-pulse">
-             <SvgIcon name="spinner" size={20} className="animate-spin text-gray-300" />
-             <span className="text-[10px] font-black tracking-widest">正在載入更多紀錄...</span>
-          </div>
+          <Virtuoso
+            useWindowScroll={true} // 讓它追蹤全域滾動條，確保滑動順暢
+            data={safeGroups}
+            itemContent={itemContent}
+            // 預估初始高度，加速首次渲染
+            defaultItemHeight={100} 
+            // 增加緩衝區，預先渲染螢幕上下各 400px 的卡片，避免滑動過快時閃爍
+            overscan={400} 
+          />
         )}
       </div>
 
       {/* 🚀 空間傳送門 Modal */}
-      {showSearchFilterModal && createPortal(
+      {showSearchFilterModal && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in text-left" onClick={(e) => { if (e.target === e.currentTarget) setShowSearchFilterModal(false); }}>
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl relative flex flex-col max-h-[85vh] overflow-y-auto scrollbar-hide">
             <button onClick={() => setShowSearchFilterModal(false)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24} /></button>

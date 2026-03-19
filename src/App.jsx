@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Component } from 'react';
 
 import { APP_VERSION, STORE_NAME, LS, CHART_COLORS } from './utils/constants';
 import { initIndexedDB, saveToIndexedDB, loadFromIndexedDB, getParentCat, getChildCat, getBenArray, getBenBadgeStyle, safeParse, safeArrayLS, safeStringLS, safeNumberLS, nowStr, displayDateClean, formatDateOnly, parseDateForSort, getSafeCycleRange } from './utils/helpers';
@@ -17,6 +17,9 @@ import HistoryTab from './components/HistoryTab';
 import AnalysisTab from './components/AnalysisTab';
 import SettingsTab from './components/SettingsTab';
 
+import { TransactionCard } from './components/TransactionCard';
+import { TransactionGroupCard } from './components/TransactionGroupCard';
+
 import { SvgIcon } from './components/Icons';
 import { ProxyNotification } from './components/ProxyNotification';
 import { ChangePinModal } from './components/ChangePinModal';
@@ -24,19 +27,42 @@ import { AddTransactionForm } from './components/AddTransactionForm';
 import { EditTransactionModal } from './components/EditTransactionModal';
 import { EditGroupParentModal } from './components/EditGroupParentModal';
 
-const triggerVibration = (pattern) => {
-  if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
-    try { window.navigator.vibrate(pattern); } catch (e) {}
+import { useAppStore } from './store/useAppStore';
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error("UI 崩潰詳細報告:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 m-4 bg-red-50 border-2 border-red-500 rounded-3xl text-red-600 font-black break-words shadow-xl animate-in">
+          <h3 className="text-xl mb-3 flex items-center gap-2">⚠️ 畫面崩潰了</h3>
+          <p className="text-sm font-bold text-gray-700 mb-2">請把以下紅字複製或截圖給建構師：</p>
+          <div className="text-xs bg-white p-3 rounded-xl border border-red-200 text-red-800 font-mono">
+            {this.state.error?.toString()}
+          </div>
+          <button onClick={() => window.location.reload()} className="mt-5 w-full py-3 bg-red-600 text-white rounded-xl active:scale-95 transition-transform shadow-md">重新整理 APP</button>
+        </div>
+      );
+    }
+    return this.props.children;
   }
-};
+}
 
 function App() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const { 
+    activeTab, setActiveTab, 
+    isOnline, setIsOnline, 
+    loadingCard, setLoadingCard, 
+    statusMsg, showStatus, 
+    triggerVibration 
+  } = useAppStore();
+
   const [familyConfig, setFamilyConfig] = useState(() => safeArrayLS(LS.members).length ? safeArrayLS(LS.members) : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }]);
   const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
   const [greetingsCache, setGreetingsCache] = useState(() => { try { return JSON.parse(localStorage.getItem(LS.greetingsCache)) || {}; } catch { return {}; } });
   const [billingStartDay, setBillingStartDay] = useState(() => safeNumberLS(LS.billingStartDay, 1));
-  const [statusMsg, setStatusMsg] = useState({ type: "", text: "" });
 
   const [showClearCacheModal, setShowClearCacheModal] = useState(false);
   const [cacheClearPassword, setCacheClearPassword] = useState("");
@@ -45,7 +71,6 @@ function App() {
 
   const [showClearQueueModal, setShowClearQueueModal] = useState(false);
   const [showPendingModal, setShowPendingModal] = useState(false);
-  const [loadingCard, setLoadingCard] = useState({ show: false, text: "" });
   const isLoading = loadingCard.show;
   const [lastSyncText, setLastSyncText] = useState(() => safeStringLS(LS.lastSync, "----/--/-- --:--"));
 
@@ -63,7 +88,6 @@ function App() {
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState(null);
   const [showConfirmEmptyTrash, setShowConfirmEmptyTrash] = useState(false);
   
-  // 🌟 AI 語音專用狀態
   const [voiceReviewTxs, setVoiceReviewTxs] = useState(null);
 
   const [historySearch, setHistorySearch] = useState("");
@@ -82,7 +106,6 @@ function App() {
   const [animTrigger, setAnimTrigger] = useState(false);
   
   const [isLogOpen, setIsLogOpen] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [unackedProxyTxs, setUnackedProxyTxs] = useState([]);
 
   const txCacheRef = useRef(txCache);
@@ -94,14 +117,6 @@ function App() {
     loadFromIndexedDB(STORE_NAME).then(data => { if (data && data.length > 0) setTxCache(data); });
     loadFromIndexedDB("trash_store").then(data => { if (data && data.length > 0) setTrashCache(data); });
     loadFromIndexedDB("audit_logs").then(data => { if (data) setAuditLogs(data); });
-  }, []);
-
-  const showStatus = useCallback((type, text) => {
-    if (type === "success") triggerVibration([20, 50, 20]);
-    else if (type === "error") triggerVibration([50, 50, 50, 50, 50]);
-    else if (type === "info") triggerVibration(15);
-    setStatusMsg({ type, text });
-    setTimeout(() => setStatusMsg({ type: "", text: "" }), 3000);
   }, []);
 
   const {
@@ -173,9 +188,7 @@ function App() {
     if (data.greetings) setGreetingsCache(data.greetings);
     if (data.snapshots) { setSnapshotsCache(data.snapshots); localStorage.setItem('snapshots_cache', JSON.stringify(data.snapshots)); }
 
-    // 🌟 核心修復：廣播雲端資料給 AI 大腦接收 (包含 B6 的 aiData)
     window.dispatchEvent(new CustomEvent('cloud_data_synced', { detail: data }));
-
     return changed;
   }, []);
 
@@ -189,49 +202,49 @@ function App() {
 
   const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText } = useAI({ currentUser, isOnline, txCache, showStatus });
 
-  // 🌟 AI 語音停止後，交接給 App.jsx 處理
   const handleVoiceRecordStop = async (text) => {
+    const safeName = currentUser?.name || "未知";
     setLoadingCard({ show: true, text: "🤖 正在呼叫 AI 大腦解析中..." });
     try {
-      const parsedTxs = await processVoiceText(text, currentUser.name);
+      const parsedTxs = await processVoiceText(text, safeName);
       if (parsedTxs && parsedTxs.length > 0) {
-        setVoiceReviewTxs(parsedTxs); // 解析成功，打開確認視窗
+        setVoiceReviewTxs(parsedTxs);
       }
     } catch (e) {
       showStatus("error", e.message);
     } finally {
-      setLoadingCard({ show: false, text: "" }); // 關閉等待視窗
+      setLoadingCard({ show: false, text: "" });
     }
   };
 
-  // 🌟 確認並寫入語音資料
   const handleConfirmVoice = () => {
     triggerVibration([20, 40, 20]);
     const baseTimestamp = Date.now();
     const groupMap = {}; 
     const randomSuffix = () => Math.random().toString(36).substring(2, 8);
+    const safeName = currentUser?.name || "未知";
 
     const completeTxs = voiceReviewTxs.map((tx, idx) => {
       let gId = "";
       let pDesc = "";
       if (tx.isGroup && tx.parentTitle) {
          if (!groupMap[tx.parentTitle]) {
-           groupMap[tx.parentTitle] = `G_${baseTimestamp}_${currentUser.name}_${randomSuffix()}`;
+           groupMap[tx.parentTitle] = `G_${baseTimestamp}_${safeName}_${randomSuffix()}`;
          }
          gId = groupMap[tx.parentTitle];
          pDesc = tx.parentTitle;
       }
 
       return {
-         id: `${baseTimestamp + idx}_${currentUser.name}_${randomSuffix()}`,
+         id: `${baseTimestamp + idx}_${safeName}_${randomSuffix()}`,
          date: nowStr(),
-         type: tx.type || "expense", // 🌟 支援 AI 判定的收入/支出
+         type: tx.type || "expense",
          category: tx.category || "其他/雜項",
          amount: Number(tx.amount) || 0,
          desc: tx.desc || "",
-         member: currentUser.name,
-         recorder: currentUser.name,
-         beneficiary: tx.beneficiary || currentUser.name,
+         member: safeName,
+         recorder: safeName,
+         beneficiary: tx.beneficiary || safeName,
          groupId: gId,
          parentDesc: pDesc,
          isOffline: !navigator.onLine,
@@ -245,7 +258,6 @@ function App() {
     showStatus("success", "✅ AI 帳單已加入同步排程！");
   };
 
-
   useEffect(() => { if (activeTab === "analysis") { setAnimTrigger(false); const timer = setTimeout(() => setAnimTrigger(true), 50); return () => clearTimeout(timer); } }, [activeTab, analysisType, analysisDateFilter]);
 
   useEffect(() => {
@@ -255,13 +267,14 @@ function App() {
     window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') handleNetworkChange(); });
     window.addEventListener('focus', handleNetworkChange);
     return () => { window.removeEventListener('online', handleNetworkChange); window.removeEventListener('offline', handleNetworkChange); window.removeEventListener('visibilitychange', handleNetworkChange); window.removeEventListener('focus', handleNetworkChange); };
-  }, []);
+  }, [setIsOnline]);
 
   useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig || [])), [familyConfig]);
   useEffect(() => localStorage.setItem(LS.lastSync, lastSyncText), [lastSyncText]);
   useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
 
-  useEffect(() => { if (currentUser && greetingsCache && greetingsCache[currentUser.name]) setCustomSubtitle(String(greetingsCache[currentUser.name])); else if (currentUser) setCustomSubtitle("{name}，你好！"); }, [currentUser, greetingsCache]);
+  useEffect(() => { if (currentUser?.name && greetingsCache && greetingsCache[currentUser.name]) setCustomSubtitle(String(greetingsCache[currentUser.name])); else if (currentUser) setCustomSubtitle("{name}，你好！"); }, [currentUser, greetingsCache]);
+  
   useEffect(() => { const timer = setTimeout(() => { setDebouncedHistorySearch(historySearch); setDebouncedHistoryExcludeSearch(historyExcludeSearch); }, 350); return () => clearTimeout(timer); }, [historySearch, historyExcludeSearch]);
   useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
   useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]);
@@ -271,7 +284,16 @@ function App() {
   useEffect(() => {
     if (!currentUser || txCache.length === 0) return;
     const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []);
-    const unacked = txCache.filter(tx => String(tx.member).trim() === String(currentUser.name).trim() && tx.recorder && String(tx.recorder).trim() !== String(currentUser.name).trim() && String(tx.recorder).trim() !== '系統' && !acked.includes(tx.id));
+    const safeUserName = String(currentUser?.name || "").trim();
+    
+    const unacked = txCache.filter(tx => 
+      String(tx.member).trim() === safeUserName && 
+      tx.recorder && 
+      String(tx.recorder).trim() !== safeUserName && 
+      String(tx.recorder).trim() !== '系統' && 
+      !acked.includes(tx.id)
+    );
+    
     const currentUnackedIds = unackedProxyTxs.map(t => t.id).sort().join(',');
     const newUnackedIds = unacked.map(t => t.id).sort().join(',');
     if (currentUnackedIds !== newUnackedIds) setUnackedProxyTxs(unacked);
@@ -288,9 +310,10 @@ function App() {
     if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
     try {
       setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken();
-      const res = await postGAS({ action: "UPDATE_GREETING", name: currentUser.name, greeting: customSubtitle, deviceToken: getDeviceToken() });
+      const safeName = currentUser?.name || "未知";
+      const res = await postGAS({ action: "UPDATE_GREETING", name: safeName, greeting: customSubtitle, deviceToken: getDeviceToken() });
       if (res.result !== "success") throw new Error(res.message);
-      setGreetingsCache(prev => ({...prev, [currentUser.name]: customSubtitle})); showStatus("success", "✅ 問候語已更新");
+      setGreetingsCache(prev => ({...prev, [safeName]: customSubtitle})); showStatus("success", "✅ 問候語已更新");
     } catch (e) {
       setLoadingCard({ show:false, text:"" }); const msg = e.message || "儲存失敗";
       if (msg.includes("憑證") || msg.includes("過期")) { showStatus("error", "❌ 雲端憑證無效，請重新綁定"); forceReloginForToken(); } else { showStatus("error", msg); }
@@ -346,8 +369,9 @@ function App() {
     try {
       const safeSearchTxt = String(debouncedHistorySearch || "").trim().toLowerCase();
       const safeExcludeTxt = String(debouncedHistoryExcludeSearch || "").trim().toLowerCase();
+      const safeUserName = String(currentUser?.name || "").trim();
 
-      let list = (allGroupedAndSorted || []).filter(item => String(item.member || "").trim() === String(currentUser.name || "").trim());
+      let list = (allGroupedAndSorted || []).filter(item => String(item.member || "").trim() === safeUserName);
       if (historyTypeFilter !== "all") list = list.filter(item => item.type === historyTypeFilter);
 
       let startTime = 0; let endTime = Infinity;
@@ -439,137 +463,39 @@ function App() {
 
   function toggleGroup(gId) { triggerVibration(10); setExpandedGroups(p => ({ ...p, [gId]: !p[gId] })); }
 
-  function renderStandaloneCard(tx, allowEdit = true) {
-    const benArray = getBenArray(tx.beneficiary, tx.member);
-    const pAction = pendingMap[tx.id];
-    const hasEditRecord = auditLogs.some(log => String(log.txId) === String(tx.id));
-
-    return (
-      <div key={tx.id} className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' || pAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-        {pAction && (
-          <div className={`shrink-0 w-6 flex items-center justify-center rounded-2xl shadow-sm border ${pAction==='ADD' || pAction === 'RESTORE_TX' ?'bg-green-50 border-green-200 text-green-700':pAction==='UPDATE_TX'?'bg-blue-50 border-blue-200 text-blue-700':'bg-red-50 border-red-200 text-red-700'}`}>
-            <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{(pAction==='ADD' || pAction === 'RESTORE_TX')?'待處理':pAction==='UPDATE_TX'?'待處理':'待處理'}</span>
-          </div>
-        )}
-        <div className="flex-1 min-w-0 w-full bg-white p-4 rounded-3xl border border-gray-100 flex items-start sm:items-center gap-3 shadow-sm relative overflow-hidden transition-colors">
-          <div className="relative shrink-0 mt-1 sm:mt-0">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{tx.type==="income" ? "收入" : "支出"}</div>
-            {tx.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${tx.member === "爸爸" ? "bg-blue-600" : tx.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{tx.member}</div> )}
-          </div>
-          <div className="flex-1 min-w-0 pl-1 pt-1">
-            <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
-              <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
-              <div className="flex gap-1 flex-wrap shrink-0">{benArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
-            </div>
-            <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
-              <div className="flex items-center gap-2 flex-wrap w-full">
-                <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(tx.date)}</span>
-                {hasEditRecord && (
-                  <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(tx); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button>
-                )}
-              </div>
-              {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
-            </div>
-          </div>
-          <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
-            <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
-            {tx.recorder && tx.recorder !== tx.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {tx.recorder}代記</div> )}
-          </div>
-          {allowEdit && pAction !== 'DELETE_TX' && pAction !== 'HARD_DELETE_TX' && (
-            <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingTx(tx); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  function renderGroupCard(group, allowEdit = true) {
-    const isExp = !!expandedGroups[group.groupId];
-    const allBens = new Set();
-    (group.children || []).forEach(c => { if(c.beneficiary) String(c.beneficiary).split(",").filter(Boolean).forEach(b => allBens.add(b.trim())); });
-    const parentBenArray = getBenArray(Array.from(allBens).join(","), group.member);
-    const gAction = pendingMap[group.groupId];
-    const hasChildAction = (group.children || []).some(c => pendingMap[c.id]);
-    const isPendingDeleteGroup = (group.children || []).every(c => pendingMap[c.id] === 'DELETE_TX' || pendingMap[c.id] === 'HARD_DELETE_TX');
-    const hasEditRecord = auditLogs.some(log => String(log.txId) === String(group.groupId));
-
-    return (
-      <div key={group.groupId} className={`flex items-stretch gap-2 mb-3 transition-opacity ${isPendingDeleteGroup ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-        {(gAction || hasChildAction) && (
-          <div className={`shrink-0 w-6 flex items-center justify-center rounded-3xl shadow-sm border ${gAction==='UPDATE_GROUP_PARENT'?'bg-purple-50 border-purple-200 text-purple-700': isPendingDeleteGroup ? 'bg-red-50 border-red-200 text-red-700' : hasChildAction?'bg-gray-100 border-gray-200 text-gray-600':'bg-blue-50 border-blue-200 text-blue-700'}`}>
-            <span className="text-[10px] font-black tracking-widest" style={{writingMode: 'vertical-rl'}}>{isPendingDeleteGroup?'待處理':gAction==='UPDATE_GROUP_PARENT'?'待處理': '待處理'}</span>
-          </div>
-        )}
-        <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-          <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-start sm:items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
-            <div className="relative shrink-0 mt-1 sm:mt-0">
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{group.type==="income" ? "收入" : "支出"}</div>
-              <div className="absolute -bottom-1 -right-1 bg-gray-800 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md border-2 border-white shadow-sm z-10">多筆</div>
-              {group.member !== currentUser.name && ( <div className={`absolute -top-2 -left-2 text-[10px] font-black px-1.5 py-0.5 rounded-lg border-2 border-white shadow-sm ${group.member === "爸爸" ? "bg-blue-600" : group.member === "媽媽" ? "bg-pink-600" : "bg-gray-500"} text-white z-10`}>{group.member}</div> )}
-            </div>
-            <div className="flex-1 min-w-0 pl-1 pt-1">
-              <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
-                <span className="truncate flex-shrink">{group.parentTitle}</span>
-                <div className="flex gap-1 flex-wrap shrink-0">{parentBenArray.map(b => ( <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
-                <span className={`text-[10px] text-gray-400 transform transition-transform duration-300 shrink-0 ${isExp ? 'rotate-180' : ''}`}>▼</span>
-              </div>
-              <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
-                <div className="flex items-center gap-2 flex-wrap w-full">
-                  <span className="text-[10px] text-gray-400 font-medium leading-none shrink-0">{displayDateClean(group.date)}</span>
-                  {hasEditRecord && (
-                    <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setViewingHistoryItem(group); }} className="inline-flex items-center gap-0.5 bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded-md text-[9px] font-black border border-amber-200 active:scale-95 transition-transform whitespace-nowrap shrink-0">✏️ 已編輯</button>
-                  )}
-                </div>
-                {group.parentDesc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{group.parentDesc}</div>}
-              </div>
-            </div>
-            <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0">
-              <div className={`font-black tabular-nums text-lg leading-none ${group.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(group.amount||0).toLocaleString()}</div>
-              {group.recorder && group.recorder !== group.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${group.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : group.recorder === "妈妈" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {group.recorder}代記</div> )}
-            </div>
-            {allowEdit && !isPendingDeleteGroup && (
-              <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingGroup(group); }} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={13} /></button>
-            )}
-          </div>
-
-          {isExp && (
-            <div className="bg-gray-50/80 p-3 flex flex-col gap-2 border-t-2 border-gray-100 shadow-inner">
-              {(group.children || []).map((child, idx) => {
-                const childBenArray = getBenArray(child.beneficiary, group.member);
-                const cAction = pendingMap[child.id];
-                return (
-                  <div key={child.id} className={`w-full flex items-center gap-2 sm:gap-3 bg-white p-2.5 sm:p-3 rounded-2xl shadow-sm border border-gray-200 relative overflow-hidden transition-opacity ${cAction === 'DELETE_TX' || cAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
-                    {cAction && <div className={`absolute left-0 top-0 h-full w-1 ${cAction==='ADD'?'bg-green-400':cAction==='UPDATE_TX'?'bg-blue-400':'bg-red-400'}`}></div>}
-                    <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gray-100 text-gray-400 text-[10px] font-black flex items-center justify-center shrink-0">{idx + 1}</div>
-                    <div className="flex-1 min-w-0 pr-2 border-r border-gray-100">
-                      <div className="font-bold text-xs sm:text-sm text-gray-800 flex items-center gap-1.5 flex-wrap leading-tight">
-                        <span className="truncate flex-shrink">{getParentCat(child.category)} - {getChildCat(child.category)}</span>
-                        {cAction === 'ADD' && <span className="shrink-0 bg-green-100 text-green-600 text-[8px] px-1.5 py-0.5 rounded-md border border-green-200 font-black">待處理</span>}
-                        {cAction === 'UPDATE_TX' && <span className="shrink-0 bg-blue-100 text-blue-600 text-[8px] px-1.5 py-0.5 rounded-md border border-blue-200 font-black">待處理</span>}
-                        {(cAction === 'DELETE_TX' || cAction === 'HARD_DELETE_TX') && <span className="shrink-0 bg-red-100 text-red-600 text-[8px] px-1.5 py-0.5 rounded-md border border-red-200 font-black">待處理</span>}
-                        <div className="flex gap-1 flex-wrap shrink-0">{childBenArray.map(b => ( <span key={b} className={`text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span> ))}</div>
-                      </div>
-                      {child.desc && <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 whitespace-normal break-words">{child.desc}</div>}
-                    </div>
-                    <div className="flex flex-col items-end shrink-0 min-w-[3.5rem] text-right z-10">
-                      <div className={`font-black tabular-nums text-xs sm:text-sm ${child.type==="income" ? "text-green-600" : "text-gray-600"}`}>${Number(child.amount||0).toLocaleString()}</div>
-                    </div>
-                    {allowEdit && cAction !== 'DELETE_TX' && cAction !== 'HARD_DELETE_TX' && (
-                      <button onClick={(e) => { triggerVibration(10); e.stopPropagation(); setEditingTx(child); }} className="absolute bottom-1 right-1.5 p-1.5 text-gray-300 hover:text-blue-500 active:text-blue-600 active:scale-90 transition-all"><SvgIcon name="edit" size={11} /></button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   function renderItemOrGroup(item, allowEdit) {
-    if (item.isGroup) return renderGroupCard(item, allowEdit);
-    return renderStandaloneCard(item, allowEdit);
+    if (item.isGroup) {
+      return (
+        <TransactionGroupCard
+          key={item.groupId}
+          group={item}
+          allowEdit={allowEdit}
+          pendingMap={pendingMap}
+          auditLogs={auditLogs}
+          currentUser={currentUser}
+          setViewingHistoryItem={setViewingHistoryItem}
+          setEditingGroup={setEditingGroup}
+          setEditingTx={setEditingTx}
+          triggerVibration={triggerVibration}
+          expandedGroups={expandedGroups}
+          toggleGroup={toggleGroup}
+        />
+      );
+    }
+    
+    return (
+      <TransactionCard
+        key={item.id}
+        tx={item}
+        allowEdit={allowEdit}
+        pendingMap={pendingMap}
+        auditLogs={auditLogs}
+        currentUser={currentUser}
+        setViewingHistoryItem={setViewingHistoryItem}
+        setEditingTx={setEditingTx}
+        triggerVibration={triggerVibration}
+      />
+    );
   }
 
   const setQuickDateFilter = (filterVal) => { triggerVibration(10); setHistoryDateFilter(filterVal); setAnalysisDateFilter(filterVal); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); };
@@ -666,7 +592,6 @@ function App() {
       <ProxyNotification transactions={unackedProxyTxs} onAck={() => { triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...unackedProxyTxs.map(t => t.id)])]; 
       localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
 
-{/* 🌟 修正：將 AI 運算等待視窗拉到全域顯示 */}
       {isLoading && (
         <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
           <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-5 animate-in slide-in-from-bottom-4">
@@ -675,17 +600,15 @@ function App() {
           </div>
         </div>
       )}
-{/* 🌟 語音解析確認清單彈窗 (歷史清單同款高級圖卡 + 真實編輯頁面) */}
+
       {voiceReviewTxs && (() => {
-        // 檢查是否有一筆紀錄正在被點擊編輯
         const editingIdx = voiceReviewTxs.findIndex(t => t.isEditing);
         
-        // 如果有，直接呼叫系統標準的 EditTransactionModal (與歷史清單完全共用)
         if (editingIdx !== -1) {
           return (
             <EditTransactionModal 
               tx={voiceReviewTxs[editingIdx]} 
-              loginUser={currentUser.name} 
+              loginUser={currentUser?.name || "未知"} 
               onSave={(updatedTx) => {
                 const newTxs = [...voiceReviewTxs];
                 delete updatedTx.isEditing;
@@ -705,7 +628,6 @@ function App() {
           );
         }
 
-        // 如果沒有在編輯，就顯示確認清單列表
         return (
           <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
             <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
@@ -744,12 +666,10 @@ function App() {
                         <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
                       </div>
                       
-                      {/* 編輯按鈕：點擊後掛載 isEditing 標籤，喚叫系統編輯視窗 */}
                       <button onClick={() => {
                         triggerVibration(10);
                         const newTxs = [...voiceReviewTxs];
                         newTxs[idx].isEditing = true;
-                        // 暫時給予隨機 ID 與日期以防 EditModal 錯誤
                         if (!newTxs[idx].id) newTxs[idx].id = "temp_" + Date.now();
                         if (!newTxs[idx].date) {
                            const now = new Date();
@@ -783,8 +703,35 @@ function App() {
           </div>
         );
       })()}
-      {editingTx && <EditTransactionModal tx={editingTx} loginUser={currentUser.name} onSave={handleUpdateTx} onDelete={handleDeleteTx} onCancel={() => { triggerVibration(10); setEditingTx(null); }} />}
-      {editingGroup && <EditGroupParentModal group={editingGroup} onSave={handleUpdateGroupParent} onCancel={() => { triggerVibration(10); setEditingGroup(null); }} />}
+      
+      {/* 🌟 核心修復：在修改與刪除時，強制綁定顯示提示框 */}
+      {editingTx && (
+        <EditTransactionModal 
+          tx={editingTx} 
+          loginUser={currentUser?.name || "未知"} 
+          onSave={(tx) => {
+            handleUpdateTx(tx);
+            showStatus("success", "✅ 修改成功");
+          }} 
+          onDelete={(tx) => {
+            handleDeleteTx(tx);
+            showStatus("success", "🗑️ 已移至垃圾桶");
+          }} 
+          onCancel={() => { triggerVibration(10); setEditingTx(null); }} 
+        />
+      )}
+
+      {editingGroup && (
+        <EditGroupParentModal 
+          group={editingGroup} 
+          onSave={(g) => {
+            handleUpdateGroupParent(g);
+            showStatus("success", "✅ 群組修改成功");
+          }} 
+          onCancel={() => { triggerVibration(10); setEditingGroup(null); }} 
+        />
+      )}
+
       {showChangePinModal && <ChangePinModal currentUser={currentUser} onCancel={() => setShowChangePinModal(false)} onSuccess={() => {setShowChangePinModal(false); setCurrentUser(null); setSelectingUser(null); setPinInput(""); showStatus("success", "✅ 密碼已更新，請重新登入");}} forceReloginForToken={forceReloginForToken} />}
 
       {showTrashModal && (
@@ -817,11 +764,11 @@ function App() {
                     tx.parentTitle + ' - ' : ''}{tx.desc || tx.parentDesc}</div>}
                     <div className="flex justify-end gap-2 mt-2">
                       {confirmHardDeleteId === tx.id ? (
-                        <button onClick={() => handleHardDeleteTrash(tx)} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black active:scale-95 shadow-sm transition-all">確認永久刪除</button>
+                        <button onClick={() => { handleHardDeleteTrash(tx); showStatus("success", "🔥 已永久刪除"); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-black active:scale-95 shadow-sm transition-all">確認永久刪除</button>
                       ) : (
                         <button onClick={() => { triggerVibration(10); setConfirmHardDeleteId(tx.id); }} className="px-3 py-1.5 bg-white border border-gray-200 text-red-500 rounded-lg text-[10px] font-black active:scale-95 shadow-sm transition-all">永久刪除</button>
                       )}
-                      <button onClick={() => handleRestoreTrash(tx)} className="px-3 py-1.5 bg-green-50 border border-green-200 text-green-600 rounded-lg text-[10px] font-black active:scale-95 shadow-sm flex items-center gap-1 transition-all"><SvgIcon name="refresh" size={12}/> 復原</button>
+                      <button onClick={() => { handleRestoreTrash(tx); showStatus("success", "✅ 已成功復原"); }} className="px-3 py-1.5 bg-green-50 border border-green-200 text-green-600 rounded-lg text-[10px] font-black active:scale-95 shadow-sm flex items-center gap-1 transition-all"><SvgIcon name="refresh" size={12}/> 復原</button>
                     </div>
                   </div>
                 ))
@@ -836,7 +783,7 @@ function App() {
                     <span className="text-xs font-black text-red-600 text-center">確定要永久刪除所有紀錄嗎？</span>
                     <div className="flex gap-2">
                       <button onClick={() => { triggerVibration(10); setShowConfirmEmptyTrash(false); }} className="flex-1 py-2 bg-white text-gray-600 rounded-lg font-black text-[10px] border border-gray-200 active:scale-95">取消</button>
-                      <button onClick={handleEmptyTrash} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-black text-[10px] shadow-sm shadow-red-500/30 active:scale-95">確定清空</button>
+                      <button onClick={() => { handleEmptyTrash(); showStatus("success", "🔥 資源回收桶已清空"); }} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-black text-[10px] shadow-sm shadow-red-500/30 active:scale-95">確定清空</button>
                     </div>
                   </div>
                 )}
@@ -924,37 +871,6 @@ function App() {
         </div>
       )}
 
-      {showClearCacheModal && (
-        <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); 
-        setCacheClearPassword("");} }}>
-          <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
-            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
-            <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
-            <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">這將刪除手機內所有歷史紀錄與暫存，並重新從雲端下載。請輸入「雲端密碼」以確認執行：</p>
-            <input value={cacheClearPassword} onChange={(e)=>setCacheClearPassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
-            <div className="flex gap-3">
-              <button onClick={() => {setShowClearCacheModal(false); setCacheClearPassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
-              <button onClick={async () => {
-                if (!cacheClearPassword) { showStatus("error", "請輸入雲端密碼"); return; }
-                if (!navigator.onLine) { showStatus("error", "需連線才能驗證雲端密碼"); return; }
-                try {
-                  setLoadingCard({ show: true, text: "正在驗證密碼並清理快取..." });
-                  const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: cacheClearPassword });
-                  if (res.result !== "success") throw new Error("雲端密碼錯誤");
-                  setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); localStorage.setItem('last_server_time_v1', '0');
-                  const db = await initIndexedDB(); const tx = db.transaction(STORE_NAME, "readwrite"); tx.objectStore(STORE_NAME).clear();
-                  if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); }
-                  if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); }
-                  setShowClearCacheModal(false); setCacheClearPassword(""); showStatus("success", "✅ 快取已清空，正在重新下載...");
-                  setTimeout(() => { window.location.reload(true); }, 1500);
-                } catch(e) { showStatus("error", e.message || "驗證失敗"); }
-                finally { setLoadingCard({ show: false, text: "" }); }
-              }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <Header 
         currentUser={currentUser} 
         customSubtitle={customSubtitle} 
@@ -965,102 +881,113 @@ function App() {
       />
 
       <main className="p-6 pb-32 flex-1 overflow-y-auto scrollbar-hide text-gray-800 flex flex-col relative">
-
-        {activeTab === "dashboard" && (
-          <div className="space-y-6 animate-in">
-            <DashboardSummary stats={stats} />
-            <div className="space-y-4 text-left">
-              <h3 className="font-black text-lg px-1 text-gray-800">最新動態</h3>
-              <div className="space-y-3">{(allGroupedAndSorted || []).slice(0, 5).map(item => renderItemOrGroup(item, false))}</div>
+        <ErrorBoundary>
+          {activeTab === "dashboard" && (
+            <div className="space-y-6 animate-in">
+              <DashboardSummary stats={stats} />
+              <div className="space-y-4 text-left">
+                <h3 className="font-black text-lg px-1 text-gray-800">最新動態</h3>
+                <div className="space-y-3">{(allGroupedAndSorted || []).slice(0, 5).map(item => renderItemOrGroup(item, false))}</div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === "history" && (
-          <HistoryTab 
-            setQuickDateFilter={setQuickDateFilter}
-            historyDateFilter={historyDateFilter}
-            setHistoryDateFilter={setHistoryDateFilter}
-            setHistorySearch={setHistorySearch}
-            setHistoryExcludeSearch={setHistoryExcludeSearch}
-            setHistoryTypeFilter={setHistoryTypeFilter}
-            historySearch={historySearch}
-            historyExcludeSearch={historyExcludeSearch}
-            triggerVibration={triggerVibration}
-            setShowTrashModal={setShowTrashModal}
-            setConfirmHardDeleteId={setConfirmHardDeleteId}
-            setShowConfirmEmptyTrash={setShowConfirmEmptyTrash}
-            showSearchFilterModal={showSearchFilterModal}
-            setShowSearchFilterModal={setShowSearchFilterModal}
-            debouncedHistorySearch={debouncedHistorySearch}
-            debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch}
-            historyTypeFilter={historyTypeFilter}
-            isHistoryFiltered={isHistoryFiltered}
-            historyFilteredStats={historyFilteredStats}
-            filteredHistoryGroups={filteredHistoryGroups}
-            renderItemOrGroup={renderItemOrGroup}
-          />
-        )}
+          {activeTab === "history" && (
+            <HistoryTab 
+              setQuickDateFilter={setQuickDateFilter}
+              historyDateFilter={historyDateFilter}
+              setHistoryDateFilter={setHistoryDateFilter}
+              setHistorySearch={setHistorySearch}
+              setHistoryExcludeSearch={setHistoryExcludeSearch}
+              setHistoryTypeFilter={setHistoryTypeFilter}
+              historySearch={historySearch}
+              historyExcludeSearch={historyExcludeSearch}
+              triggerVibration={triggerVibration}
+              setShowTrashModal={setShowTrashModal}
+              setConfirmHardDeleteId={setConfirmHardDeleteId}
+              setShowConfirmEmptyTrash={setShowConfirmEmptyTrash}
+              showSearchFilterModal={showSearchFilterModal}
+              setShowSearchFilterModal={setShowSearchFilterModal}
+              debouncedHistorySearch={debouncedHistorySearch}
+              debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch}
+              historyTypeFilter={historyTypeFilter}
+              isHistoryFiltered={isHistoryFiltered}
+              historyFilteredStats={historyFilteredStats}
+              filteredHistoryGroups={filteredHistoryGroups}
+              renderItemOrGroup={renderItemOrGroup}
+            />
+          )}
 
-        {activeTab === "analysis" && (
-          <AnalysisTab 
-            analysisDateFilter={analysisDateFilter}
-            setAnalysisDateFilter={setAnalysisDateFilter}
-            setSelectedAnalysisLevel1={setSelectedAnalysisLevel1}
-            setSelectedAnalysisLevel2={setSelectedAnalysisLevel2}
-            analysisCustomStart={analysisCustomStart}
-            setAnalysisCustomStart={setAnalysisCustomStart}
-            analysisCustomEnd={analysisCustomEnd}
-            setAnalysisCustomEnd={setAnalysisCustomEnd}
-            analysisType={analysisType}
-            setAnalysisType={setAnalysisType}
-            aiEvalData={aiEvalData}
-            currentUser={currentUser}
-            isAIEvaluating={isAIEvaluating}
-            handleForceAIEval={handleForceAIEval}
-            myTransactions={myTransactions}
-            billingStartDay={billingStartDay}
-            pendingMap={pendingMap}
-            selectedAnalysisLevel1={selectedAnalysisLevel1}
-            setAnalysisDetailData={setAnalysisDetailData}
-            animTrigger={animTrigger}
-            triggerVibration={triggerVibration}
-            renderItemOrGroup={renderItemOrGroup}
-            snapshotsCache={snapshotsCache}
-          />
-        )}
+          {activeTab === "analysis" && (
+            <AnalysisTab 
+              analysisDateFilter={analysisDateFilter}
+              setAnalysisDateFilter={setAnalysisDateFilter}
+              setSelectedAnalysisLevel1={setSelectedAnalysisLevel1}
+              setSelectedAnalysisLevel2={setSelectedAnalysisLevel2}
+              analysisCustomStart={analysisCustomStart}
+              setAnalysisCustomStart={setAnalysisCustomStart}
+              analysisCustomEnd={analysisCustomEnd}
+              setAnalysisCustomEnd={setAnalysisCustomEnd}
+              analysisType={analysisType}
+              setAnalysisType={setAnalysisType}
+              aiEvalData={aiEvalData}
+              currentUser={currentUser}
+              isAIEvaluating={isAIEvaluating}
+              handleForceAIEval={handleForceAIEval}
+              myTransactions={myTransactions}
+              billingStartDay={billingStartDay}
+              pendingMap={pendingMap}
+              selectedAnalysisLevel1={selectedAnalysisLevel1}
+              setAnalysisDetailData={setAnalysisDetailData}
+              animTrigger={animTrigger}
+              triggerVibration={triggerVibration}
+              renderItemOrGroup={renderItemOrGroup}
+              snapshotsCache={snapshotsCache}
+            />
+          )}
 
-        {activeTab === "add" && <AddTransactionForm loginUser={currentUser.name} onSubmit={handleAdd} onClose={() => setActiveTab('dashboard')} />}
+          {/* 🌟 核心修復：在新增記帳時，強制綁定顯示提示框 */}
+          {activeTab === "add" && (
+            <AddTransactionForm 
+              loginUser={currentUser?.name || "未知"} 
+              onSubmit={(tx) => {
+                handleAdd(tx);
+                showStatus("success", "✅ 新增成功");
+              }} 
+              onClose={() => setActiveTab('dashboard')} 
+            />
+          )}
 
-        {activeTab === "settings" && (
-          <SettingsTab 
-            handleForceAIEval={handleForceAIEval}
-            isAIEvaluating={isAIEvaluating}
-            isSyncing={isSyncing}
-            triggerVibration={triggerVibration}
-            billingStartDay={billingStartDay}
-            setBillingStartDay={setBillingStartDay}
-            currentCycleRange={currentCycleRange}
-            customSubtitle={customSubtitle}
-            setCustomSubtitle={setCustomSubtitle}
-            handleSaveGreeting={handleSaveGreeting}
-            currentUser={currentUser}
-            setShowChangePinModal={setShowChangePinModal}
-            bioBound={bioBound}
-            setUnbindPin={setUnbindPin}
-            setShowUnbindModal={setShowUnbindModal}
-            bindDeviceBio={bindDeviceBio}
-            setShowClearCacheModal={setShowClearCacheModal}
-            setCurrentUser={setCurrentUser}
-            setSelectingUser={setSelectingUser}
-            setPinInput={setPinInput}
-            setActiveTab={setActiveTab}
-            syncQueue={syncQueue}
-            setShowClearQueueModal={setShowClearQueueModal}
-            isLogOpen={isLogOpen}
-            setIsLogOpen={setIsLogOpen}
-          />
-        )}
+          {activeTab === "settings" && (
+            <SettingsTab 
+              handleForceAIEval={handleForceAIEval}
+              isAIEvaluating={isAIEvaluating}
+              isSyncing={isSyncing}
+              triggerVibration={triggerVibration}
+              billingStartDay={billingStartDay}
+              setBillingStartDay={setBillingStartDay}
+              currentCycleRange={currentCycleRange}
+              customSubtitle={customSubtitle}
+              setCustomSubtitle={setCustomSubtitle}
+              handleSaveGreeting={handleSaveGreeting}
+              currentUser={currentUser}
+              setShowChangePinModal={setShowChangePinModal}
+              bioBound={bioBound}
+              setUnbindPin={setUnbindPin}
+              setShowUnbindModal={setShowUnbindModal}
+              bindDeviceBio={bindDeviceBio}
+              setShowClearCacheModal={setShowClearCacheModal}
+              setCurrentUser={setCurrentUser}
+              setSelectingUser={setSelectingUser}
+              setPinInput={setPinInput}
+              setActiveTab={setActiveTab}
+              syncQueue={syncQueue}
+              setShowClearQueueModal={setShowClearQueueModal}
+              isLogOpen={isLogOpen}
+              setIsLogOpen={setIsLogOpen}
+            />
+          )}
+        </ErrorBoundary>
       </main>
 
       <BottomNav 
@@ -1068,7 +995,7 @@ function App() {
         setActiveTab={setActiveTab} 
         triggerVibration={triggerVibration} 
         onQuickAdd={handleAdd}
-        loginUser={currentUser?.name}
+        loginUser={currentUser?.name || "未知"}
         onVoiceRecordStop={handleVoiceRecordStop} 
       />
 
@@ -1086,5 +1013,3 @@ function App() {
 }
 
 export default App;
-
-

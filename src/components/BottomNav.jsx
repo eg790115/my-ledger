@@ -404,3 +404,5 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 };
 
 export default BottomNav;
+
+
