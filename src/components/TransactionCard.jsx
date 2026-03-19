@@ -3,12 +3,18 @@ import { SvgIcon } from './Icons';
 import { getBenArray, getBenBadgeStyle, displayDateClean, getParentCat, getChildCat } from '../utils/helpers';
 
 export const TransactionCard = ({ 
-  tx, allowEdit = true, pendingMap, auditLogs, currentUser, 
+  tx, allowEdit = true, pendingMap = {}, auditLogs = [], currentUser, 
   setViewingHistoryItem, setEditingTx, triggerVibration 
 }) => {
   const benArray = getBenArray(tx.beneficiary, tx.member);
   const pAction = pendingMap[tx.id];
-  const hasEditRecord = auditLogs.some(log => String(log.txId) === String(tx.id));
+  
+  // 🛡️ 終極防護：同時檢查 editHistory 與 auditLogs，並嚴格去空白比對
+  const hasEditRecord = (Array.isArray(tx.editHistory) && tx.editHistory.length > 0) || 
+    (Array.isArray(auditLogs) && auditLogs.some(log => 
+      (log.action === '修改明細' || log.action === '修改母項目') && 
+      (String(log.txId).trim() === String(tx.id).trim() || String(log.id).trim() === String(tx.id).trim() || String(log.txId).trim() === String(tx.groupId).trim())
+    ));
 
   return (
     <div className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' || pAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>
@@ -38,7 +44,6 @@ export const TransactionCard = ({
           </div>
         </div>
         
-        {/* 🌟 增加 pb-5 防止重疊 */}
         <div className="flex flex-col items-end justify-center shrink-0 pl-1 z-10 mt-1 sm:mt-0 pb-5">
           <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
           {tx.recorder && tx.recorder !== tx.member && ( <div className={`mt-2 text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.recorder === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.recorder === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {tx.recorder}代記</div> )}

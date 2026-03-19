@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { postGAS, getDeviceToken, deviceValid } from '../utils/api';
 import { parseDateForSort, displayDateClean, nowStr } from '../utils/helpers';
 
-const EXPENSE_CATEGORIES = [
+// 🌟 補回收入類別，並改名為 ALL_CATEGORIES，讓 AI 收入支出都能精準分類
+const ALL_CATEGORIES = [
   "食/早餐", "食/午餐", "食/晚餐", "食/生鮮食材", "食/零食/飲料", "食/外食聚餐", "食/其他",
   "衣/爸爸服飾", "衣/媽媽服飾", "衣/小孩服飾", "衣/鞋包/配件", "衣/保養/美妝", "衣/其他",
   "居家/房貸", "居家/管理費", "居家/水費", "居家/電費", "居家/瓦斯費", "居家/網路/電信", "居家/家具/家電", "居家/日用品", "居家/房屋稅/地價稅", "居家/其他",
@@ -11,7 +12,8 @@ const EXPENSE_CATEGORIES = [
   "娛樂/國內旅遊", "娛樂/國外旅遊", "娛樂/串流訂閱", "娛樂/運動健身", "娛樂/聚會活動", "娛樂/電影/展覽", "娛樂/其他",
   "醫療/保健食品", "醫療/診所門診", "醫療/牙醫/眼科", "醫療/醫美", "醫療/住院", "醫療/其他",
   "理財/股票/ETF", "理財/定期定額", "理財/基金", "理財/儲蓄險", "理財/外匯", "理財/加密貨幣", "理財/其他",
-  "其他/保險費", "其他/孝親費", "其他/紅白包", "其他/捐款/贈與", "其他/雜項"
+  "其他/保險費", "其他/孝親費", "其他/紅白包", "其他/捐款/贈與", "其他/雜項",
+  "收入/薪資", "收入/獎金", "收入/投資收益", "收入/利息", "收入/其他收入"
 ];
 
 export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
@@ -29,7 +31,6 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
   useEffect(() => localStorage.setItem('ai_eval_data', JSON.stringify(aiEvalData || {})), [aiEvalData]);
   useEffect(() => localStorage.setItem('sys_config', JSON.stringify(sysConfig || {})), [sysConfig]);
 
-  // 🤖 財務教練執行邏輯 (已修復：錯誤捕捉、網路檢查、自動觸發寫入)
   const executeFrontendAI = async (isManual = false) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
       if (isManual) showStatus("error", "尚未設定 API Key");
@@ -74,7 +75,6 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
       setAiEvalData(parsedResult);
       postGAS({ action: "SAVE_AI_RESULT", aiData: parsedResult, deviceToken: getDeviceToken() }).catch(()=>{});
 
-      // 成功後寫入觸發紀錄
       localStorage.setItem('last_ai_eval_date', new Date().toLocaleDateString('zh-TW'));
       localStorage.setItem('last_ai_eval_tx_count', txCache.length.toString());
 
@@ -90,7 +90,6 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
 
   const handleForceAIEval = () => executeFrontendAI(true);
 
-  // 每日智慧觸發機制
   useEffect(() => {
     if (!currentUser || !txCache || txCache.length === 0 || isAIEvaluating) return;
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) return;
@@ -106,60 +105,90 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
   }, [currentUser, txCache, isAIEvaluating, sysConfig.apiKey]);
 
 
-  // 🚀 核心：語音記帳解析引擎 (加入代記邏輯、時間推演)
+  // 🚀 核心：語音記帳解析引擎 (補強了收入類別、純數字限制與外人判定)
   const processVoiceText = async (voiceText, currentMember) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
       throw new Error("請先至設定頁面填寫 Gemini API Key");
     }
     
-    // 獲取現在的真實時間，讓 AI 有基準點推算「昨天」、「前天」
+    // 獲取當前 ISO 本地時間 (YYYY-MM-DDTHH:mm) 作為 AI 推算的基準
     const now = new Date();
-    const currentDateStr = now.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/') + ' ' + now.toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute:'2-digit' });
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16); 
 
     const systemInstruction = `
 你是一位精準的家庭記帳助手。請解析使用者的語音輸入，並輸出結構化 JSON。
-使用者當前登入身分 (說話者)：「${currentMember}」。
-現在的真實時間是：「${currentDateStr}」。請以此時間為基準推算相對日期。
+使用者當前登入身分：「${currentMember}」。
+現在基準時間為：「${localISOTime}」。請以此基準推算日期。
 
-【核心解析規則】：
-1. **多筆判斷與數量計算**：
-   - 不同地點/時間的消費請拆成 array 內多個物件。
-   - 同地點的多個物品，\`isGroup\` 設為 true，\`parentTitle\` 設為該地點名稱。
-   - 包含「單價」與「數量」時 (如: 3個30元蘋果)，務必計算「總價」填入 \`amount\`(90)。
+【核心解析規則 (極度重要)】：
 
-2. **消費日期推算 (date) - 新增**：
-   - 若語音提到「昨天、前天、上週五、3月15日」等，請依照現在時間「${currentDateStr}」推算出正確的日期時間，格式為 "YYYY/MM/DD HH:mm"。
-   - 若未提及任何時間，請直接回傳 "${currentDateStr}"。
+1. **日期推算 (date)**：
+   - 必須嚴格輸出 "YYYY-MM-DDTHH:mm" 格式 (如: 2026-03-19T12:00)。
+   - 若提到「昨天、前天、上週五」，請依基準時間「${localISOTime}」推算。未提及則直接回傳「${localISOTime}」。
 
-3. **代記功能與帳務歸屬 (member) & 受益人 (beneficiary) - 新增**：
-   - \`member\` 代表「誰出的錢 (扣誰的帳)」。\`beneficiary\` 代表「這筆錢是花在誰身上」。
-   - 例如：登入者是爸爸，說「媽媽幫我買便當100元」 -> 媽媽出的錢 (\`member\`: "媽媽")，爸爸吃掉的 (\`beneficiary\`: "爸爸")。
-   - 例如：登入者是媽媽，說「我幫爸爸買衣服」 -> 媽媽出的錢 (\`member\`: "媽媽")，爸爸穿的 (\`beneficiary\`: "爸爸")。
-   - 若未明確指出誰出的錢，\`member\` 預設為登入者「${currentMember}」。
+2. **明細嚴格拆分與金額計算 (amount)**：
+   - 若使用者說出多個「不同的品項」，**必須拆分成陣列內的多個獨立物件**！
+   - 例如：「買牛奶100元、雞蛋90元」 -> 必須輸出 2 筆物件，一筆100，一筆90。
+   - 「單價x數量」必須自動計算總價，例如「2杯50元珍奶」 -> amount: 100。
+   - ⚠️ \`amount\` 必須是「純數字(Number)」，不可包含貨幣符號、不可為字串。
 
-4. **人物判定字典**：
-   - 系統標準對象只有：["爸爸", "媽媽", "洋洋", "其他"]。
-   - 「老公/先生」-> 爸爸；「老婆」-> 媽媽；「兒子/屁孩/洋洋」-> 洋洋。
-   - 提到「我爸/我媽」(家外長輩)，\`beneficiary\` 一律填寫「其他」，並在 \`desc\` 加註 "(幫我爸/媽買)"。
+3. **同地點多筆 (發票群組情境)**：
+   - 若在「同一個地點/店家」買了多樣東西（例如：「在全聯買牛奶100、可樂50」）。
+   - 必須輸出 2 筆物件，且這兩筆的 \`isGroup\` 都要設為 true，\`parentTitle\` 都要設為該店家名稱 (如 "全聯")。
 
-5. **模糊判定與容錯 (重要)**：
-   - 若你無法 100% 確定對象、日期或分類，請以你的邏輯做出「最合理的猜測」。使用者在 APP 內會有確認面板可以進行二次修改，不用擔心出錯。
+4. **不同地點 或 混合情境**：
+   - 若在不同地點購買（例如：「A店買牛奶100，B店買雞蛋90」），這是不相干的獨立消費。
+   - 必須輸出 2 筆物件，\`isGroup\` 皆設為 false，並將店名寫在備註的最前面：\`desc\`: "[A店] 牛奶"、"[B店] 雞蛋"。
+   - 若是混合情境 (如全聯買兩樣，小七買一樣)，請準確為全聯的兩樣設定 isGroup: true，小七的設定 isGroup: false。
 
-6. **類別 (category)**：必須且只能從下列清單挑選：
-${JSON.stringify(EXPENSE_CATEGORIES)}
+5. **備註 (desc) 智慧精簡**：
+   - 若為群組 (\`isGroup: true\`)，店名已有 \`parentTitle\`，備註只需填物品名 (如: "牛奶")。
+   - 請將分類字眼 (如: 早餐、午餐、晚餐、消夜) 從備註中**徹底刪除**。
+   - 若有提到「我爸/我媽」等長輩，請在備註後方加註 "(幫我媽買)" 或 "(幫我爸買)"。
 
-【回傳格式】：
+6. **帳務歸屬 (member) 與 受益對象 (beneficiary)**：
+   - \`type\`: 預設 "expense"，若是獲得金錢/薪水/獎金則為 "income"。
+   - \`member\`: 代表「誰出的錢 (扣誰的帳)」。若未明確指出代記，預設填入登入者「${currentMember}」。例如：「亮亮幫我買便當」，member 填 "媽媽"。
+   - \`beneficiary\`: 代表「錢花在誰身上」。
+   - 對象名單僅限：["爸爸", "媽媽", "兒子", "其他"]。
+   
+   🌟 **家族專屬人物稱謂字典 (請嚴格對應轉換)**：
+   - **爸爸標籤**：爸爸、老公、先生、丈夫、奕舉、邱奕舉 -> 均填寫「爸爸」
+   - **媽媽標籤**：媽媽、老婆、妻子、亮亮、亮穎、邱亮穎 -> 均填寫「媽媽」
+   - **兒子標籤**：兒子、屁孩、小屁孩、小鬼、小鬼頭、洋洋、羿洋、邱羿洋 -> 均填寫「兒子」
+   - **外人標籤**：我爸、我媽、朋友、同事、親戚 -> 均填寫「其他」
+   
+   🌟 **多人共享情境**：若提到「我跟老公」、「我們全家」、「帶小鬼去...」，代表多人受益，請將多個人名轉換後用半形逗號組合，例如 \`beneficiary\`: "爸爸,媽媽" 或 "爸爸,兒子"。
+   - 若未提及對象，填入登入者「${currentMember}」。
+
+7. **類別 (category)**：必須從下列清單挑選最符合的，且必須包含斜線 (主/子)：
+${JSON.stringify(ALL_CATEGORIES)}
+
+【回傳格式範例】：
 {
   "transactions": [
     {
-      "amount": 總金額(Number),
-      "category": "主類別/子類別",
-      "desc": "[店家] 物品x數量",
-      "member": "出錢者姓名(如: 媽媽)",
-      "beneficiary": "受益者姓名(如: 爸爸)",
-      "date": "YYYY/MM/DD HH:mm",
-      "isGroup": true/false,
-      "parentTitle": "地點名稱"
+      "type": "expense",
+      "amount": 100,
+      "category": "食/生鮮食材",
+      "desc": "牛奶",
+      "member": "爸爸",
+      "beneficiary": "媽媽,爸爸",
+      "date": "2026-03-18T12:00",
+      "isGroup": true,
+      "parentTitle": "全聯"
+    },
+    {
+      "type": "income",
+      "amount": 50000,
+      "category": "收入/薪資",
+      "desc": "三月薪水",
+      "member": "媽媽",
+      "beneficiary": "媽媽",
+      "date": "2026-03-19T10:30",
+      "isGroup": false,
+      "parentTitle": ""
     }
   ]
 }
@@ -182,8 +211,17 @@ ${JSON.stringify(EXPENSE_CATEGORIES)}
     const aiText = jsonRes.candidates[0].content.parts[0].text;
     const match = aiText.match(/\{[\s\S]*\}/);
     if (!match) throw new Error("AI 解析格式錯誤");
+    
     const parsed = JSON.parse(match[0]);
-    return parsed.transactions;
+    
+    // 🛡️ 最終防護：確保日期與基本欄位絕對不會讓 UI 當機
+    return parsed.transactions.map(tx => ({
+      ...tx,
+      date: (tx.date || localISOTime).replace(/\//g, '-').replace(' ', 'T').substring(0, 16),
+      category: tx.category && tx.category.includes('/') ? tx.category : "其他/雜項",
+      member: tx.member || currentMember,
+      beneficiary: tx.beneficiary || currentMember
+    }));
   };
 
   return {

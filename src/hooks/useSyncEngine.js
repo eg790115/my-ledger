@@ -16,7 +16,6 @@ export const useSyncEngine = ({
 }) => {
   const [syncQueue, setSyncQueue] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
-  // 恢復為標準的 0
   const [lastServerTime, setLastServerTime] = useState(() => safeNumberLS('last_server_time_v1', 0));
 
   const syncQueueRef = useRef(syncQueue);
@@ -36,21 +35,25 @@ export const useSyncEngine = ({
 
   const syncManager = useCallback(async (isSilent = false) => {
     if (!navigator.onLine || !deviceValid() || isSyncingRef.current) return;
+    
     isSyncingRef.current = true; 
     if (!isSilent) setIsSyncing(true);
     
     try {
       const isDelta = lastServerTimeRef.current > 0;
+      let processingQueue = [...syncQueueRef.current];
 
-      if (syncQueueRef.current.length > 0) {
-         while (syncQueueRef.current.length > 0 && navigator.onLine) {
+      if (processingQueue.length > 0) {
+         while (processingQueue.length > 0 && navigator.onLine) {
             const CHUNK_SIZE = 50; 
-            const currentBatch = syncQueueRef.current.slice(0, CHUNK_SIZE);
+            const currentBatch = processingQueue.slice(0, CHUNK_SIZE);
+            const currentBatchOpIds = new Set(currentBatch.map(q => q.opId || q.id));
             
             if (!isSilent) {
-              showStatus("info", `⏳ 正在上傳 ${currentBatch.length} 筆資料... (佇列剩餘 ${syncQueueRef.current.length - currentBatch.length} 筆)`);
+              showStatus("info", `⏳ 正在上傳 ${currentBatch.length} 筆資料...`);
             }
 
+            // 🚀 極速上傳，直接對接後端快照比對 (Idempotency)
             const res = await postGAS({ 
               action: "BATCH_PROCESS", 
               operations: currentBatch, 
@@ -61,51 +64,26 @@ export const useSyncEngine = ({
             
             if (res.result !== "success") throw new Error(res.message || "批次同步處理失敗");
 
-            const hardDeletedIds = new Set(currentBatch.filter(q => q.action === 'HARD_DELETE_TX').map(q => String(q.id)));
-            const restoredIds = new Set(currentBatch.filter(q => q.action === 'RESTORE_TX').map(q => String(q.id)));
-            const deletedIds = new Set(currentBatch.filter(q => q.action === 'DELETE_TX' || q.action === 'HARD_DELETE_TX').map(q => String(q.id)));
-            if (hardDeletedIds.size > 0 || restoredIds.size > 0) {
-              const filteredTrash = trashCacheRef.current.filter(t => !hardDeletedIds.has(String(t.id)) && !restoredIds.has(String(t.id)));
-              trashCacheRef.current = filteredTrash;
-              setTrashCache(filteredTrash);
-              saveToIndexedDB("trash_store", filteredTrash);
-            }
-            if (deletedIds.size > 0) {
-              const filteredTx = txCacheRef.current.filter(t => !deletedIds.has(String(t.id)));
-              txCacheRef.current = filteredTx;
-              setTxCache(filteredTx);
-              saveToIndexedDB(STORE_NAME, filteredTx);
-            }
-
-            if (res.transactions) {
+            // 🛡️ 核心瘦身：刪除所有前端「自作主張」的快取刪除邏輯！
+            // 100% 信任雲端回傳的結果，讓 applyCloudData 處理所有的新增、修改與刪除
+            if (res.transactions || res.trash) {
               applyCloudData(res, isDelta);
               if (res.serverTime) setLastServerTime(res.serverTime);
             }
 
-            const sentIds = currentBatch.map(q => q.id).filter(Boolean);
-            const sentGroupIds = currentBatch.map(q => q.groupId).filter(Boolean);
-
-            setSyncQueue(prevQueue => {
-              const nextQ = prevQueue.filter(p => {
-                if (p.id && sentIds.includes(p.id)) return false;
-                if (p.groupId && sentGroupIds.includes(p.groupId)) return false;
-                return true;
-              });
-              saveToIndexedDB("sync_queue", nextQ);
-              syncQueueRef.current = nextQ;
-              return nextQ;
-            });
+            // 處理完成，俐落切除佇列，打破無窮迴圈
+            processingQueue = processingQueue.filter(p => !currentBatchOpIds.has(p.opId || p.id));
+            
+            syncQueueRef.current = processingQueue;
+            setSyncQueue(processingQueue);
+            saveToIndexedDB("sync_queue", processingQueue);
 
             if (res.conflicts && res.conflicts.length > 0) { 
               showStatus("error", `⚠️ 發現 ${res.conflicts.length} 筆資料衝突，已保留雲端最新版！`); 
             }
-            
-            if (syncQueueRef.current.length > 0) {
-              await new Promise(resolve => setTimeout(resolve, 1500));
-            }
          } 
          
-         if (!isSilent && syncQueueRef.current.length === 0) {
+         if (!isSilent && processingQueue.length === 0) {
             showStatus("success", "✅ 已全部同步至雲端");
          }
       } else {
@@ -118,44 +96,60 @@ export const useSyncEngine = ({
          
          if (res.result !== "success") throw new Error(res.message || "拉取失敗");
          
-         if (res.transactions) { 
+         if (res.transactions && res.transactions.length > 0) { 
             applyCloudData(res, isDelta); 
             if (res.serverTime) setLastServerTime(res.serverTime);
             if (!isSilent) showStatus("success", "🔄 已載入雲端最新資料"); 
          } else {
+            if (res.serverTime) setLastServerTime(res.serverTime);
             if (!isSilent) showStatus("success", "✅ 已是最新資料");
          }
       }
     } catch (e) {
       const msg = e.message || "未知錯誤";
-      if (msg.includes("憑證") || msg.includes("過期")) forceReloginForToken(); else showStatus("error", `❌ 同步失敗: ${msg}`);
+      if (msg.includes("憑證") || msg.includes("過期")) forceReloginForToken(); 
+      else if (!isSilent) showStatus("error", `❌ 同步失敗: ${msg}`);
     } finally {
-      isSyncingRef.current = false; setIsSyncing(false);
+      isSyncingRef.current = false; 
+      setIsSyncing(false);
     }
-  }, [forceReloginForToken, applyCloudData, showStatus, getDeviceToken]);
+  }, [forceReloginForToken, applyCloudData, showStatus]);
 
   const silentPollEngine = useCallback(async () => {
-    if (!navigator.onLine || !currentUser || isSyncingRef.current) { pollingTimerRef.current = setTimeout(silentPollEngine, 5000); return; }
+    if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current);
+
+    if (!navigator.onLine || !currentUser || isSyncingRef.current) { 
+      pollingTimerRef.current = setTimeout(silentPollEngine, 5000); 
+      return; 
+    }
     if (!deviceValid()) { forceReloginForToken(); return; }
+    
     try {
-      const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true });
-      if (data.result === "success") {
-        const isDelta = lastServerTimeRef.current > 0;
-        if (data.transactions) {
-           if (applyCloudData(data, isDelta)) showStatus("success", "🔄 已載入雲端最新資料");
-           if (data.serverTime) setLastServerTime(data.serverTime);
+      if (syncQueueRef.current.length > 0) {
+        await syncManager(true); 
+      } else {
+        const data = await postGAS({ action:"GET_TX", deviceToken: getDeviceToken(), lastSyncTime: lastServerTimeRef.current, enableArchiving: true });
+        if (data.result === "success") {
+          const isDelta = lastServerTimeRef.current > 0;
+          if (data.transactions && data.transactions.length > 0) {
+             applyCloudData(data, isDelta);
+          }
+          if (data.serverTime) setLastServerTime(data.serverTime);
         }
       }
     } catch (e) {
       if (e.message && (e.message.includes("憑證") || e.message.includes("過期"))) forceReloginForToken();
     }
+    
     pollingTimerRef.current = setTimeout(silentPollEngine, 5000);
-  }, [forceReloginForToken, applyCloudData, showStatus, currentUser]);
+  }, [forceReloginForToken, applyCloudData, currentUser, syncManager]);
 
   const requestSync = useCallback((isSilent = false, immediate = false) => {
     if (!navigator.onLine) return;
     if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
-    if (immediate) syncManager(isSilent); else syncDebounceRef.current = setTimeout(() => syncManager(isSilent), 1000);
+    if (immediate) syncManager(isSilent); 
+    // ⚡️ 極速優化：將防抖延遲從 500ms 降至 100ms，按下的瞬間幾乎就發車！
+    else syncDebounceRef.current = setTimeout(() => syncManager(isSilent), 100); 
   }, [syncManager]);
 
   const processRef = useRef(requestSync);
@@ -163,11 +157,10 @@ export const useSyncEngine = ({
 
   useEffect(() => {
     if (isOnline && currentUser) {
-      if (syncQueue.length === 0) silentPollEngine();
-      else { if (processRef.current) processRef.current(true, true); pollingTimerRef.current = setTimeout(silentPollEngine, 5000); }
+      silentPollEngine();
     }
     return () => { if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current); };
-  }, [isOnline, currentUser, silentPollEngine, syncQueue.length]);
+  }, [isOnline, currentUser, silentPollEngine]);
 
   const appendToQueueAndSync = useCallback((newItemList) => {
     setSyncQueue(prevQueue => {
@@ -193,7 +186,7 @@ export const useSyncEngine = ({
     });
 
     if (!navigator.onLine) showStatus("info", `💾 已暫存於本機 (離線中)`); 
-    else requestSync(false, false);
+    else requestSync(false, true); // 🌟 immediate = true，直接秒速發車不等待
   }, [requestSync, showStatus]);
 
   return {

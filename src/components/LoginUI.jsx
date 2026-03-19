@@ -22,7 +22,7 @@ const LoginUI = ({
           <div className="grid grid-cols-1 gap-6 w-full max-w-xs text-white animate-in">
             {(familyConfig || []).map(user => ( <button key={user.name} onClick={() => handleUserClick(user)} className={`bg-${user.color ? user.color.replace('bg-', '') : (user.name==="媽媽"?"pink-600":"blue-600")} py-6 rounded-[2.5rem] font-black text-2xl shadow-lg border-4 border-white/5 active:scale-95 transition-all text-white`}>{user.name}</button> ))}
           </div>
-          {syncQueue && syncQueue.length > 0 && ( <button onClick={() => { triggerVibration([50, 50]); setShowClearQueueModal(true); }} className="mt-10 px-4 py-2 bg-red-500/20 text-red-400 rounded-full text-xs font-bold border border-red-500/30 active:scale-95 transition-all">⚠️ 發現同步卡死？點此強制清除暫存</button> )}
+          
           <button onClick={() => { triggerVibration(10); setShowClearCacheModal(true); }} className="mt-6 px-4 py-2 text-gray-500 rounded-full text-xs font-bold active:scale-95 transition-all underline underline-offset-4">🛠️ 系統深度清理</button>
         </>
       ) : (
