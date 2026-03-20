@@ -1,0 +1,42 @@
+name: 亮影情報雙引擎 (Crawler & AI)
+
+# 設定觸發條件
+on:
+  schedule:
+    # 每小時的第 15 分鐘執行一次 (避免整點大塞車)
+    - cron: '15 * * * *'
+  workflow_dispatch: 
+    # 保留手動按鈕，讓你可以隨時在 GitHub 上點擊「Run workflow」強制執行
+
+jobs:
+  run-radar-system:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 下載程式碼
+      uses: actions/checkout@v4
+
+    - name: 🐍 設定 Python 環境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: 📦 安裝必備套件
+      run: |
+        python -m pip install --upgrade pip
+        pip install playwright google-generativeai firebase-admin
+        playwright install chromium
+
+    - name: 🔐 生成 Firebase 雲端金鑰
+      run: |
+        # 把你在 Secret 存的 JSON 內容，憑空變回實體檔案讓 Python 讀取
+        echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_key.json
+
+    - name: 🕷️ 啟動第一引擎：無腦搬運工 (Crawler)
+      run: python crawler.py
+
+    - name: 🧠 啟動第二引擎：智慧大腦 (AI Processor)
+      env:
+        GEMINI_API_KEY_1: ${{ secrets.GEMINI_API_KEY_1 }}
+        GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      run: python ai_processor.py
