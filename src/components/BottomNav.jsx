@@ -8,9 +8,8 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const [pendingAmountKey, setPendingAmountKey] = useState(null);
   const [tempAmount, setTempAmount] = useState("");
 
-  // 🌟 全新語音狀態管理
   const [showVoicePanel, setShowVoicePanel] = useState(false);
-  const [voiceState, setVoiceState] = useState('idle'); // 'listening', 'review', 'error'
+  const [voiceState, setVoiceState] = useState('idle'); 
   const [capturedText, setCapturedText] = useState("");
   const [voiceError, setVoiceError] = useState("");
   const [volumeData, setVolumeData] = useState([10, 10, 10, 10, 10]);
@@ -20,7 +19,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const animationRef = useRef(null);
   const recognitionRef = useRef(null); 
 
-  const loadShortcuts = () => {
+  const getLatestShortcuts = () => {
     try {
       const saved = JSON.parse(localStorage.getItem('quick_shortcuts'));
       if (saved && saved.left && saved.right) return saved;
@@ -31,15 +30,14 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     };
   };
 
-  const [quickShortcuts, setQuickShortcuts] = useState(loadShortcuts);
+  const [displayShortcuts, setDisplayShortcuts] = useState(getLatestShortcuts());
 
   useEffect(() => {
-    const handleUpdate = () => setQuickShortcuts(loadShortcuts());
+    const handleUpdate = () => setDisplayShortcuts(getLatestShortcuts());
     window.addEventListener('shortcuts_updated', handleUpdate);
     return () => window.removeEventListener('shortcuts_updated', handleUpdate);
   }, []);
 
-  // 模擬聲波 (當處於 listening 狀態時跳動)
   useEffect(() => {
     let interval;
     if (voiceState === 'listening') {
@@ -63,45 +61,28 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const isHolding = useRef(false);
   const wasSwipeOrLongPress = useRef(false);
 
+  // 🚀 核心修復：極簡化傳遞！只傳送方向(left/right)跟金額給 App.jsx
   const executeQuickAdd = (shortcutKey, finalAmount) => {
     if (!onQuickAdd || !loginUser) return;
-    let currentShortcuts = quickShortcuts;
-    try {
-      const saved = JSON.parse(localStorage.getItem('quick_shortcuts'));
-      if (saved && saved.left && saved.right) currentShortcuts = saved;
-    } catch {}
-
-    const data = currentShortcuts[shortcutKey];
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    const dateStr = now.toISOString().slice(0, 16);
-
-    onQuickAdd([{
-      date: dateStr,
-      type: "expense",
-      category: data.category || "食/其他",
-      amount: Number(finalAmount),
-      desc: typeof data.memo === 'string' ? data.memo : data.label,
-      member: loginUser,
-      beneficiary: loginUser
-    }]);
+    
+    // 直接呼叫 App.jsx 的函式，讓 App 負責去抓最新設定
+    onQuickAdd(shortcutKey, finalAmount);
+    
     setPendingAmountKey(null);
+    setTempAmount("");
   };
 
   const handleQuickSubmit = (shortcutKey) => {
     if (!loginUser) { alert("⚠️ 此功能需在登入後才能使用喔！"); return; }
-    let currentShortcuts = quickShortcuts;
-    try {
-      const saved = JSON.parse(localStorage.getItem('quick_shortcuts'));
-      if (saved && saved.left && saved.right) currentShortcuts = saved;
-    } catch {}
+    
+    const freshShortcuts = getLatestShortcuts();
+    const data = freshShortcuts[shortcutKey];
 
-    const data = currentShortcuts[shortcutKey];
     if (!data.amount || String(data.amount).trim() === "" || Number(data.amount) === 0) {
       setTempAmount("");
-      setPendingAmountKey(shortcutKey);
+      setPendingAmountKey(shortcutKey); 
     } else {
-      executeQuickAdd(shortcutKey, data.amount);
+      executeQuickAdd(shortcutKey, data.amount); 
     }
   };
 
@@ -114,20 +95,19 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
     const recognition = new SpeechRecognition();
     recognition.lang = 'zh-TW';
-    // 🌟 關閉連續與即時，講完一句話自動停止！徹底解決重複 Bug
     recognition.continuous = false; 
     recognition.interimResults = false; 
 
     recognition.onresult = (event) => {
       const text = event.results[0][0].transcript;
       setCapturedText(prev => (prev ? prev + "，" + text : text));
-      setVoiceState('review'); // 自動進入確認畫面
+      setVoiceState('review'); 
       triggerVibration(15);
     };
 
     recognition.onerror = (event) => {
       if (event.error === 'no-speech') {
-         setVoiceState('review'); // 沒講話也退回確認畫面
+         setVoiceState('review'); 
       } else {
          setVoiceError(`收音錯誤: ${event.error}`);
          setVoiceState('error');
@@ -135,7 +115,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     };
 
     recognition.onend = () => {
-      // 確保引擎關閉後切換狀態
       setVoiceState(prev => prev === 'listening' ? 'review' : prev);
     };
 
@@ -277,7 +256,6 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     <>
       <div className={`fixed inset-0 z-[800] bg-gray-900/40 backdrop-blur-sm transition-opacity duration-200 pointer-events-none ${showRadial ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* 🌟 全新語音面板：聆聽中 / 確認中 / 錯誤 狀態切換 */}
       {showVoicePanel && (
         <div className="fixed inset-x-0 bottom-[6.5rem] mx-auto w-[92%] max-w-sm bg-white/95 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white/40 p-6 flex flex-col items-center justify-center animate-in slide-in-from-bottom-8 z-[1000]">
           
@@ -348,13 +326,13 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
       {pendingAmountKey && (
         <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-6 animate-in pointer-events-auto">
           <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl relative text-center">
-             <div className="text-5xl mb-3">{quickShortcuts[pendingAmountKey]?.icon}</div>
-             <h3 className="font-black text-2xl text-gray-800 mb-1">{quickShortcuts[pendingAmountKey]?.label}</h3>
-             <p className="text-xs text-gray-500 font-bold mb-6 bg-gray-100 px-3 py-1 rounded-full inline-block">{quickShortcuts[pendingAmountKey]?.category}</p>
+             <div className="text-5xl mb-3">{displayShortcuts[pendingAmountKey]?.icon}</div>
+             <h3 className="font-black text-2xl text-gray-800 mb-1">{displayShortcuts[pendingAmountKey]?.label}</h3>
+             <p className="text-xs text-gray-500 font-bold mb-6 bg-gray-100 px-3 py-1 rounded-full inline-block">{displayShortcuts[pendingAmountKey]?.category}</p>
 
              <input type="number" autoFocus value={tempAmount} onChange={e => setTempAmount(e.target.value)} placeholder="請輸入金額" className="w-full bg-gray-50 px-4 py-4 rounded-2xl text-center font-black text-3xl mb-8 text-gray-800 tabular-nums border-2 border-blue-100 focus:border-blue-500 outline-none transition-colors" />
              <div className="flex gap-3">
-               <button onClick={() => setPendingAmountKey(null)} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95">取消</button>
+               <button onClick={() => { setPendingAmountKey(null); setTempAmount(""); }} className="flex-1 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black active:scale-95">取消</button>
                <button onClick={() => { if(!tempAmount) return; executeQuickAdd(pendingAmountKey, tempAmount); }} className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 shadow-xl shadow-blue-500/30">確認記帳</button>
              </div>
           </div>
@@ -369,16 +347,16 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
                 {!showVoicePanel && (
                   <div className="absolute top-1/2 left-1/2 pointer-events-none z-0">
                     <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out shadow-lg ${showRadial ? 'opacity-100 translate-x-[-80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'left' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
-                      <span className="text-xl leading-none mb-0.5">{quickShortcuts?.left?.icon}</span>
-                      <span className={`text-[9px] font-black ${activeOption === 'left' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts?.left?.label}</span>
+                      <span className="text-xl leading-none mb-0.5">{displayShortcuts?.left?.icon}</span>
+                      <span className={`text-[9px] font-black ${activeOption === 'left' ? 'text-blue-600' : 'text-gray-500'}`}>{displayShortcuts?.left?.label}</span>
                     </div>
                     <div className={`absolute -ml-8 -mt-8 w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[20ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-0 translate-y-[-110px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'top' ? 'border-white scale-125 shadow-purple-500/50 z-10' : 'border-transparent scale-100 z-0'}`}>
                       <span className={`text-2xl leading-none mb-0.5 ${activeOption === 'top' ? 'animate-bounce' : ''}`}>🎙️</span>
                       <span className="text-[10px] font-black text-white">AI 語音</span>
                     </div>
                     <div className={`absolute -ml-7 -mt-7 w-14 h-14 rounded-full bg-white flex flex-col items-center justify-center border-2 transition-all duration-300 ease-out delay-[40ms] shadow-lg ${showRadial ? 'opacity-100 translate-x-[80px] translate-y-[-50px]' : 'opacity-0 translate-x-0 translate-y-0 scale-50'} ${activeOption === 'right' ? 'border-blue-500 scale-125 shadow-blue-500/40 z-10' : 'border-gray-100 scale-100 z-0'}`}>
-                      <span className="text-xl leading-none mb-0.5">{quickShortcuts?.right?.icon}</span>
-                      <span className={`text-[9px] font-black ${activeOption === 'right' ? 'text-blue-600' : 'text-gray-500'}`}>{quickShortcuts?.right?.label}</span>
+                      <span className="text-xl leading-none mb-0.5">{displayShortcuts?.right?.icon}</span>
+                      <span className={`text-[9px] font-black ${activeOption === 'right' ? 'text-blue-600' : 'text-gray-500'}`}>{displayShortcuts?.right?.label}</span>
                     </div>
                   </div>
                 )}
@@ -404,5 +382,3 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
 };
 
 export default BottomNav;
-
-

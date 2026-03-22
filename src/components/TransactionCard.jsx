@@ -9,12 +9,8 @@ export const TransactionCard = ({
   const benArray = getBenArray(tx.beneficiary, tx.member);
   const pAction = pendingMap[tx.id];
   
-  // 🛡️ 終極防護：同時檢查 editHistory 與 auditLogs，並嚴格去空白比對
-  const hasEditRecord = (Array.isArray(tx.editHistory) && tx.editHistory.length > 0) || 
-    (Array.isArray(auditLogs) && auditLogs.some(log => 
-      (log.action === '修改明細' || log.action === '修改母項目') && 
-      (String(log.txId).trim() === String(tx.id).trim() || String(log.id).trim() === String(tx.id).trim() || String(log.txId).trim() === String(tx.groupId).trim())
-    ));
+  // 🛡️ 終極防護：只檢查自己身上的 editHistory，切斷多筆群組無辜連動亮燈的 Bug！
+  const hasEditRecord = Array.isArray(tx.editHistory) && tx.editHistory.length > 0;
 
   return (
     <div className={`flex items-stretch gap-2 mb-3 transition-opacity ${pAction === 'DELETE_TX' || pAction === 'HARD_DELETE_TX' ? 'opacity-40 grayscale' : 'opacity-100'}`}>

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { postGAS, getDeviceToken, deviceValid } from '../utils/api';
 import { parseDateForSort, displayDateClean, nowStr } from '../utils/helpers';
+// 🚀 加上 Firebase 的引入
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 
 // 🌟 補回收入類別，並改名為 ALL_CATEGORIES，讓 AI 收入支出都能精準分類
 const ALL_CATEGORIES = [
@@ -30,6 +33,27 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
 
   useEffect(() => localStorage.setItem('ai_eval_data', JSON.stringify(aiEvalData || {})), [aiEvalData]);
   useEffect(() => localStorage.setItem('sys_config', JSON.stringify(sysConfig || {})), [sysConfig]);
+
+  // 🚀 核心修復：直接向 Firebase 拿取截圖中的 ai_settings 資料
+  useEffect(() => {
+    if (!db) return;
+    const unsub = onSnapshot(doc(db, 'sysConfig', 'ai_settings'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSysConfig(prev => {
+          const newConfig = {
+            // 將 Firebase 的 geminiKey 對應到你原本程式碼用的 apiKey
+            apiKey: data.geminiKey || prev.apiKey || "", 
+            // 將 Firebase 的 aiPrompt 對應到你原本程式碼用的 prompt
+            prompt: data.aiPrompt || prev.prompt || ""
+          };
+          return newConfig;
+        });
+      }
+    }, (err) => console.error("讀取 AI 設定失敗:", err));
+
+    return () => unsub();
+  }, []);
 
   const executeFrontendAI = async (isManual = false) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {

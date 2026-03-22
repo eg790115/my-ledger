@@ -63,7 +63,6 @@ const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
   );
 };
 
-// 🌟 加入 onClose 參數
 export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, onClose, isLoading = false }) => {
   const [formTab, setFormTab] = useState('general');
   const [toastMsg, setToastMsg] = useState(""); 
@@ -73,7 +72,9 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   const [isSplit, setIsSplit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ amount: "", parentCat: "食", childCat: "晚餐", member: loginUser, beneficiary: [loginUser], type: "expense", desc: "", parentTitle: "", parentDesc: "", date: "" });
-  const [subItems, setSubItems] = useState([{ id: Date.now(), parentCat: "食", childCat: "晚餐", amount: "", desc: "", beneficiary: [loginUser] }]);
+  
+  // 🚀 子項目加入獨立的 member (記錄帳本)
+  const [subItems, setSubItems] = useState([{ id: Date.now(), parentCat: "食", childCat: "晚餐", amount: "", desc: "", beneficiary: [loginUser], member: loginUser }]);
   const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
   
   const getCatParts = (catStr) => {
@@ -98,7 +99,7 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
 
   useEffect(() => { 
     setFormData(prev => ({ ...prev, member: loginUser || prev.member, beneficiary: [loginUser || prev.member] })); 
-    setSubItems(prev => prev.map(s => ({...s, beneficiary: [loginUser || prev.member]}))); 
+    setSubItems(prev => prev.map(s => ({...s, member: loginUser || s.member, beneficiary: [loginUser || prev.member]}))); 
   }, [loginUser]);
 
   const handleTypeChange = (newType) => {
@@ -134,7 +135,8 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   const handleAddSubItem = () => { 
       const defaultP = formData.type === "expense" ? "食" : "收入"; 
       const defaultC = CATEGORY_MAP[formData.type][defaultP][0]; 
-      setSubItems([...subItems, { id: Date.now(), parentCat: defaultP, childCat: defaultC, amount: "", desc: "", beneficiary: [formData.member] }]); 
+      // 🚀 新增子項目時，預設帶入目前的 formData.member
+      setSubItems([...subItems, { id: Date.now(), parentCat: defaultP, childCat: defaultC, amount: "", desc: "", beneficiary: [formData.member], member: formData.member }]); 
   };
 
   const handleRemoveSubItem = id => { if (subItems.length > 1) setSubItems(subItems.filter(s => s.id !== id)); };
@@ -148,20 +150,20 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
       const validSubs = evaluatedSubs.filter(s => Number(s.amount) > 0);
       if (validSubs.length === 0) { setIsSubmitting(false); return; }
       
-      // 🚀 核心修復：產生一個共同的群組 ID，把這些拆分的明細全部綁在一起！
+      // 🚀 核心修復：加入 groupId，並改用個別的 s.member
       const sharedGroupId = `G_${Date.now()}_${formData.member}_${Math.random().toString(36).substring(2, 7)}`;
       const combinedParentDesc = `${formData.parentTitle.trim() || "多筆紀錄"}|||${formData.parentDesc.trim()}`;
       
       const multipleTxs = validSubs.map(s => ({ 
         amount: s.amount, 
         category: `${s.parentCat}/${s.childCat}`, 
-        member: formData.member, 
+        member: s.member || formData.member, // 🎯 套用子項目專屬帳本
         beneficiary: s.beneficiary.join(","), 
         type: formData.type, 
         desc: s.desc, 
         date: formData.date, 
         parentDesc: combinedParentDesc,
-        groupId: sharedGroupId  // 🎯 貼上群組標籤！
+        groupId: sharedGroupId
       }));
       await onSubmit(multipleTxs);
     } else {
@@ -173,7 +175,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   
   const isSubmitDisabled = isSubmitting || isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
-  // 🌟 修改：儲存後觸發 Toast 並直接關閉頁面
   const saveShortcuts = () => {
     localStorage.setItem('quick_shortcuts', JSON.stringify(shortcuts));
     window.dispatchEvent(new Event('shortcuts_updated')); 
@@ -182,7 +183,7 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
     setToastMsg("✅ 已儲存設定"); 
     setTimeout(() => {
       setToastMsg("");
-      if (onClose) onClose(); // 觸發關閉跳回首頁
+      if (onClose) onClose(); 
     }, 500); 
   };
 
@@ -256,7 +257,7 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
                   </div>
                 </div>
                 <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <label className="text-[10px] font-black text-blue-500 uppercase block tracking-widest px-2">子項目明細與花費對象</label>
+                  <label className="text-[10px] font-black text-blue-500 uppercase block tracking-widest px-2">子項目明細 (可個別選對象與帳本)</label>
                   {subItems.map((sub, index) => {
                     const pCats = Object.keys(CATEGORY_MAP[formData.type] || CATEGORY_MAP.expense); const safeParentCat = pCats.includes(sub.parentCat) ? sub.parentCat : pCats[0]; const cCats = CATEGORY_MAP[formData.type][safeParentCat] || CATEGORY_MAP[formData.type][pCats[0]];
                     return (
@@ -270,9 +271,19 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
                           <input type="text" className="flex-[3] min-w-0 bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-2.5 py-2 rounded-xl" placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, {desc: e.target.value})} />
                           <div className="flex-[2] min-w-0 relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span><input type="text" inputMode="text" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right min-w-0" placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} onBlur={() => updateSubItem(sub.id, {amount: safeEvaluateMath(sub.amount)})} /></div>
                         </div>
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">對象</span>
-                          <div className="flex gap-1 flex-1 justify-end flex-wrap">{BEN_OPTIONS.map(b => (<button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)} className={`px-2 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400"}`}>{b}</button>))}</div>
+                        {/* 🚀 子項目專屬：帳本與對象選擇 */}
+                        <div className="flex flex-col gap-2 pt-2 border-t border-gray-50 mt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">記錄帳本</span>
+                            <div className="flex gap-1 flex-1 justify-end flex-wrap">
+                               <button type="button" onClick={() => updateSubItem(sub.id, {member: loginUser})} className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.member === loginUser ? "bg-gray-800 border-gray-800 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>自己</button>
+                               <button type="button" onClick={() => updateSubItem(sub.id, {member: otherMember})} className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.member === otherMember ? "bg-gray-800 border-gray-800 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>幫{otherMember}記</button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">花費對象</span>
+                            <div className="flex gap-1 flex-1 justify-end flex-wrap">{BEN_OPTIONS.map(b => (<button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)} className={`px-2 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>{b}</button>))}</div>
+                          </div>
                         </div>
                       </div>
                     )
@@ -281,13 +292,16 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
                 </div>
               </>
             )}
-            <div className="bg-gray-50 py-2.5 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0 mr-2">記錄帳本</label>
-              <div className="flex gap-1.5 flex-wrap justify-end">
-                <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>自己</button>
-                <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>幫{otherMember}記</button>
+            {/* 🚀 單筆模式下，才顯示整體的記錄帳本切換 */}
+            {!isSplit && (
+              <div className="bg-gray-50 py-2.5 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0 mr-2">記錄帳本</label>
+                <div className="flex gap-1.5 flex-wrap justify-end">
+                  <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>自己</button>
+                  <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>幫{otherMember}記</button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <button disabled={isSubmitDisabled} onClick={submitForm} className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2">
             {isSubmitting ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : null} {isSubmitting ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
