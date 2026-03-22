@@ -1,4 +1,4 @@
-export const APP_VERSION = "2026.03.18.AI語音記帳Ultra";
+export const APP_VERSION = "2026.03.18.firestore轉換";
 export const DB_NAME = "FamilyAccountingDB";
 export const STORE_NAME = "transactions";
 export const DB_VERSION = 1;
