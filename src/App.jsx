@@ -140,7 +140,7 @@ function App() {
         recorder: String(t.recorder || t["記錄者"] || "系統").trim(), desc: String(t.desc || t["備註"] || ""), type: String(t.type || t["類型"] || "expense"),
         groupId: String(t.groupId || t["GroupID"] || ""), parentDesc: String(t.parentDesc || t["ParentDesc"] || ""),
         beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知").trim(), lastModified: Number(t.lastModified || t["LastModified"]) || 0,
-        editHistory: t.editHistory || [] // 🌟 修復一：保留雲端的歷史快照，標籤才抓得到資料！
+        editHistory: t.editHistory || [] 
       };
     }).filter(t => t && t.id && t.id !== "undefined");
 
@@ -155,7 +155,7 @@ function App() {
         recorder: String(t.recorder || t["記錄者"] || "系统").trim(), desc: String(t.desc || t["備註"] || ""), type: String(t.type || t["類型"] || "expense"),
         groupId: String(t.groupId || t["GroupID"] || ""), parentDesc: String(t.parentDesc || t["ParentDesc"] || ""),
         beneficiary: String(t.beneficiary || t["Beneficiary"] || t.member || t["成員"] || "未知").trim(), lastModified: Number(t.lastModified || t["LastModified"]) || 0,
-editHistory: t.editHistory || []
+        editHistory: t.editHistory || []
       };
     });
 
@@ -245,7 +245,6 @@ editHistory: t.editHistory || []
          pDesc = tx.parentTitle;
       }
 
-      // 🌟 修正：保存 AI 判斷的日期與出錢者，並把 T 轉回 DB 用的空格格式
       const finalDate = (tx.date || nowStr()).replace('T', ' ');
 
       return {
@@ -557,11 +556,11 @@ editHistory: t.editHistory || []
                     if (res.result !== "success") throw new Error("雲端密碼錯誤");
                     setTxCache([]); setSyncQueue([]); setLastServerTime(0); localStorage.clear(); localStorage.setItem('last_server_time_v1', '0');
                     const db = await initIndexedDB(); 
-      const tx = db.transaction([STORE_NAME, "trash_store", "sync_queue", "audit_logs"], "readwrite"); 
-      tx.objectStore(STORE_NAME).clear();
-      tx.objectStore("trash_store").clear();
-      tx.objectStore("sync_queue").clear();
-      tx.objectStore("audit_logs").clear();
+                    const tx = db.transaction([STORE_NAME, "trash_store", "sync_queue", "audit_logs"], "readwrite"); 
+                    tx.objectStore(STORE_NAME).clear();
+                    tx.objectStore("trash_store").clear();
+                    tx.objectStore("sync_queue").clear();
+                    tx.objectStore("audit_logs").clear();
                     if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); }
                     if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); }
                     setShowLoginClearCacheModal(false); setLoginCachePassword(""); showStatus("success", "✅ 快取已清空，正在重新下載...");
@@ -619,150 +618,136 @@ editHistory: t.editHistory || []
         </div>
       )}
 
-      {/* 🌟 AI 解析結果確認面板 - 樣式已同步至 TransactionCard 並增加防護邏輯 */}
-{voiceReviewTxs && (() => {
-  const editingIdx = voiceReviewTxs.findIndex(t => t.isEditing);
-  
-  if (editingIdx !== -1) {
-    return (
-      <EditTransactionModal 
-        tx={voiceReviewTxs[editingIdx]} 
-        loginUser={currentUser?.name || "未知"} 
-        onSave={(updatedTx) => {
-          const newTxs = [...voiceReviewTxs];
-          delete updatedTx.isEditing;
-          newTxs[editingIdx] = updatedTx;
-          setVoiceReviewTxs(newTxs);
-        }} 
-        onDelete={() => {
-          setVoiceReviewTxs(prev => prev.filter((_, i) => i !== editingIdx));
-        }} 
-        onCancel={() => { 
-          triggerVibration(10); 
-          const newTxs = [...voiceReviewTxs];
-          delete newTxs[editingIdx].isEditing;
-          setVoiceReviewTxs(newTxs);
-        }} 
-      />
-    );
-  }
+      {voiceReviewTxs && (() => {
+        const editingIdx = voiceReviewTxs.findIndex(t => t.isEditing);
+        
+        if (editingIdx !== -1) {
+          return (
+            <EditTransactionModal 
+              tx={voiceReviewTxs[editingIdx]} 
+              loginUser={currentUser?.name || "未知"} 
+              onSave={(updatedTx) => {
+                const newTxs = [...voiceReviewTxs];
+                delete updatedTx.isEditing;
+                newTxs[editingIdx] = updatedTx;
+                setVoiceReviewTxs(newTxs);
+              }} 
+              onDelete={() => {
+                setVoiceReviewTxs(prev => prev.filter((_, i) => i !== editingIdx));
+              }} 
+              onCancel={() => { 
+                triggerVibration(10); 
+                const newTxs = [...voiceReviewTxs];
+                delete newTxs[editingIdx].isEditing;
+                setVoiceReviewTxs(newTxs);
+              }} 
+            />
+          );
+        }
 
-  return (
-    <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
-      <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
-        <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
-          <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
-        </h3>
-        <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-50 p-2 rounded-lg">請確認自動生成的帳單，點擊右下角編輯圖示即可進入修改明細。</p>
+        return (
+          <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
+            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
+              <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
+                <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
+              </h3>
+              <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-50 p-2 rounded-lg">請確認自動生成的帳單，點擊右下角編輯圖示即可進入修改明細。</p>
 
-        <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4">
-          {voiceReviewTxs.length === 0 ? (
-            <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl border border-gray-100">已清空所有紀錄</div>
-          ) : (
-            voiceReviewTxs.map((tx, idx) => {
-              // 🌟 邏輯優化：判斷是否要隱藏受益人標籤（跟記錄清單一致）
-              const showBeneficiary = tx.beneficiary && tx.beneficiary !== (currentUser?.name || "未知");
-              
-              return (
-                <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-start gap-3 shadow-sm relative overflow-hidden transition-colors mb-3">
-                  
-                  {/* 左側收支圖示 */}
-                  <div className="relative shrink-0 mt-1">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
-                      {tx.type==="income" ? "收入" : "支出"}
-                    </div>
-                  </div>
-                  
-                  {/* 中間詳細資訊 */}
-                  <div className="flex-1 min-w-0 pl-1 pt-1 pb-4">
-                    <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
-                      <span className="truncate flex-shrink">{tx.category}</span>
-                      <div className="flex gap-1 flex-wrap shrink-0">
-                        {/* 顯示出錢者 (如果是代記) */}
-                        {tx.member && tx.member !== (currentUser?.name || "未知") && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-gray-50 text-gray-500 border-gray-200">
-                            出錢:{tx.member}
-                          </span>
-                        )}
-                        {/* 只有受益對象不是自己時，才顯示受益標籤 */}
-                        {showBeneficiary && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">
-                            對象:{tx.beneficiary}
-                          </span>
-                        )}
+              <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4">
+                {voiceReviewTxs.length === 0 ? (
+                  <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl border border-gray-100">已清空所有紀錄</div>
+                ) : (
+                  voiceReviewTxs.map((tx, idx) => {
+                    const showBeneficiary = tx.beneficiary && tx.beneficiary !== (currentUser?.name || "未知");
+                    
+                    return (
+                      <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-start gap-3 shadow-sm relative overflow-hidden transition-colors mb-3">
+                        <div className="relative shrink-0 mt-1">
+                          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>
+                            {tx.type==="income" ? "收入" : "支出"}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0 pl-1 pt-1 pb-4">
+                          <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
+                            <span className="truncate flex-shrink">{tx.category}</span>
+                            <div className="flex gap-1 flex-wrap shrink-0">
+                              {tx.member && tx.member !== (currentUser?.name || "未知") && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-gray-50 text-gray-500 border-gray-200">
+                                  出錢:{tx.member}
+                                </span>
+                              )}
+                              {showBeneficiary && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">
+                                  對象:{tx.beneficiary}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
+                            <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                              🕒 {tx.date ? tx.date.replace('T', ' ') : '未定'}
+                            </span>
+
+                            {tx.isGroup && tx.parentTitle && (
+                              <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 self-start">🏷️ 準備群組: {tx.parentTitle}</span>
+                            )}
+                            {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-col items-end justify-start shrink-0 pl-1 z-10 mt-1">
+                          <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
+                        </div>
+                        
+                        <button onClick={() => {
+                          triggerVibration(10);
+                          const newTxs = [...voiceReviewTxs];
+                          const target = newTxs[idx];
+
+                          if (target.category && !target.category.includes('/')) {
+                            if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他";
+                            else if (target.category.includes('衣')) target.category = "衣/其他";
+                            else if (target.category.includes('行')) target.category = "行/其他";
+                            else target.category = "其他/雜項";
+                          }
+                          
+                          target.isEditing = true;
+                          if (!target.id) target.id = "temp_" + Date.now();
+                          if (!target.date) {
+                             const now = new Date();
+                             const tzOffset = now.getTimezoneOffset() * 60000;
+                             target.date = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16);
+                          }
+                          setVoiceReviewTxs(newTxs);
+                        }} className="absolute bottom-2 right-10 p-1.5 text-gray-300 hover:text-blue-500 active:scale-90 transition-all">
+                          <SvgIcon name="edit" size={15} />
+                        </button>
+                        
+                        <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-red-500 active:scale-90 transition-all">
+                          <SvgIcon name="trash" size={15} />
+                        </button>
                       </div>
-                    </div>
-                    
-                    <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start">
-                      {/* 顯示時間標籤 */}
-                      <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
-                        🕒 {tx.date ? tx.date.replace('T', ' ') : '未定'}
-                      </span>
+                    );
+                  })
+                )}
+              </div>
 
-                      {tx.isGroup && tx.parentTitle && (
-                        <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 self-start">🏷️ 準備群組: {tx.parentTitle}</span>
-                      )}
-                      {tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}
-                    </div>
-                  </div>
-                  
-                  {/* 右側金額 */}
-                  <div className="flex flex-col items-end justify-start shrink-0 pl-1 z-10 mt-1">
-                    <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div>
-                  </div>
-                  
-                  {/* 編輯按鈕 - 內含 category 防崩潰邏輯 */}
-                  <button onClick={() => {
-                    triggerVibration(10);
-                    const newTxs = [...voiceReviewTxs];
-                    const target = newTxs[idx];
-
-                    // 🛡️ 核心修復：在開啟編輯前強制補正 category 格式，防止 CategorySelectPair 報錯
-                    if (target.category && !target.category.includes('/')) {
-                      if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他";
-                      else if (target.category.includes('衣')) target.category = "衣/其他";
-                      else if (target.category.includes('行')) target.category = "行/其他";
-                      else target.category = "其他/雜項";
-                    }
-                    
-                    target.isEditing = true;
-                    if (!target.id) target.id = "temp_" + Date.now();
-                    if (!target.date) {
-                       const now = new Date();
-                       const tzOffset = now.getTimezoneOffset() * 60000;
-                       target.date = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16);
-                    }
-                    setVoiceReviewTxs(newTxs);
-                  }} className="absolute bottom-2 right-10 p-1.5 text-gray-300 hover:text-blue-500 active:scale-90 transition-all">
-                    <SvgIcon name="edit" size={15} />
-                  </button>
-                  
-                  {/* 刪除按鈕 */}
-                  <button onClick={() => setVoiceReviewTxs(prev => prev.filter((_, i) => i !== idx))} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-red-500 active:scale-90 transition-all">
-                    <SvgIcon name="trash" size={15} />
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1">
-          <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">取消退出</button>
-          <button 
-            onClick={handleConfirmVoice} 
-            disabled={voiceReviewTxs.length === 0}
-            className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
-          >
-            確認並寫入 ({voiceReviewTxs.length}筆)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-})()}
+              <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1">
+                <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">取消退出</button>
+                <button 
+                  onClick={handleConfirmVoice} 
+                  disabled={voiceReviewTxs.length === 0}
+                  className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
+                >
+                  確認並寫入 ({voiceReviewTxs.length}筆)
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       
-      {/* 🌟 核心修復：在修改與刪除時，強制綁定顯示提示框 */}
       {editingTx && (
         <EditTransactionModal 
           tx={editingTx} 
@@ -851,6 +836,7 @@ editHistory: t.editHistory || []
         </div>
       )}
 
+      {/* 🌟 編輯歷史快照視窗 */}
       {viewingHistoryItem && (
         <div className="fixed inset-0 z-[700] bg-gray-900/90 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in font-black" onClick={(e) => { if(e.target === e.currentTarget) setViewingHistoryItem(null); 
         }}>
@@ -858,22 +844,17 @@ editHistory: t.editHistory || []
             <button onClick={() => setViewingHistoryItem(null)} className="absolute top-6 right-6 text-gray-400 active:scale-90 transition-transform"><SvgIcon name="close" size={24}/></button>
             <h3 className="font-black text-lg mb-1 text-gray-800 pr-8 leading-tight flex items-center gap-2">✏️ 編輯歷程</h3>
             <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-100 px-2 py-1 rounded-md self-start">{viewingHistoryItem.isGroup ? viewingHistoryItem.parentTitle : `${getParentCat(viewingHistoryItem.category)} - ${getChildCat(viewingHistoryItem.category)}`}</p>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {(() => {
-                const logs = auditLogs
-                  .filter(l => String(l.txId) === String(viewingHistoryItem.id) || String(l.id) === String(viewingHistoryItem.id) || String(l.txId) === String(viewingHistoryItem.groupId))
-                  .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0)); // 🎯 確保由新到舊排
+                const logs = viewingHistoryItem.editHistory || [];
 
                 if (logs.length === 0) return <div className="text-gray-400 text-sm text-center py-4">無編輯紀錄</div>;
 
                 return logs.map((h, i) => {
-                  // 🎯 嘗試解析 JSON，相容舊版的純文字日誌
-                  let snapshot = null;
-                  try { snapshot = JSON.parse(h.content || h.oldContent); } catch(e) {}
+                  const snapshot = h.snapshot;
 
                   return (
                     <div key={i} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 relative overflow-hidden">
-                      {/* 時間軸連線裝飾 */}
                       {i !== logs.length - 1 && <div className="absolute left-[1.3rem] top-12 bottom-[-1rem] w-0.5 bg-gray-200 z-0"></div>}
                       
                       <div className="relative z-10 flex items-center gap-2 mb-2 text-xs font-bold text-gray-500">
@@ -897,7 +878,7 @@ editHistory: t.editHistory || []
                             )}
                           </ul>
                         ) : (
-                          <div className="text-xs text-gray-500 italic">{h.content || h.oldContent || '無詳細快照'}</div>
+                          <div className="text-xs text-gray-500 italic">{snapshot ? snapshot['內容'] : '無詳細快照'}</div>
                         )}
                       </div>
                     </div>
@@ -1029,7 +1010,6 @@ editHistory: t.editHistory || []
             />
           )}
 
-          {/* 🌟 核心修復：在新增記帳時，強制綁定顯示提示框 */}
           {activeTab === "add" && (
             <AddTransactionForm 
               loginUser={currentUser?.name || "未知"} 
