@@ -203,7 +203,7 @@ function App() {
       return {
          id: `${baseTimestamp + idx}_${safeName}_${randomSuffix()}`,
          date: (tx.date || nowStr()).replace('T', ' '), 
-         timestamp: baseTimestamp + idx, // 🚀 語音也加上精確毫秒，避免多筆排隊錯亂
+         timestamp: baseTimestamp + idx,
          type: tx.type || "expense",
          category: tx.category || "其他/雜項", amount: Number(tx.amount) || 0,
          desc: tx.desc || "", member: tx.member || safeName, recorder: safeName, beneficiary: tx.beneficiary || safeName,
@@ -246,7 +246,7 @@ function App() {
         desc: targetShortcut.memo || targetShortcut.label || "",
         type: type,
         date: nowStr().replace('T', ' '),
-        timestamp: Date.now(), // 🚀 捷徑加上精確毫秒，確保絕對在最新動態第一名！
+        timestamp: Date.now(),
         member: safeName,
         recorder: safeName,
         beneficiary: safeName
@@ -575,6 +575,38 @@ function App() {
       <ProxyNotification transactions={unackedProxyTxs || []} onAck={() => { if(triggerVibration) triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...(unackedProxyTxs || []).map(t => t.id)])]; localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
       {isLoading && ( <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4"> <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-5 animate-in slide-in-from-bottom-4"> <SvgIcon name="spinner" size={40} className="animate-spin text-blue-600" /> <p className="font-black text-gray-800 text-sm tracking-widest">{loadingCard.text || "處理中..."}</p> </div> </div> )}
       
+      {/* 🚀 主畫面的深度清理快取視窗 */}
+      {showClearCacheModal && (
+        <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setLoginCachePassword("");} }}>
+          <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center shadow-2xl">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
+            <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
+            <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">請輸入「雲端密碼」確認執行：</p>
+            <input value={loginCachePassword} onChange={(e)=>setLoginCachePassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+            <div className="flex gap-3">
+              <button onClick={() => {setShowClearCacheModal(false); setLoginCachePassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
+              <button onClick={async () => {
+                if (!loginCachePassword) { showStatus("error", "請輸入密碼！"); return; }
+                try {
+                  setLoadingCard({ show: true, text: "正在驗證密碼..." });
+                  const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: loginCachePassword });
+                  if (res.result !== "success") throw new Error("密碼錯誤");
+                  
+                  setLoadingCard({ show: true, text: "正在清理快取..." });
+                  localStorage.clear();
+                  if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); }
+                  if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); }
+                  
+                  showStatus("success", "快取已清空！即將重啟");
+                  setShowClearCacheModal(false); setLoginCachePassword(""); 
+                  setTimeout(() => { window.location.reload(true); }, 1500);
+                } catch(e) { showStatus("error", e.message || "密碼錯誤"); } finally { setLoadingCard({ show: false, text: "" }); }
+              }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {voiceReviewTxs && (() => {
         const editingIdx = (voiceReviewTxs || []).findIndex(t => t.isEditing);
         if (editingIdx !== -1) return ( <EditTransactionModal tx={voiceReviewTxs[editingIdx]} loginUser={currentUser?.name || "未知"} onSave={(updatedTx) => { const newTxs = [...(voiceReviewTxs || [])]; delete updatedTx.isEditing; newTxs[editingIdx] = updatedTx; setVoiceReviewTxs(newTxs); }} onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} onCancel={() => { if(triggerVibration) triggerVibration(10); const newTxs = [...(voiceReviewTxs || [])]; delete newTxs[editingIdx].isEditing; setVoiceReviewTxs(newTxs); }} /> );
@@ -586,16 +618,51 @@ function App() {
               <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4">
                 {(voiceReviewTxs || []).length === 0 ? ( <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl border border-gray-100">已清空所有紀錄</div> ) : ( (voiceReviewTxs || []).map((tx, idx) => {
                   const showBeneficiary = tx.beneficiary && tx.beneficiary !== (currentUser?.name || "未知");
+                  const benArray = tx.beneficiary ? tx.beneficiary.split(',').filter(Boolean) : [];
+                  
+                  const formattedDate = tx.date ? displayDateClean(tx.date) : '未定';
+                  const showRecorderTag = tx.member && tx.member !== (currentUser?.name || "未知");
+
                   return (
-                    <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-100 flex items-start gap-3 shadow-sm relative overflow-hidden transition-colors mb-3">
-                      <div className="relative shrink-0 mt-1"><div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${tx.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{tx.type==="income" ? "收入" : "支出"}</div></div>
-                      <div className="flex-1 min-w-0 pl-1 pt-1 pb-4">
-                        <div className="font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap"><span className="truncate flex-shrink">{tx.category}</span><div className="flex gap-1 flex-wrap shrink-0">{tx.member && tx.member !== (currentUser?.name || "未知") && ( <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-gray-50 text-gray-500 border-gray-200">出錢:{tx.member}</span> )}{showBeneficiary && ( <span className="text-[9px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">對象:{tx.beneficiary}</span> )}</div></div>
-                        <div className="flex flex-col gap-1.5 mt-1.5 w-full items-start"><span className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">🕒 {tx.date ? tx.date.replace('T', ' ') : '未定'}</span>{tx.isGroup && tx.parentTitle && ( <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 self-start">🏷️ 準備群組: {tx.parentTitle}</span> )}{tx.desc && <div className="text-[11px] text-gray-600 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">{tx.desc}</div>}</div>
+                    <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden transition-colors mb-3 flex flex-col gap-1.5">
+                      <div className="flex items-center gap-3">
+                        <div className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">
+                          {formattedDate}
+                        </div>
+                        
+                        <div className="flex-1 min-w-0 font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
+                          <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
+                          <div className="flex gap-1 flex-wrap shrink-0">
+                            {benArray.map(b => (
+                              <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-col items-end justify-start shrink-0 pl-1 z-10 mt-1"><div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>${Number(tx.amount||0).toLocaleString()}</div></div>
-                      <button onClick={() => { if(triggerVibration) triggerVibration(10); const newTxs = [...(voiceReviewTxs || [])]; const target = newTxs[idx]; if (target.category && !target.category.includes('/')) { if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他"; else if (target.category.includes('衣')) target.category = "衣/其他"; else if (target.category.includes('行')) target.category = "行/其他"; else target.category = "其他/雜項"; } target.isEditing = true; if (!target.id) target.id = "temp_" + Date.now(); if (!target.date) { const now = new Date(); const tzOffset = now.getTimezoneOffset() * 60000; target.date = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16); } setVoiceReviewTxs(newTxs); }} className="absolute bottom-2 right-10 p-1.5 text-gray-300 hover:text-blue-500 active:scale-90 transition-all"><SvgIcon name="edit" size={15} /></button>
-                      <button onClick={() => setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== idx))} className="absolute bottom-2 right-2 p-1.5 text-gray-300 hover:text-red-500 active:scale-90 transition-all"><SvgIcon name="trash" size={15} /></button>
+
+                      {tx.desc && (
+                        <div className="text-[11px] text-gray-500 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">
+                          {tx.desc}
+                        </div>
+                      )}
+
+                      <div className="flex items-end justify-between gap-3 mt-1">
+                        <div className="flex-1">
+                          {showRecorderTag && (
+                             <div className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.member === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.member === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {tx.member}出錢</div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1 z-10 mt-1">
+                          <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
+                            ${Number(tx.amount||0).toLocaleString()}
+                          </div>
+                          <div className="flex gap-1">
+                            <button onClick={() => { if(triggerVibration) triggerVibration(10); const newTxs = [...(voiceReviewTxs || [])]; const target = newTxs[idx]; if (target.category && !target.category.includes('/')) { if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他"; else if (target.category.includes('衣')) target.category = "衣/其他"; else if (target.category.includes('行')) target.category = "行/其他"; else target.category = "雜項/其他"; } target.isEditing = true; if (!target.id) target.id = "temp_" + Date.now(); if (!target.date) { const now = new Date(); const tzOffset = now.getTimezoneOffset() * 60000; target.date = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16); } setVoiceReviewTxs(newTxs); }} className="p-1.5 text-gray-300 hover:text-blue-500 active:scale-90 transition-all"><SvgIcon name="edit" size={15} /></button>
+                            <button onClick={() => setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== idx))} className="p-1.5 text-gray-300 hover:text-red-500 active:scale-90 transition-all"><SvgIcon name="trash" size={15} /></button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   );
                 }) )}
@@ -819,7 +886,7 @@ function App() {
           {activeTab === "history" && ( <HistoryTab setQuickDateFilter={setQuickDateFilter} historyDateFilter={historyDateFilter} setHistoryDateFilter={setHistoryDateFilter} setHistorySearch={setHistorySearch} setHistoryExcludeSearch={setHistoryExcludeSearch} setHistoryTypeFilter={setHistoryTypeFilter} historySearch={historySearch} historyExcludeSearch={historyExcludeSearch} triggerVibration={triggerVibration} setShowTrashModal={setShowTrashModal} setConfirmHardDeleteId={setConfirmHardDeleteId} setShowConfirmEmptyTrash={setShowConfirmEmptyTrash} showSearchFilterModal={showSearchFilterModal} setShowSearchFilterModal={setShowSearchFilterModal} debouncedHistorySearch={debouncedHistorySearch} debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch} historyTypeFilter={historyTypeFilter} isHistoryFiltered={isHistoryFiltered} historyFilteredStats={historyFilteredStats} filteredHistoryGroups={filteredHistoryGroups || []} renderItemOrGroup={renderItemOrGroup} /> )}
           {activeTab === "analysis" && ( <AnalysisTab analysisDateFilter={analysisDateFilter} setAnalysisDateFilter={setAnalysisDateFilter} setSelectedAnalysisLevel1={setSelectedAnalysisLevel1} setSelectedAnalysisLevel2={setSelectedAnalysisLevel2} analysisCustomStart={analysisCustomStart} setAnalysisCustomStart={setAnalysisCustomStart} analysisCustomEnd={analysisCustomEnd} setAnalysisCustomEnd={setAnalysisCustomEnd} analysisType={analysisType} setAnalysisType={setAnalysisType} aiEvalData={aiEvalData} currentUser={currentUser} isAIEvaluating={isAIEvaluating} handleForceAIEval={handleForceAIEval} myTransactions={myTransactions || []} billingStartDay={billingStartDay} pendingMap={{}} selectedAnalysisLevel1={selectedAnalysisLevel1} setAnalysisDetailData={setAnalysisDetailData} animTrigger={animTrigger} triggerVibration={triggerVibration} renderItemOrGroup={renderItemOrGroup} snapshotsCache={snapshotsCache} /> )}
           {activeTab === "add" && ( <AddTransactionForm loginUser={currentUser?.name || "未知"} onSubmit={(tx) => handleAdd(tx)} onClose={() => setActiveTab('dashboard')} /> )}
-          {activeTab === "settings" && ( <SettingsTab handleForceAIEval={handleForceAIEval} isAIEvaluating={isAIEvaluating} isSyncing={isSyncing} triggerVibration={triggerVibration} billingStartDay={billingStartDay} setBillingStartDay={setBillingStartDay} currentCycleRange={currentCycleRange} customSubtitle={customSubtitle} setCustomSubtitle={setCustomSubtitle} handleSaveGreeting={handleSaveGreeting} currentUser={currentUser} setShowChangePinModal={setShowChangePinModal} bioBound={bioBound} setUnbindPin={setUnbindPin} setShowUnbindModal={setShowUnbindModal} bindDeviceBio={bindDeviceBio} setShowClearCacheModal={setShowClearCacheModal} setCurrentUser={setCurrentUser} setSelectingUser={setSelectingUser} setPinInput={setPinInput} setActiveTab={setActiveTab} syncQueue={syncQueue || []} setShowClearQueueModal={setShowClearQueueModal} isLogOpen={isLogOpen} setIsLogOpen={setIsLogOpen} /> )}
+          {activeTab === "settings" && ( <SettingsTab handleForceAIEval={handleForceAIEval} txCache={visibleTransactions} isAIEvaluating={isAIEvaluating} isSyncing={isSyncing} triggerVibration={triggerVibration} billingStartDay={billingStartDay} setBillingStartDay={setBillingStartDay} currentCycleRange={currentCycleRange} customSubtitle={customSubtitle} setCustomSubtitle={setCustomSubtitle} handleSaveGreeting={handleSaveGreeting} currentUser={currentUser} setShowChangePinModal={setShowChangePinModal} bioBound={bioBound} setUnbindPin={setUnbindPin} setShowUnbindModal={setShowUnbindModal} bindDeviceBio={bindDeviceBio} setShowClearCacheModal={setShowClearCacheModal} setCurrentUser={setCurrentUser} setSelectingUser={setSelectingUser} setPinInput={setPinInput} setActiveTab={setActiveTab} syncQueue={syncQueue || []} setShowClearQueueModal={setShowClearQueueModal} isLogOpen={isLogOpen} setIsLogOpen={setIsLogOpen} /> )}
         </ErrorBoundary>
       </main>
 

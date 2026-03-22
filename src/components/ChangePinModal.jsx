@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { SvgIcon } from './Icons';
-import { getDeviceToken, deviceValid, verifyPinOnline, postGAS } from '../utils/api';
-import { LS } from '../utils/constants';
+// 🚀 改為引入 Firestore 模組
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 
-export const ChangePinModal = ({ currentUser, onCancel, onSuccess, forceReloginForToken }) => {
+export const ChangePinModal = ({ currentUser, onCancel, onSuccess }) => {
   const [oldPin, setOldPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [newPin2, setNewPin2] = useState("");
@@ -12,25 +13,40 @@ export const ChangePinModal = ({ currentUser, onCancel, onSuccess, forceReloginF
 
   const handleSubmit = async () => {
     if (!navigator.onLine) { setErrorMsg("需連線才能更換密碼"); return; }
-    if (!deviceValid()) { setErrorMsg("雲端憑證已過期，請先綁定雲端"); return; }
-    if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { setErrorMsg("請輸入完整的 6 位 PIN 碼"); return; }
-    if (newPin !== newPin2) { setErrorMsg("兩次輸入的新密碼不一致"); return; }
+    
+    // 🛡️ 防呆 1：確保密碼長度完整
+    if (oldPin.length !== 6 || newPin.length !== 6 || newPin2.length !== 6) { 
+      setErrorMsg("請輸入完整的 6 位 PIN 碼"); 
+      return; 
+    }
+    
+    // 🛡️ 防呆 2：確認兩次輸入的新密碼一致
+    if (newPin !== newPin2) { 
+      setErrorMsg("兩次輸入的新密碼不一致"); 
+      return; 
+    }
+
+    // 🛡️ 防呆 3：比對舊密碼是否正確 (直接與登入者的資料比對)
+    if (String(oldPin) !== String(currentUser.pin)) {
+      setErrorMsg("舊密碼輸入錯誤！");
+      return;
+    }
     
     setIsSubmitting(true); 
     setErrorMsg("");
     
     try {
-      const res = await postGAS({ action: "UPDATE_PIN", name: currentUser.name, oldPin, newPin, deviceToken: getDeviceToken() });
-      if (res.result !== "success") throw new Error(res.message || "更新失敗");
-      localStorage.removeItem(LS.pinHashPrefix + currentUser.name); 
+      // 🚀 核心升級：跳過 GAS，直接向 Firestore 更新密碼
+      const memberRef = doc(db, 'members', currentUser.id);
+      await updateDoc(memberRef, {
+        pin: String(newPin)
+      });
+      
+      // 更新成功後觸發登出
       onSuccess();
     } catch (e) {
-      const msg = e.message || "更新失敗";
-      if (msg.includes("憑證") || msg.includes("無效") || msg.includes("過期") || msg.includes("重新綁定")) { 
-        forceReloginForToken(); 
-      } else { 
-        setErrorMsg(msg); 
-      }
+      console.error("更新密碼失敗:", e);
+      setErrorMsg("更新失敗，請檢查網路連線");
     } finally { 
       setIsSubmitting(false); 
     }

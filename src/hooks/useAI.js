@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { postGAS, getDeviceToken, deviceValid } from '../utils/api';
 import { parseDateForSort, displayDateClean, nowStr } from '../utils/helpers';
-// 🚀 加上 Firebase 的引入
-import { doc, onSnapshot } from 'firebase/firestore';
+// 🚀 引入 Firestore 所需的寫入與監聽模組
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
-// 🌟 補回收入類別，並改名為 ALL_CATEGORIES，讓 AI 收入支出都能精準分類
 const ALL_CATEGORIES = [
   "食/早餐", "食/午餐", "食/晚餐", "食/生鮮食材", "食/零食/飲料", "食/外食聚餐", "食/其他",
   "衣/爸爸服飾", "衣/媽媽服飾", "衣/小孩服飾", "衣/鞋包/配件", "衣/保養/美妝", "衣/其他",
@@ -20,39 +19,39 @@ const ALL_CATEGORIES = [
 ];
 
 export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
-  const [aiEvalData, setAiEvalData] = useState(() => { 
-    try { return JSON.parse(localStorage.getItem('ai_eval_data')) || null; } catch { return null; } 
-  });
-  
-  const [sysConfig, setSysConfig] = useState(() => { 
-    try { return JSON.parse(localStorage.getItem('sys_config')) || { apiKey: "", prompt: "" }; } catch { return { apiKey: "", prompt: "" }; } 
-  });
-  
+  // 🚀 移除 Local Storage，改由 Firestore 負責存放評語
+  const [aiEvalData, setAiEvalData] = useState(null);
+  const [sysConfig, setSysConfig] = useState({ apiKey: "", prompt: "" });
   const [isAIEvaluating, setIsAIEvaluating] = useState(false);
-  const hasTriggeredAutoAI = useRef(false);
 
-  useEffect(() => localStorage.setItem('ai_eval_data', JSON.stringify(aiEvalData || {})), [aiEvalData]);
-  useEffect(() => localStorage.setItem('sys_config', JSON.stringify(sysConfig || {})), [sysConfig]);
-
-  // 🚀 核心修復：直接向 Firebase 拿取截圖中的 ai_settings 資料
+  // 🚀 核心修復：同時監聽「金鑰提示詞」與「最新評語結果」
   useEffect(() => {
     if (!db) return;
-    const unsub = onSnapshot(doc(db, 'sysConfig', 'ai_settings'), (docSnap) => {
+
+    // 1. 監聽 Firebase 中的設定檔 (API Key 與 提示詞)
+    const unsubSettings = onSnapshot(doc(db, 'sysConfig', 'ai_settings'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setSysConfig(prev => {
-          const newConfig = {
-            // 將 Firebase 的 geminiKey 對應到你原本程式碼用的 apiKey
-            apiKey: data.geminiKey || prev.apiKey || "", 
-            // 將 Firebase 的 aiPrompt 對應到你原本程式碼用的 prompt
-            prompt: data.aiPrompt || prev.prompt || ""
-          };
-          return newConfig;
+        setSysConfig({
+          apiKey: data.geminiKey || "", 
+          prompt: data.aiPrompt || ""
         });
       }
     }, (err) => console.error("讀取 AI 設定失敗:", err));
 
-    return () => unsub();
+    // 2. 監聽 Firebase 中的最新評語 (雙方手機會自動同步更新)
+    const unsubResult = onSnapshot(doc(db, 'sysConfig', 'ai_result'), (docSnap) => {
+      if (docSnap.exists()) {
+        setAiEvalData(docSnap.data());
+      } else {
+        setAiEvalData(null);
+      }
+    }, (err) => console.error("讀取 AI 評語失敗:", err));
+
+    return () => {
+      unsubSettings();
+      unsubResult();
+    };
   }, []);
 
   const executeFrontendAI = async (isManual = false) => {
@@ -79,6 +78,7 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
           else if (String(tx.member).trim() === "媽媽" || String(tx.member).trim() === "妈妈") momStr += line;
         }
       });
+      
       const promptTemplate = sysConfig.prompt || "你是一位專業的家庭理財教練。";
       const finalPrompt = `${promptTemplate}\n\n爸爸資料：\n${dadStr}\n\n媽媽資料：\n${momStr}`;
       const reqBody = { contents: [{ role: "user", parts: [{ text: finalPrompt }] }], generationConfig: { responseMimeType: "application/json" } };
@@ -96,8 +96,9 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
       
       const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
       parsedResult.lastUpdated = `${todayStr} ${new Date().toLocaleTimeString('zh-TW', { hour12: false })}`;
-      setAiEvalData(parsedResult);
-      postGAS({ action: "SAVE_AI_RESULT", aiData: parsedResult, deviceToken: getDeviceToken() }).catch(()=>{});
+      
+      // 🚀 核心升級：將結果直接存入 Firestore 並覆蓋舊紀錄！
+      await setDoc(doc(db, 'sysConfig', 'ai_result'), parsedResult);
 
       localStorage.setItem('last_ai_eval_date', new Date().toLocaleDateString('zh-TW'));
       localStorage.setItem('last_ai_eval_tx_count', txCache.length.toString());
@@ -128,14 +129,11 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
     }
   }, [currentUser, txCache, isAIEvaluating, sysConfig.apiKey]);
 
-
-  // 🚀 核心：語音記帳解析引擎 (補強了收入類別、純數字限制與外人判定)
   const processVoiceText = async (voiceText, currentMember) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {
       throw new Error("請先至設定頁面填寫 Gemini API Key");
     }
     
-    // 獲取當前 ISO 本地時間 (YYYY-MM-DDTHH:mm) 作為 AI 推算的基準
     const now = new Date();
     const tzOffset = now.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16); 
@@ -239,7 +237,6 @@ ${JSON.stringify(ALL_CATEGORIES)}
     
     const parsed = JSON.parse(match[0]);
     
-    // 🛡️ 最終防護：確保日期與基本欄位絕對不會讓 UI 當機
     return parsed.transactions.map(tx => ({
       ...tx,
       date: (tx.date || localISOTime).replace(/\//g, '-').replace(' ', 'T').substring(0, 16),
