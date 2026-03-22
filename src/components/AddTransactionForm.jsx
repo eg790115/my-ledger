@@ -147,8 +147,22 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
       const evaluatedSubs = subItems.map(s => ({ ...s, amount: safeEvaluateMath(s.amount) }));
       const validSubs = evaluatedSubs.filter(s => Number(s.amount) > 0);
       if (validSubs.length === 0) { setIsSubmitting(false); return; }
+      
+      // 🚀 核心修復：產生一個共同的群組 ID，把這些拆分的明細全部綁在一起！
+      const sharedGroupId = `G_${Date.now()}_${formData.member}_${Math.random().toString(36).substring(2, 7)}`;
       const combinedParentDesc = `${formData.parentTitle.trim() || "多筆紀錄"}|||${formData.parentDesc.trim()}`;
-      const multipleTxs = validSubs.map(s => ({ amount: s.amount, category: `${s.parentCat}/${s.childCat}`, member: formData.member, beneficiary: s.beneficiary.join(","), type: formData.type, desc: s.desc, date: formData.date, parentDesc: combinedParentDesc }));
+      
+      const multipleTxs = validSubs.map(s => ({ 
+        amount: s.amount, 
+        category: `${s.parentCat}/${s.childCat}`, 
+        member: formData.member, 
+        beneficiary: s.beneficiary.join(","), 
+        type: formData.type, 
+        desc: s.desc, 
+        date: formData.date, 
+        parentDesc: combinedParentDesc,
+        groupId: sharedGroupId  // 🎯 貼上群組標籤！
+      }));
       await onSubmit(multipleTxs);
     } else {
       const finalAmount = safeEvaluateMath(formData.amount);

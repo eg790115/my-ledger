@@ -7,11 +7,9 @@ export const useSyncEngine = ({ currentUser }) => {
   const [trashCache, setTrashCache] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // 🛡️ 防呆：只依賴使用者的名字來決定要不要重新載入，避免無限迴圈
   const userName = currentUser?.name;
 
   useEffect(() => {
-    // 沒登入就清空畫面
     if (!userName) {
       setTxCache([]);
       setTrashCache([]);
@@ -19,37 +17,36 @@ export const useSyncEngine = ({ currentUser }) => {
     }
 
     setIsSyncing(true);
+    let allTxs = { "爸爸": [], "媽媽": [] };
 
-    // 🎧 監聽主帳本
-    const unsubTx = onSnapshot(query(collection(db, "transactions")), (snapshot) => {
-      const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      txs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0) || String(b.id).localeCompare(String(a.id)));
-      setTxCache(txs);
-      setIsSyncing(false);
-    }, (err) => {
-      console.error("主帳本讀取失敗:", err);
+    const mergeAndSet = () => {
+      const merged = [...allTxs["爸爸"], ...allTxs["媽媽"]];
+      merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0) || String(b.id).localeCompare(String(a.id)));
+      setTxCache(merged);
+    };
+
+    const unsubDad = onSnapshot(query(collection(db, "transactions_爸爸")), (snapshot) => {
+      allTxs["爸爸"] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      mergeAndSet();
       setIsSyncing(false);
     });
 
-    // 🎧 監聽垃圾桶
-    const unsubTrash = onSnapshot(query(collection(db, "trash")), (snapshot) => {
-      const trashTxs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      trashTxs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0) || String(b.id).localeCompare(String(a.id)));
-      setTrashCache(trashTxs);
-    }, (err) => console.error("垃圾桶讀取失敗:", err));
+    const unsubMom = onSnapshot(query(collection(db, "transactions_媽媽")), (snapshot) => {
+      allTxs["媽媽"] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      mergeAndSet();
+    });
+
+    // 🎯 關鍵修正：監聽「個人化」回收桶
+    const unsubTrash = onSnapshot(query(collection(db, `trash_${userName}`)), (snapshot) => {
+      setTrashCache(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     return () => {
-      unsubTx();
+      unsubDad();
+      unsubMom();
       unsubTrash();
     };
   }, [userName]);
 
-  // 🛡️ 防呆：給予安全的預設空陣列，保護舊 UI 不當機
-  return { 
-    txCache: txCache || [], 
-    trashCache: trashCache || [], 
-    isSyncing, 
-    syncQueue: [], 
-    requestSync: () => {} 
-  };
+  return { txCache, trashCache, isSyncing };
 };

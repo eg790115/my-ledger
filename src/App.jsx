@@ -3,6 +3,8 @@ import React, { useState, useEffect, useMemo, Component } from 'react';
 import { APP_VERSION, LS } from './utils/constants';
 import { getParentCat, getChildCat, safeParse, safeArrayLS, safeNumberLS, nowStr, displayDateClean, parseDateForSort, getSafeCycleRange } from './utils/helpers';
 import { gasUrl, postGAS, getDeviceToken, deviceValid, setDeviceToken } from './utils/api';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db, initFirebase } from './utils/firebase';
 
 import { useSyncEngine } from './hooks/useSyncEngine';
 import { useAuth } from './hooks/useAuth';
@@ -48,12 +50,47 @@ class ErrorBoundary extends Component {
 }
 
 function App() {
+  const [isVaultUnlocked, setIsVaultUnlocked] = useState(false);
+
+  useEffect(() => {
+    const vaultData = safeParse(localStorage.getItem("vault_data"), null);
+    if (vaultData && vaultData.firebaseConfig) {
+      try {
+        initFirebase(vaultData.firebaseConfig);
+        setIsVaultUnlocked(true);
+      } catch(e) {
+        localStorage.removeItem("vault_data"); 
+      }
+    }
+  }, []);  
+
   const { activeTab, setActiveTab, isOnline, setIsOnline, loadingCard, setLoadingCard, statusMsg, showStatus, triggerVibration } = useAppStore();
 
-  const [familyConfig, setFamilyConfig] = useState(() => {
+  const [users, setUsers] = useState(() => {
     const saved = safeArrayLS(LS.members) || [];
     return saved.length > 0 ? saved : [{ name: "爸爸", color: "bg-blue-600" }, { name: "媽媽", color: "bg-pink-600" }];
   });
+
+  // 🚀 關鍵修改區：強制排序
+  useEffect(() => {
+    if (isVaultUnlocked && db) {
+      const unsub = onSnapshot(collection(db, 'members'), (snapshot) => {
+        const m = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (m.length > 0) {
+          // 強制排序霸王條款：無論編碼如何，爸爸永遠排前面！
+          m.sort((a, b) => {
+            if (a.name === "爸爸") return -1;
+            if (b.name === "爸爸") return 1;
+            return 0;
+          });
+          setUsers(m);
+          localStorage.setItem(LS.members, JSON.stringify(m));
+        }
+      }, (err) => console.error("讀取成員失敗:", err));
+      return () => unsub();
+    }
+  }, [isVaultUnlocked]);
+
   const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
   const [greetingsCache, setGreetingsCache] = useState(() => { try { return JSON.parse(localStorage.getItem(LS.greetingsCache)) || {}; } catch { return {}; } });
   const [billingStartDay, setBillingStartDay] = useState(() => safeNumberLS(LS.billingStartDay, 1));
@@ -74,7 +111,6 @@ function App() {
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState(null);
   const [showConfirmEmptyTrash, setShowConfirmEmptyTrash] = useState(false);
-  
   const [voiceReviewTxs, setVoiceReviewTxs] = useState(null);
 
   const [historySearch, setHistorySearch] = useState("");
@@ -94,31 +130,47 @@ function App() {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [unackedProxyTxs, setUnackedProxyTxs] = useState([]);
 
-  // 1. Auth 鉤子
   const {
     currentUser, setCurrentUser, selectingUser, setSelectingUser,
     pinInput, setPinInput, fallbackToPin, setFallbackToPin,
     showBootstrapModal, setShowBootstrapModal, bootstrapSecret, setBootstrapSecret,
     showUnbindModal, setShowUnbindModal, setUnbindPin, showChangePinModal, setShowChangePinModal, 
-    forceReloginForToken, handleBioLoginLocal, handleUserClick, bindDeviceBio, bioBound
+    forceReloginForToken, handleBioLoginLocal, handleUserClick, bindDeviceBio, bioBound,
+    handleLogin
   } = useAuth({ isOnline, showStatus, setLoadingCard, triggerVibration }) || {};
 
-  // 2. Firebase 監聽鉤子 🛡️ (保證安全解構)
-  const { 
-    txCache = [], trashCache = [], isSyncing = false, syncQueue = [], requestSync = () => {} 
-  } = useSyncEngine({ currentUser }) || {};
+  const { txCache = [], trashCache = [], isSyncing = false, syncQueue = [], requestSync = () => {} } = useSyncEngine({ currentUser }) || {};
 
-  // 3. 交易操作鉤子 🛡️ (保證安全解構)
   const { 
     pendingMap = {}, visibleTransactions = [], visibleTrash = [], myTransactions = [], 
     handleAdd = () => {}, handleUpdateTx = () => {}, handleUpdateGroupParent = () => {}, handleDeleteTx = () => {}, 
     handleRestoreTrash = () => {}, handleHardDeleteTrash = () => {}, handleEmptyTrash = () => {} 
-  } = useTransactions({
-    currentUser, txCache, trashCache, triggerVibration, showStatus, setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal
-  }) || {};
+  } = useTransactions({ currentUser, txCache, trashCache, triggerVibration, showStatus, setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal }) || {};
 
-  // 4. AI 鉤子
   const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText } = useAI({ currentUser, isOnline, txCache, showStatus }) || {};
+
+  const fallbackHandleLogin = async (user, pin) => {
+    setLoadingCard({ show: true, text: "登入中..." });
+    try {
+      const { verifyPinOnline } = await import('./utils/api');
+      await verifyPinOnline(user.name, pin);
+      setCurrentUser(user);
+      showStatus("success", `歡迎回來，${user.name}`);
+    } catch (e) {
+      showStatus("error", e.message || "密碼錯誤");
+    } finally {
+      setLoadingCard({ show: false, text: "" });
+    }
+  };
+  const finalHandleLogin = handleLogin || fallbackHandleLogin;
+
+  const ToastUI = statusMsg?.text ? (
+    <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center">
+      <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}>
+        <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span>
+      </div>
+    </div>
+  ) : null;
 
   const handleVoiceRecordStop = async (text) => {
     const safeName = currentUser?.name || "未知";
@@ -158,14 +210,11 @@ function App() {
 
   useEffect(() => { if (activeTab === "analysis") { setAnimTrigger(false); const timer = setTimeout(() => setAnimTrigger(true), 50); return () => clearTimeout(timer); } }, [activeTab, analysisType, analysisDateFilter]);
   useEffect(() => { const handleNetworkChange = () => { if (setIsOnline) setIsOnline(navigator.onLine); }; window.addEventListener('online', handleNetworkChange); window.addEventListener('offline', handleNetworkChange); return () => { window.removeEventListener('online', handleNetworkChange); window.removeEventListener('offline', handleNetworkChange); }; }, [setIsOnline]);
-  useEffect(() => localStorage.setItem(LS.members, JSON.stringify(familyConfig || [])), [familyConfig]);
-  useEffect(() => localStorage.setItem(LS.greetingsCache, JSON.stringify(greetingsCache || {})), [greetingsCache]);
   useEffect(() => { if (currentUser?.name && greetingsCache && greetingsCache[currentUser.name]) setCustomSubtitle(String(greetingsCache[currentUser.name])); else if (currentUser) setCustomSubtitle("{name}，你好！"); }, [currentUser, greetingsCache]);
   useEffect(() => { const timer = setTimeout(() => { setDebouncedHistorySearch(historySearch); setDebouncedHistoryExcludeSearch(historyExcludeSearch); }, 350); return () => clearTimeout(timer); }, [historySearch, historyExcludeSearch]);
   useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
   useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]);
   useEffect(() => { setSelectedAnalysisLevel2(null); }, [selectedAnalysisLevel1]);
-  useEffect(() => { (async () => { try { const res = await fetch(gasUrl); const data = await res.json(); if (data.members && data.members.length) setFamilyConfig(data.members); } catch {} })(); }, []);
 
   useEffect(() => {
     if (!currentUser || !txCache || txCache.length === 0) return;
@@ -179,7 +228,16 @@ function App() {
 
   const handleSyncClick = () => { if(triggerVibration) triggerVibration(15); if(showStatus) showStatus("info", "系統已為即時同步模式"); };
   const refreshDeviceToken = async () => { const data = await postGAS({ action: "DEVICE_REFRESH", deviceToken: getDeviceToken() }); if (data.result !== "success") throw new Error(data.message || "憑證已過期"); setDeviceToken(data.deviceToken, data.deviceExp); return data; };
-  const bootstrapDevice = async () => { if (!bootstrapSecret) throw new Error("請輸入雲端密碼"); const data = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: bootstrapSecret }); if (data.result !== "success") throw new Error(data.message || "綁定失敗"); setDeviceToken(data.deviceToken, data.deviceExp); return data; };
+  
+  const bootstrapDevice = async (secret) => { 
+    if (!secret) throw new Error("請輸入雲端密碼"); 
+    const data = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: secret }); 
+    if (data.result !== "success") throw new Error(data.message || "綁定失敗"); 
+    const safeForeverExp = Date.now() + (10 * 365 * 24 * 60 * 60 * 1000);
+    setDeviceToken(data.deviceToken, safeForeverExp); 
+    return data; 
+  };
+  
   const handleSaveGreeting = async () => {
     if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
     try {
@@ -253,12 +311,6 @@ function App() {
         }
       }
 
-      const match = String(debouncedHistorySearch || "").trim().match(/^(\d{4}\/\d{1,2}\/\d{1,2})\s*-\s*(\d{4}\/\d{1,2}\/\d{1,2})$/);
-      if (match) {
-        const startTimestamp = new Date(`${match[1]} 00:00:00`).getTime(); const endTimestamp = new Date(`${match[2]} 23:59:59`).getTime();
-        if (!isNaN(startTimestamp) && !isNaN(endTimestamp)) { startTime = startTimestamp; endTime = endTimestamp; }
-      }
-
       if (startTime > 0 || endTime < Infinity) {
         let filteredList = [];
         for (const item of list) {
@@ -271,26 +323,6 @@ function App() {
           } else { const txTime = parseDateForSort(item); if (txTime >= startTime && txTime <= endTime) filteredList.push(item); }
         }
         list = filteredList;
-      }
-
-      const isMatch = (targetStr, keyword) => String(targetStr || "").toLowerCase().includes(keyword);
-      if (safeSearchTxt && !match) {
-        list = list.filter(item => {
-          if (item.isGroup) {
-            const groupMatch = isMatch(item.parentTitle, safeSearchTxt) || isMatch(item.parentDesc, safeSearchTxt) || isMatch(item.amount, safeSearchTxt) || isMatch(item.date, safeSearchTxt);
-            const childMatch = (item.children || []).some(tx => isMatch(getParentCat(tx.category), safeSearchTxt) || isMatch(getChildCat(tx.category), safeSearchTxt) || isMatch(tx.desc, safeSearchTxt) || isMatch(tx.amount, safeSearchTxt) || isMatch(tx.beneficiary, safeSearchTxt));
-            return groupMatch || childMatch;
-          } else { return isMatch(getParentCat(item.category), safeSearchTxt) || isMatch(getChildCat(item.category), safeSearchTxt) || isMatch(item.desc, safeSearchTxt) || isMatch(item.amount, safeSearchTxt) || isMatch(item.date, safeSearchTxt) || isMatch(item.beneficiary, safeSearchTxt); }
-        });
-      }
-      if (safeExcludeTxt) {
-        list = list.filter(item => {
-          if (item.isGroup) {
-            const groupMatch = isMatch(item.parentTitle, safeExcludeTxt) || isMatch(item.parentDesc, safeExcludeTxt) || isMatch(item.amount, safeExcludeTxt) || isMatch(item.date, safeExcludeTxt);
-            const childMatch = (item.children || []).some(tx => isMatch(getParentCat(tx.category), safeExcludeTxt) || isMatch(getChildCat(tx.category), safeExcludeTxt) || isMatch(tx.desc, safeExcludeTxt) || isMatch(tx.amount, safeExcludeTxt) || isMatch(tx.beneficiary, safeExcludeTxt));
-            return !(groupMatch || childMatch);
-          } else { return !(isMatch(getParentCat(item.category), safeExcludeTxt) || isMatch(getChildCat(item.category), safeExcludeTxt) || isMatch(item.desc, safeExcludeTxt) || isMatch(item.amount, safeExcludeTxt) || isMatch(item.date, safeExcludeTxt) || isMatch(item.beneficiary, safeExcludeTxt)); }
-        });
       }
       return list;
     } catch (error) { return []; }
@@ -309,61 +341,136 @@ function App() {
 
   function renderItemOrGroup(item, allowEdit) {
     if (item.isGroup) {
-      return (
-        <TransactionGroupCard
-          key={item.groupId} group={item} allowEdit={allowEdit} pendingMap={{}} auditLogs={[]} currentUser={currentUser} setViewingHistoryItem={setViewingHistoryItem}
-          setEditingGroup={setEditingGroup} setEditingTx={setEditingTx} triggerVibration={triggerVibration} expandedGroups={expandedGroups} toggleGroup={toggleGroup}
-        />
-      );
+      return <TransactionGroupCard key={item.groupId} group={item} allowEdit={allowEdit} pendingMap={{}} auditLogs={[]} currentUser={currentUser} setViewingHistoryItem={setViewingHistoryItem} setEditingGroup={setEditingGroup} setEditingTx={setEditingTx} triggerVibration={triggerVibration} expandedGroups={expandedGroups} toggleGroup={toggleGroup} />;
     }
-    return (
-      <TransactionCard
-        key={item.id} tx={item} allowEdit={allowEdit} pendingMap={{}} auditLogs={[]} currentUser={currentUser} setViewingHistoryItem={setViewingHistoryItem} setEditingTx={setEditingTx} triggerVibration={triggerVibration}
-      />
-    );
+    return <TransactionCard key={item.id} tx={item} allowEdit={allowEdit} pendingMap={{}} auditLogs={[]} currentUser={currentUser} setViewingHistoryItem={setViewingHistoryItem} setEditingTx={setEditingTx} triggerVibration={triggerVibration} />;
   }
 
   const setQuickDateFilter = (filterVal) => { if(triggerVibration) triggerVibration(10); setHistoryDateFilter(filterVal); setAnalysisDateFilter(filterVal); setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); };
   const isHistoryFiltered = debouncedHistorySearch || debouncedHistoryExcludeSearch || historyTypeFilter !== "all" || historyDateFilter !== "all";
 
+  if (!isVaultUnlocked) {
+    return (
+      <div translate="no" className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
+        {ToastUI}
+        {isLoading && (
+          <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-5 animate-in">
+              <SvgIcon name="spinner" size={40} className="animate-spin text-blue-600" />
+              <p className="font-black text-gray-800 text-sm tracking-widest">{loadingCard?.text || "處理中..."}</p>
+            </div>
+          </div>
+        )}
+        <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative shadow-2xl">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🔐</div>
+          <h3 className="font-black text-xl mb-2 text-red-600">最高權限鎖定</h3>
+          <p className="text-xs text-gray-500 mb-6 font-bold leading-relaxed">請輸入您的雲端密碼以解鎖金庫。</p>
+          <input type="password" value={bootstrapSecret || ""} onChange={(e) => setBootstrapSecret(e.target.value)} placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-4 font-black outline-none mb-6 text-center tracking-widest text-lg" disabled={isLoading} />
+          <button onClick={async () => {
+              if (!bootstrapSecret) { showStatus("error", "請輸入密碼！"); return; }
+              try {
+                setLoadingCard({ show: true, text: "正在開啟金庫大門..." });
+                const res = await postGAS({ action: "UNLOCK_VAULT", appSecret: bootstrapSecret });
+                if (res.result !== "success") throw new Error(res.message || "驗證失敗");
+                
+                localStorage.setItem("vault_data", JSON.stringify({ firebaseConfig: res.firebaseConfig }));
+                initFirebase(res.firebaseConfig);
+
+                setLoadingCard({ show: true, text: "正在安全綁定通訊..." });
+                await new Promise(r => setTimeout(r, 1000));
+                await bootstrapDevice(bootstrapSecret);
+
+                if (typeof setShowBootstrapModal === 'function') setShowBootstrapModal(false);
+                
+                setIsVaultUnlocked(true);
+                showStatus("success", "解鎖與綁定成功！");
+              } catch (e) { showStatus("error", e.message || "密碼錯誤或網路異常"); } 
+              finally { setLoadingCard({ show: false, text: "" }); }
+            }} disabled={isLoading} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-50 shadow-lg shadow-red-500/30">解鎖金庫</button>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return (
       <div translate="no" className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-8 animate-in relative w-full text-center font-black">
+        {ToastUI}
         {isLoading && ( <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4"> <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-5 animate-in"> <SvgIcon name="spinner" size={40} className="animate-spin text-blue-600" /> <p className="font-black text-gray-800 text-sm tracking-widest">{loadingCard.text || "處理中..."}</p> </div> </div> )}
-        <LoginUI selectingUser={selectingUser} setSelectingUser={setSelectingUser} familyConfig={familyConfig} handleUserClick={handleUserClick} syncQueue={syncQueue} setShowClearQueueModal={setShowClearQueueModal} triggerVibration={triggerVibration} setShowClearCacheModal={setShowLoginClearCacheModal} fallbackToPin={fallbackToPin} setFallbackToPin={setFallbackToPin} handleBioLoginLocal={handleBioLoginLocal} showStatus={showStatus} setCurrentUser={setCurrentUser} pinInput={pinInput} setPinInput={setPinInput} />
+        
+        <LoginUI 
+          users={users} 
+          familyConfig={users} 
+          onLogin={finalHandleLogin}
+          selectingUser={selectingUser} 
+          setSelectingUser={setSelectingUser} 
+          handleUserClick={handleUserClick} 
+          syncQueue={syncQueue} 
+          setShowClearQueueModal={setShowClearQueueModal} 
+          triggerVibration={triggerVibration} 
+          setShowClearCacheModal={setShowLoginClearCacheModal} 
+          fallbackToPin={fallbackToPin} 
+          setFallbackToPin={setFallbackToPin} 
+          handleBioLoginLocal={handleBioLoginLocal} 
+          showStatus={showStatus} 
+          setCurrentUser={setCurrentUser} 
+          pinInput={pinInput} 
+          setPinInput={setPinInput} 
+          isLoading={isLoading}
+          loadingCard={loadingCard}
+          bioBound={bioBound}
+        />
+        
+        {showBootstrapModal && !deviceValid() && (
+          <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white">
+            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
+              <h3 className="font-black text-lg mb-2 text-blue-600">設備尚未綁定</h3>
+              <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">您的手機憑證已失效，請重新輸入雲端密碼完成綁定：</p>
+              <input value={bootstrapSecret} onChange={(e)=>setBootstrapSecret(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
+              <button onClick={async () => {
+                try {
+                  setLoadingCard({ show:true, text:"正在綁定雲端..." });
+                  await bootstrapDevice(bootstrapSecret); 
+                  if (setShowBootstrapModal) setShowBootstrapModal(false);
+                  setBootstrapSecret("");
+                  showStatus("success","✅ 手機設備已成功綁定！");
+                } catch (e) {
+                  showStatus("error", e.message || "雲端密碼錯誤");
+                } finally {
+                  setLoadingCard({ show:false, text:"" });
+                }
+              }} disabled={isLoading} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-blue-500/30 disabled:opacity-50">確認綁定</button>
+            </div>
+          </div>
+        )}
+
         {showLoginClearCacheModal && (
           <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowLoginClearCacheModal(false); setLoginCachePassword("");} }}>
             <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center">
               <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><SvgIcon name="refresh" size={32} /></div>
               <h3 className="font-black text-lg mb-2 text-red-600">深度清理 (清空快取)</h3>
-              <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">這將刪除手機內所有舊版歷史紀錄與暫存。請輸入「雲端密碼」以確認執行：</p>
+              <p className="text-xs text-gray-500 mb-5 font-bold leading-relaxed">請輸入「雲端密碼」確認執行：</p>
               <input value={loginCachePassword} onChange={(e)=>setLoginCachePassword(e.target.value)} type="password" placeholder="請輸入雲端密碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-6 text-center tracking-widest" disabled={isLoading} />
               <div className="flex gap-3">
                 <button onClick={() => {setShowLoginClearCacheModal(false); setLoginCachePassword("");}} disabled={isLoading} className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-black active:scale-95 disabled:opacity-50">取消</button>
                 <button onClick={async () => {
-                  if (!loginCachePassword) { showStatus("error", "請輸入雲端密碼"); return; }
+                  if (!loginCachePassword) { showStatus("error", "請輸入密碼！"); return; }
                   try {
-                    setLoadingCard({ show: true, text: "正在清理舊系統快取..." });
+                    setLoadingCard({ show: true, text: "正在驗證密碼..." });
                     const res = await postGAS({ action: "DEVICE_BOOTSTRAP", appSecret: loginCachePassword });
-                    if (res.result !== "success") throw new Error("雲端密碼錯誤");
-                    localStorage.removeItem(LS.txCache); localStorage.removeItem('sync_queue'); localStorage.removeItem('audit_logs');
+                    if (res.result !== "success") throw new Error("密碼錯誤");
+                    
+                    setLoadingCard({ show: true, text: "正在清理快取..." });
+                    localStorage.clear();
                     if ('serviceWorker' in navigator) { const registrations = await navigator.serviceWorker.getRegistrations(); for (let r of registrations) await r.unregister(); }
                     if ('caches' in window) { const cacheNames = await caches.keys(); for (let c of cacheNames) await caches.delete(c); }
-                    setShowLoginClearCacheModal(false); setLoginCachePassword(""); showStatus("success", "✅ 舊系統快取已徹底清空！");
+                    
+                    showStatus("success", "快取已清空！即將重啟");
+                    setShowLoginClearCacheModal(false); setLoginCachePassword(""); 
                     setTimeout(() => { window.location.reload(true); }, 1500);
-                  } catch(e) { showStatus("error", e.message || "驗證失敗"); } finally { setLoadingCard({ show: false, text: "" }); }
+                  } catch(e) { showStatus("error", e.message || "密碼錯誤"); } finally { setLoadingCard({ show: false, text: "" }); }
                 }} disabled={isLoading} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black active:scale-95 shadow-md shadow-red-500/30 disabled:opacity-50">確認清空</button>
               </div>
-            </div>
-          </div>
-        )}
-        {showBootstrapModal && (
-          <div className="fixed inset-0 z-[600] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in">
-            <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative">
-              <h3 className="font-black text-lg mb-2">首次綁定雲端</h3>
-              <p className="text-[11px] text-gray-500 mb-5">請輸入雲端密碼（爸爸手機號碼）。</p>
-              <input value={bootstrapSecret} onChange={(e)=>setBootstrapSecret(e.target.value)} placeholder="輸入爸爸手機號碼" className="w-full bg-gray-100 rounded-2xl px-4 py-3 font-black outline-none mb-5" />
-              <button onClick={async () => { try { setLoadingCard({ show:true, text:"正在綁定雲端..." }); await bootstrapDevice(); setShowBootstrapModal(false); setBootstrapSecret(""); showStatus("success","✅ 雲端已綁定"); } catch (e) { showStatus("error", e.message || "雲端密碼錯誤"); } finally { setLoadingCard({ show:false, text:"" }); } }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black active:scale-95 disabled:opacity-40">確認</button>
             </div>
           </div>
         )}
@@ -495,8 +602,8 @@ function App() {
         </ErrorBoundary>
       </main>
 
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} triggerVibration={triggerVibration} onQuickAdd={handleAdd} loginUser={currentUser?.name || "未知"} onVoiceRecordStop={handleVoiceRecordStop} />
-      {statusMsg.text && ( <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[1000] pointer-events-none px-4 text-center"> <div className={`px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in pointer-events-auto ${statusMsg.type === "success" ? "bg-green-600 text-white" : statusMsg.type === "error" ? "bg-red-600 text-white" : statusMsg.type === "info" ? "bg-gray-800 text-white border border-gray-600" : "bg-blue-600 text-white"}`}> <span className="text-sm font-bold tracking-tight text-center">{statusMsg.text}</span> </div> </div> )}
+      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} triggerVibration={triggerVibration} onQuickAdd={handleVoiceRecordStop} loginUser={currentUser?.name || "未知"} onVoiceRecordStop={handleVoiceRecordStop} />
+      {ToastUI}
     </div>
   );
 }

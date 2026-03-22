@@ -5,7 +5,7 @@ export const gasUrl = "https://script.google.com/macros/s/AKfycbxO6JfC9YkWsRAdP3
 
 export async function postGAS(payload) {
   const controller = new AbortController();
-  // 🚀 核心修復：將超時限制從 15 秒大幅放寬至 60 秒 (60000ms)，確保初次全量下載不會被中斷
+  // 🚀 將超時限制從 15 秒大幅放寬至 60 秒
   const timeoutId = setTimeout(() => controller.abort(), 60000);
   try {
     const res = await fetch(gasUrl, {
@@ -51,10 +51,23 @@ export const clearBioFail = n => {
   setBioLockedUntil(n, 0);
 };
 
+// ==========================================
+// 🚀 終極光速登入引擎 (修正快取變數名稱與空白防禦)
+// ==========================================
 export const verifyPinOnline = async (name, pin) => {
-  const res = await postGAS({ action: "VERIFY_PIN", name, pin, deviceToken: getDeviceToken() });
-  if (res.result !== "success") throw new Error(res.message || "PIN 錯誤");
-  return true;
+  try {
+    // 1. 使用正確的變數名稱 LS.members 取出快取
+    const members = JSON.parse(localStorage.getItem(LS.members) || '[]');
+    const user = members.find(u => u.name === name);
+    
+    // 2. 加上 .trim()，徹底消滅從 Excel 搬家時可能混入的隱形空白
+    if (user && String(user.pin).trim() === String(pin).trim()) {
+      return true; 
+    }
+    throw new Error("密碼錯誤");
+  } catch (e) {
+    throw new Error("密碼錯誤");
+  }
 };
 
 export const saveLocalPinHash = async (name, pin) => {
