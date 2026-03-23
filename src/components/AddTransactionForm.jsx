@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 
 const CATEGORY_MAP = {
   expense: { 
@@ -45,6 +47,7 @@ const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
   const pCats = Object.keys(CATEGORY_MAP[type] || CATEGORY_MAP.expense);
   const safeParentCat = pCats.includes(parentCat) ? parentCat : pCats[0];
   const cCats = CATEGORY_MAP[type][safeParentCat] || CATEGORY_MAP[type][pCats[0]];
+  
   return (
     <div className="flex gap-2">
       <div className="bg-gray-100 p-2 px-3 rounded-xl flex-1 min-w-0 border border-transparent focus-within:border-blue-200 transition-colors">
@@ -73,7 +76,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ amount: "", parentCat: "食", childCat: "晚餐", member: loginUser, beneficiary: [loginUser], type: "expense", desc: "", parentTitle: "", parentDesc: "", date: "" });
   
-  // 🚀 子項目加入獨立的 member (記錄帳本)
   const [subItems, setSubItems] = useState([{ id: Date.now(), parentCat: "食", childCat: "晚餐", amount: "", desc: "", beneficiary: [loginUser], member: loginUser }]);
   const otherMember = loginUser === "爸爸" ? "媽媽" : "爸爸";
   
@@ -81,21 +83,46 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
     if (!catStr) return ["食", "其他"];
     const parts = catStr.split("/");
     if (parts.length === 2) return parts;
-    return ["食", catStr];
+    return ["食", "其他"];
   };
 
   const loadShortcuts = () => {
     try {
       const saved = JSON.parse(localStorage.getItem('quick_shortcuts'));
-      if (saved && saved.left && saved.right) return saved;
+      if (saved && saved.left && saved.right) {
+        return {
+          left: { ...saved.left, memo: saved.left.memo || "" },
+          right: { ...saved.right, memo: saved.right.memo || "" }
+        };
+      }
     } catch {}
     return {
-      left: { icon: "☕️", label: "買飲料", amount: 60, category: "食/零食/飲料", memo: "買飲料" },
-      right: { icon: "⛽️", label: "加油", amount: "", category: "行/加油", memo: "機車加油" }
+      left: { icon: "☕️", label: "買飲料", amount: "", category: "食/零食/飲料", memo: "" },
+      right: { icon: "⛽️", label: "加油", amount: "", category: "行/加油", memo: "" }
     };
   };
 
   const [shortcuts, setShortcuts] = useState(loadShortcuts());
+
+  // 🚀 監聽登入者的個人專屬設定 (改讀取 members 集合)
+  useEffect(() => {
+    if (!db || !loginUser) return;
+    const unsub = onSnapshot(doc(db, 'members', loginUser), (snap) => {
+      if (snap.exists() && snap.data().shortcuts) {
+        const cloudShortcuts = snap.data().shortcuts;
+        const cloudStr = JSON.stringify(cloudShortcuts);
+        const localStr = localStorage.getItem('quick_shortcuts');
+        
+        // 將儲存與廣播 (副作用) 移到 setState 外面，絕對安全！
+        if (localStr !== cloudStr) {
+           localStorage.setItem('quick_shortcuts', cloudStr);
+           window.dispatchEvent(new Event('shortcuts_updated'));
+           setShortcuts(cloudShortcuts); 
+        }
+      }
+    });
+    return () => unsub();
+  }, [loginUser]);
 
   useEffect(() => { 
     setFormData(prev => ({ ...prev, member: loginUser || prev.member, beneficiary: [loginUser || prev.member] })); 
@@ -135,7 +162,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   const handleAddSubItem = () => { 
       const defaultP = formData.type === "expense" ? "食" : "收入"; 
       const defaultC = CATEGORY_MAP[formData.type][defaultP][0]; 
-      // 🚀 新增子項目時，預設帶入目前的 formData.member
       setSubItems([...subItems, { id: Date.now(), parentCat: defaultP, childCat: defaultC, amount: "", desc: "", beneficiary: [formData.member], member: formData.member }]); 
   };
 
@@ -150,14 +176,13 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
       const validSubs = evaluatedSubs.filter(s => Number(s.amount) > 0);
       if (validSubs.length === 0) { setIsSubmitting(false); return; }
       
-      // 🚀 核心修復：加入 groupId，並改用個別的 s.member
       const sharedGroupId = `G_${Date.now()}_${formData.member}_${Math.random().toString(36).substring(2, 7)}`;
       const combinedParentDesc = `${formData.parentTitle.trim() || "多筆紀錄"}|||${formData.parentDesc.trim()}`;
       
       const multipleTxs = validSubs.map(s => ({ 
         amount: s.amount, 
         category: `${s.parentCat}/${s.childCat}`, 
-        member: s.member || formData.member, // 🎯 套用子項目專屬帳本
+        member: s.member || formData.member,
         beneficiary: s.beneficiary.join(","), 
         type: formData.type, 
         desc: s.desc, 
@@ -175,12 +200,26 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   
   const isSubmitDisabled = isSubmitting || isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
-  const saveShortcuts = () => {
-    localStorage.setItem('quick_shortcuts', JSON.stringify(shortcuts));
+  // 🚀 儲存至 members 集合內的個人檔案
+  const saveShortcuts = async () => {
+    const finalShortcuts = {
+      left: { ...shortcuts.left, memo: shortcuts.left.memo || "" },
+      right: { ...shortcuts.right, memo: shortcuts.right.memo || "" }
+    };
+    
+    localStorage.setItem('quick_shortcuts', JSON.stringify(finalShortcuts));
     window.dispatchEvent(new Event('shortcuts_updated')); 
     if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) window.navigator.vibrate([20, 50, 20]);
     
-    setToastMsg("✅ 已儲存設定"); 
+    if (db) {
+      try {
+        await setDoc(doc(db, 'members', loginUser), { shortcuts: finalShortcuts }, { merge: true });
+      } catch (err) {
+        console.error("捷徑上傳雲端失敗", err);
+      }
+    }
+
+    setToastMsg("✅ 已同步儲存至個人雲端"); 
     setTimeout(() => {
       setToastMsg("");
       if (onClose) onClose(); 
@@ -271,7 +310,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
                           <input type="text" className="flex-[3] min-w-0 bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-2.5 py-2 rounded-xl" placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, {desc: e.target.value})} />
                           <div className="flex-[2] min-w-0 relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span><input type="text" inputMode="text" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right min-w-0" placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} onBlur={() => updateSubItem(sub.id, {amount: safeEvaluateMath(sub.amount)})} /></div>
                         </div>
-                        {/* 🚀 子項目專屬：帳本與對象選擇 */}
                         <div className="flex flex-col gap-2 pt-2 border-t border-gray-50 mt-1">
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">記錄帳本</span>
@@ -292,7 +330,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
                 </div>
               </>
             )}
-            {/* 🚀 單筆模式下，才顯示整體的記錄帳本切換 */}
             {!isSplit && (
               <div className="bg-gray-50 py-2.5 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0 mr-2">記錄帳本</label>
@@ -308,7 +345,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
           </button>
         </>
       ) : (
-        /* ⚡ 捷徑設定內容 */
         <div className="text-left animate-in space-y-4">
           
           <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 shadow-sm space-y-3">
@@ -336,7 +372,7 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
               </div>
               <div className="flex-1 min-w-0">
                 <label className="text-[10px] text-gray-500 font-bold block mb-1">預設備註 <span className="text-blue-500 font-normal">(選填)</span></label>
-                <input type="text" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-blue-300 outline-none placeholder:text-gray-300" value={shortcuts.left.memo} onChange={e => setShortcuts({...shortcuts, left: {...shortcuts.left, memo: e.target.value}})} placeholder="例如：50嵐"/>
+                <input type="text" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-blue-300 outline-none placeholder:text-gray-300" value={shortcuts.left.memo} onChange={e => setShortcuts({...shortcuts, left: {...shortcuts.left, memo: e.target.value}})} placeholder="選填..."/>
               </div>
             </div>
           </div>
@@ -366,13 +402,13 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
               </div>
               <div className="flex-1 min-w-0">
                 <label className="text-[10px] text-gray-500 font-bold block mb-1">預設備註 <span className="text-green-500 font-normal">(選填)</span></label>
-                <input type="text" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-green-300 outline-none placeholder:text-gray-300" value={shortcuts.right.memo} onChange={e => setShortcuts({...shortcuts, right: {...shortcuts.right, memo: e.target.value}})} placeholder="例如：中油95"/>
+                <input type="text" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-green-300 outline-none placeholder:text-gray-300" value={shortcuts.right.memo} onChange={e => setShortcuts({...shortcuts, right: {...shortcuts.right, memo: e.target.value}})} placeholder="選填..."/>
               </div>
             </div>
           </div>
 
           <button onClick={saveShortcuts} className="w-full mt-4 py-4 bg-gray-800 text-white rounded-2xl font-black text-lg active:scale-95 shadow-xl shadow-gray-900/30 transition flex justify-center items-center gap-2">
-            💾 儲存設定
+            💾 儲存個人專屬設定
           </button>
         </div>
       )}

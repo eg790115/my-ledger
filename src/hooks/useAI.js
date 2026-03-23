@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { postGAS, getDeviceToken, deviceValid } from '../utils/api';
 import { parseDateForSort, displayDateClean, nowStr } from '../utils/helpers';
-// 🚀 引入 Firestore 所需的寫入與監聽模組
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
@@ -19,12 +18,10 @@ const ALL_CATEGORIES = [
 ];
 
 export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
-  // 🚀 移除 Local Storage，改由 Firestore 負責存放評語
   const [aiEvalData, setAiEvalData] = useState(null);
   const [sysConfig, setSysConfig] = useState({ apiKey: "", prompt: "" });
   const [isAIEvaluating, setIsAIEvaluating] = useState(false);
 
-  // 🚀 核心修復：同時監聽「金鑰提示詞」與「最新評語結果」
   useEffect(() => {
     if (!db) return;
 
@@ -97,11 +94,11 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
       const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
       parsedResult.lastUpdated = `${todayStr} ${new Date().toLocaleTimeString('zh-TW', { hour12: false })}`;
       
-      // 🚀 核心升級：將結果直接存入 Firestore 並覆蓋舊紀錄！
+      // 🚀 核心升級：將「最後評估日期」與「筆數」一起存入 Firestore
+      parsedResult.meta_last_eval_date = todayStr;
+      parsedResult.meta_last_eval_tx_count = txCache.length;
+      
       await setDoc(doc(db, 'sysConfig', 'ai_result'), parsedResult);
-
-      localStorage.setItem('last_ai_eval_date', new Date().toLocaleDateString('zh-TW'));
-      localStorage.setItem('last_ai_eval_tx_count', txCache.length.toString());
 
       if (isManual) showStatus("success", "✅ AI 分析完成！");
 
@@ -115,19 +112,24 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
 
   const handleForceAIEval = () => executeFrontendAI(true);
 
+  // 🚀 核心修復：背景自動觸發邏輯改為比對雲端資料
   useEffect(() => {
     if (!currentUser || !txCache || txCache.length === 0 || isAIEvaluating) return;
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) return;
+    if (!aiEvalData) return; // 確保有讀到雲端資料
 
-    const todayStr = new Date().toLocaleDateString('zh-TW');
-    const lastEvalDate = localStorage.getItem('last_ai_eval_date');
-    const lastEvalCount = parseInt(localStorage.getItem('last_ai_eval_tx_count') || "0", 10);
+    const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
+    
+    // 從雲端拿上次分析的紀錄，如果沒有就預設是很久以前
+    const lastEvalDate = aiEvalData.meta_last_eval_date || "2000/01/01";
+    const lastEvalCount = parseInt(aiEvalData.meta_last_eval_tx_count || "0", 10);
 
+    // 只有當「今天還沒分析過」且「帳單總筆數大於上次分析時的筆數 (代表有新增)」才觸發
     if (todayStr !== lastEvalDate && txCache.length > lastEvalCount) {
-      console.log("🤖 偵測到有新帳單，背景自動觸發 AI 教練...");
+      console.log("🤖 偵測到雲端今日尚未分析，且有新帳單，背景自動觸發 AI 教練...");
       executeFrontendAI(false); 
     }
-  }, [currentUser, txCache, isAIEvaluating, sysConfig.apiKey]);
+  }, [currentUser, txCache, isAIEvaluating, sysConfig.apiKey, aiEvalData]);
 
   const processVoiceText = async (voiceText, currentMember) => {
     if (!sysConfig.apiKey || sysConfig.apiKey.includes('請在此填入')) {

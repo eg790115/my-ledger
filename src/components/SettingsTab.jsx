@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { SvgIcon } from './Icons';
 import { formatDateOnly, getSafeCycleRange } from '../utils/helpers';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 
 const SettingsTab = ({
   handleForceAIEval, isAIEvaluating, isSyncing, triggerVibration,
@@ -10,7 +12,7 @@ const SettingsTab = ({
   setShowUnbindModal, bindDeviceBio, setShowClearCacheModal,
   setCurrentUser, setSelectingUser, setPinInput, setActiveTab,
   syncQueue, setShowClearQueueModal, isLogOpen, setIsLogOpen,
-  txCache // 接收所有明細資料
+  txCache
 }) => {
 
   const [exportRangeType, setExportRangeType] = useState('current');
@@ -79,7 +81,6 @@ const SettingsTab = ({
 
     const escapeCSV = (str) => `"${String(str || "").replace(/"/g, '""')}"`; 
     
-    // 【左側：明細資料】
     const detailHeaders = ["日期", "類型", "大類別", "小類別", "金額", "消費對象", "明細備註", "母項目名稱(發票群組)", "母項目備註", "紀錄來源"].map(escapeCSV);
     const sortedTxs = [...targetTxs].sort((a, b) => new Date(b.date.replace(/-/g,'/')).getTime() - new Date(a.date.replace(/-/g,'/')).getTime());
     
@@ -108,13 +109,12 @@ const SettingsTab = ({
       ];
     });
 
-    // 【右側：分析總表資料】
     const analysisDataRows = [];
     if (includeAnalysis) {
       let totalIncome = 0;
       let totalExpense = 0;
       const expenseByCategory = {};
-      const expenseByBeneficiary = {}; // 🚀 新增：消費對象統計
+      const expenseByBeneficiary = {};
 
       targetTxs.forEach(tx => {
         const amt = Number(tx.amount) || 0;
@@ -122,18 +122,16 @@ const SettingsTab = ({
           totalIncome += amt;
         } else {
           totalExpense += amt;
-          // 大類別統計
           const parentCat = (tx.category || "其他/雜項").split("/")[0];
           expenseByCategory[parentCat] = (expenseByCategory[parentCat] || 0) + amt;
           
-          // 🚀 對象統計
           const ben = tx.beneficiary || "未知";
           expenseByBeneficiary[ben] = (expenseByBeneficiary[ben] || 0) + amt;
         }
       });
 
       const sortedCategories = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]);
-      const sortedBens = Object.entries(expenseByBeneficiary).sort((a, b) => b[1] - a[1]); // 排序消費對象
+      const sortedBens = Object.entries(expenseByBeneficiary).sort((a, b) => b[1] - a[1]);
 
       analysisDataRows.push([escapeCSV(`--- 財務分析總表 (${label}) ---`), ""]);
       analysisDataRows.push([escapeCSV("總收入"), totalIncome]);
@@ -146,7 +144,6 @@ const SettingsTab = ({
         analysisDataRows.push([escapeCSV(cat), amt]);
       });
       
-      // 🚀 將消費對象統計加入報表
       analysisDataRows.push(["", ""]);
       analysisDataRows.push([escapeCSV("--- 消費對象統計 ---"), ""]);
       sortedBens.forEach(([ben, amt]) => {
@@ -154,7 +151,6 @@ const SettingsTab = ({
       });
     }
 
-    // 左右合併
     const finalCsvRows = [];
     const maxRows = Math.max(detailDataRows.length + 1, analysisDataRows.length);
 
@@ -252,11 +248,23 @@ const SettingsTab = ({
           <SvgIcon name="calendar" size={16} className="text-blue-500 shrink-0" /> 記帳週期設定
         </h3>
         <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 focus-within:border-blue-200 transition-colors">
-          <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 leading-none tracking-widest">起始日 (如信用卡結帳日)</label>
+          <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 leading-none tracking-widest">起始日 (個人獨立設定)</label>
           <div className="flex items-center gap-2">
-            <select value={billingStartDay} onChange={(e) => { const newDay = Number(e.target.value); setBillingStartDay(newDay); localStorage.setItem('billing_start_day_v1', String(newDay)); }} className="flex-1 bg-transparent font-black border-none outline-none text-blue-600 text-sm min-w-0">
+            
+            {/* 🚀 寫入個人的專屬設定檔 */}
+            <select value={billingStartDay} onChange={async (e) => { 
+              const newDay = Number(e.target.value); 
+              setBillingStartDay(newDay); 
+              localStorage.setItem('billing_start_day_v1', String(newDay)); 
+              if (db) {
+                try {
+                  await setDoc(doc(db, 'members', currentUser.name), { billingStartDay: newDay }, { merge: true });
+                } catch(err) { console.error("同步週期失敗", err); }
+              }
+            }} className="flex-1 bg-transparent font-black border-none outline-none text-blue-600 text-sm min-w-0">
               {[...Array(28)].map((_, i) => <option key={i+1} value={i+1}>每月 {i+1} 號</option>)}
             </select>
+
           </div>
           <div className="mt-3 text-[10px] text-gray-500 font-bold bg-white p-2 rounded-xl border border-gray-100 leading-relaxed">
             設定後，歷史清單與圖表的「本期/上期」將以此為基準。<br/>👉 目前本期範圍：
@@ -425,9 +433,8 @@ const SettingsTab = ({
             <div className="border-l-2 border-blue-500 pl-3">
               <p className="text-gray-800 text-xs mb-1 flex items-center gap-2">APP 前端 <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded text-[9px] font-mono">v1.0</span></p>
               <ul className="list-disc pl-4 text-[10px] space-y-1 text-gray-500">
+                <li>🚀 實裝：記帳週期與捷徑自動依照「登入者」獨立雲端同步</li>
                 <li>新增「消費對象統計」至 CSV 分析總表</li>
-                <li>將分析總表合併至 CSV 右側</li>
-                <li>支援全部時間與自訂區間匯出</li>
               </ul>
             </div>
           </div>

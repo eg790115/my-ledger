@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo, Component } from 'react';
 import { APP_VERSION, LS } from './utils/constants';
 import { getParentCat, getChildCat, safeParse, safeArrayLS, safeNumberLS, nowStr, displayDateClean, parseDateForSort, getSafeCycleRange, getBenArray, getBenBadgeStyle } from './utils/helpers';
 import { gasUrl, postGAS, getDeviceToken, deviceValid, setDeviceToken } from './utils/api';
-import { collection, onSnapshot } from 'firebase/firestore';
+// 🚀 確保有引入 doc 和 setDoc，準備直連 Firestore 寫入問候語
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { db, initFirebase } from './utils/firebase';
 
 import { useSyncEngine } from './hooks/useSyncEngine';
@@ -90,9 +91,9 @@ function App() {
   }, [isVaultUnlocked]);
 
   const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
-  const [greetingsCache, setGreetingsCache] = useState(() => { try { return JSON.parse(localStorage.getItem(LS.greetingsCache)) || {}; } catch { return {}; } });
+  // 🗑️ 已刪除：原本地快取的 greetingsCache，因為現在要直連雲端了
   const [billingStartDay, setBillingStartDay] = useState(() => safeNumberLS(LS.billingStartDay, 1));
-
+  
   const [showClearCacheModal, setShowClearCacheModal] = useState(false);
   const [showLoginClearCacheModal, setShowLoginClearCacheModal] = useState(false);
   const [loginCachePassword, setLoginCachePassword] = useState("");
@@ -144,6 +145,35 @@ function App() {
     forceReloginForToken, handleBioLoginLocal, handleUserClick, bindDeviceBio, bioBound,
     handleLogin
   } = useAuth({ isOnline, showStatus, setLoadingCard, triggerVibration }) || {};
+
+  useEffect(() => {
+    if (!db || !currentUser?.name) return;
+    
+    const unsub = onSnapshot(doc(db, 'members', currentUser.name), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+
+        if (data.billingStartDay) {
+          setBillingStartDay(data.billingStartDay);
+          localStorage.setItem('billing_start_day_v1', String(data.billingStartDay));
+        }
+
+        if (data.shortcuts) {
+          localStorage.setItem('quick_shortcuts', JSON.stringify(data.shortcuts));
+          window.dispatchEvent(new Event('shortcuts_updated'));
+        }
+
+        // 🚀 3. 同步個人問候語 (瞬間更新，不需再靠 GAS)
+        if (data.greeting) {
+          setCustomSubtitle(data.greeting);
+        } else {
+          setCustomSubtitle("{name}，你好！");
+        }
+      }
+    });
+    return () => unsub();
+  }, [currentUser?.name]);
+
 
   const { txCache = [], trashCache = [], isSyncing = false, syncQueue = [], requestSync = () => {} } = useSyncEngine({ currentUser }) || {};
 
@@ -216,6 +246,7 @@ function App() {
     setVoiceReviewTxs(null); 
   };
 
+  // 🚀 完整替換：已經修復「空白備註不會亂帶名稱」的全新寫法
   const handleQuickAdd = (side, manualAmount) => {
     if (!side || typeof side !== 'string' || side.nativeEvent) return; 
     if (triggerVibration) triggerVibration([20, 40]);
@@ -243,7 +274,7 @@ function App() {
     const newTx = {
         amount: finalAmount,
         category: targetShortcut.category || "其他/雜項",
-        desc: targetShortcut.memo || targetShortcut.label || "",
+        desc: targetShortcut.memo !== undefined ? targetShortcut.memo : "", 
         type: type,
         date: nowStr().replace('T', ' '),
         timestamp: Date.now(),
@@ -257,7 +288,9 @@ function App() {
 
   useEffect(() => { if (activeTab === "analysis") { setAnimTrigger(false); const timer = setTimeout(() => setAnimTrigger(true), 50); return () => clearTimeout(timer); } }, [activeTab, analysisType, analysisDateFilter]);
   useEffect(() => { const handleNetworkChange = () => { if (setIsOnline) setIsOnline(navigator.onLine); }; window.addEventListener('online', handleNetworkChange); window.addEventListener('offline', handleNetworkChange); return () => { window.removeEventListener('online', handleNetworkChange); window.removeEventListener('offline', handleNetworkChange); }; }, [setIsOnline]);
-  useEffect(() => { if (currentUser?.name && greetingsCache && greetingsCache[currentUser.name]) setCustomSubtitle(String(greetingsCache[currentUser.name])); else if (currentUser) setCustomSubtitle("{name}，你好！"); }, [currentUser, greetingsCache]);
+  
+  // 🗑️ 已刪除：原本依賴 greetingsCache 切換名稱的 useEffect
+  
   useEffect(() => { const timer = setTimeout(() => { setDebouncedHistorySearch(historySearch); setDebouncedHistoryExcludeSearch(historyExcludeSearch); }, 350); return () => clearTimeout(timer); }, [historySearch, historyExcludeSearch]);
   useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
   useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]);
@@ -285,15 +318,18 @@ function App() {
     return data; 
   };
   
+  // 🚀 全新替換：直連 Firestore 儲存問候語，拔除 GAS 的依賴
   const handleSaveGreeting = async () => {
-    if (!isOnline || !deviceValid()) { showStatus("error", "需連線才能儲存問候語"); return; }
+    if (!db || !currentUser?.name) { showStatus("error", "資料庫未連線"); return; }
     try {
-      setLoadingCard({ show:true, text:"正在儲存..." }); await refreshDeviceToken();
-      const safeName = currentUser?.name || "未知";
-      const res = await postGAS({ action: "UPDATE_GREETING", name: safeName, greeting: customSubtitle, deviceToken: getDeviceToken() });
-      if (res.result !== "success") throw new Error(res.message);
-      setGreetingsCache(prev => ({...prev, [safeName]: customSubtitle})); showStatus("success", "✅ 問候語已更新");
-    } catch (e) { setLoadingCard({ show:false, text:"" }); showStatus("error", e.message || "儲存失敗"); } finally { setLoadingCard({ show:false, text:"" }); }
+      setLoadingCard({ show: true, text: "正在儲存..." });
+      await setDoc(doc(db, 'members', currentUser.name), { greeting: customSubtitle }, { merge: true });
+      showStatus("success", "✅ 問候語已同步至個人雲端");
+    } catch (e) { 
+      showStatus("error", e.message || "儲存失敗"); 
+    } finally { 
+      setLoadingCard({ show: false, text: "" }); 
+    }
   };
 
   const currentCycleRange = useMemo(() => getSafeCycleRange(new Date(), billingStartDay, 0), [billingStartDay]);

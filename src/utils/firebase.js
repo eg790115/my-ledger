@@ -1,25 +1,24 @@
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeApp } from "firebase/app";
+// 🚀 引入離線快取模組：enableIndexedDbPersistence
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 
-export let db = null;
+let app;
+export let db;
 
-// 這個函式負責接收從 GAS 傳來的機密鑰匙，然後瞬間組裝 Firebase
-export const initFirebase = (firebaseConfig) => {
-  if (!firebaseConfig || !firebaseConfig.projectId) {
-    throw new Error("❌ 無效的 Firebase 設定檔，請確認 GAS 回傳資料");
-  }
-  
-  try {
-    let app;
-    if (!getApps().length) {
-      app = initializeApp(firebaseConfig);
-    } else {
-      app = getApps()[0];
-    }
+export const initFirebase = (config) => {
+  if (!app) {
+    app = initializeApp(config);
     db = getFirestore(app);
-    return db;
-  } catch (error) {
-    console.error("🔥 Firebase 組裝失敗:", error);
-    throw error;
+
+    // 🚀 啟動超強的離線模式！
+    // 即使在沒有網路的地下室，APP 也能開啟、讀取舊帳單，並且允許你新增/刪除帳項。
+    // 等到網路一恢復，Firestore 就會自動在背景把所有操作同步上雲端。
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code == 'failed-precondition') {
+        console.warn("離線快取啟動失敗：可能開啟了多個分頁");
+      } else if (err.code == 'unimplemented') {
+        console.warn("這個瀏覽器不支援離線快取");
+      }
+    });
   }
 };
