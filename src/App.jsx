@@ -91,7 +91,6 @@ function App() {
   }, [isVaultUnlocked]);
 
   const [customSubtitle, setCustomSubtitle] = useState("{name}，你好！");
-  // 🗑️ 已刪除：原本地快取的 greetingsCache，因為現在要直連雲端了
   const [billingStartDay, setBillingStartDay] = useState(() => safeNumberLS(LS.billingStartDay, 1));
   
   const [showClearCacheModal, setShowClearCacheModal] = useState(false);
@@ -163,7 +162,6 @@ function App() {
           window.dispatchEvent(new Event('shortcuts_updated'));
         }
 
-        // 🚀 3. 同步個人問候語 (瞬間更新，不需再靠 GAS)
         if (data.greeting) {
           setCustomSubtitle(data.greeting);
         } else {
@@ -184,7 +182,8 @@ function App() {
   } = useTransactions({ currentUser, txCache, trashCache, triggerVibration, showStatus, setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal }) || {};
 
   const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText, processImageReceipt } = useAI({ currentUser, isOnline, txCache, showStatus }) || {};
-const handleImageRecordStop = async (base64, mimeType) => {
+  
+  const handleImageRecordStop = async (base64, mimeType) => {
     const safeName = currentUser?.name || "未知";
     setLoadingCard({ show: true, text: "📸 AI 正在用力看圖識字中..." });
     try {
@@ -196,6 +195,7 @@ const handleImageRecordStop = async (base64, mimeType) => {
       setLoadingCard({ show: false, text: "" }); 
     }
   };
+  
   const fallbackHandleLogin = async (user, pin) => {
     setLoadingCard({ show: true, text: "登入中..." });
     try {
@@ -257,7 +257,6 @@ const handleImageRecordStop = async (base64, mimeType) => {
     setVoiceReviewTxs(null); 
   };
 
-  // 🚀 完整替換：已經修復「空白備註不會亂帶名稱」的全新寫法
   const handleQuickAdd = (side, manualAmount) => {
     if (!side || typeof side !== 'string' || side.nativeEvent) return; 
     if (triggerVibration) triggerVibration([20, 40]);
@@ -300,8 +299,6 @@ const handleImageRecordStop = async (base64, mimeType) => {
   useEffect(() => { if (activeTab === "analysis") { setAnimTrigger(false); const timer = setTimeout(() => setAnimTrigger(true), 50); return () => clearTimeout(timer); } }, [activeTab, analysisType, analysisDateFilter]);
   useEffect(() => { const handleNetworkChange = () => { if (setIsOnline) setIsOnline(navigator.onLine); }; window.addEventListener('online', handleNetworkChange); window.addEventListener('offline', handleNetworkChange); return () => { window.removeEventListener('online', handleNetworkChange); window.removeEventListener('offline', handleNetworkChange); }; }, [setIsOnline]);
   
-  // 🗑️ 已刪除：原本依賴 greetingsCache 切換名稱的 useEffect
-  
   useEffect(() => { const timer = setTimeout(() => { setDebouncedHistorySearch(historySearch); setDebouncedHistoryExcludeSearch(historyExcludeSearch); }, 350); return () => clearTimeout(timer); }, [historySearch, historyExcludeSearch]);
   useEffect(() => { if (activeTab !== "analysis") { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); setAnalysisType("expense"); } }, [activeTab]);
   useEffect(() => { setSelectedAnalysisLevel1(null); setSelectedAnalysisLevel2(null); }, [analysisType, analysisDateFilter, analysisCustomStart, analysisCustomEnd]);
@@ -329,7 +326,6 @@ const handleImageRecordStop = async (base64, mimeType) => {
     return data; 
   };
   
-  // 🚀 全新替換：直連 Firestore 儲存問候語，拔除 GAS 的依賴
   const handleSaveGreeting = async () => {
     if (!db || !currentUser?.name) { showStatus("error", "資料庫未連線"); return; }
     try {
@@ -655,95 +651,93 @@ const handleImageRecordStop = async (base64, mimeType) => {
       )}
 
       {voiceReviewTxs && (() => {
-  const editingIdx = (voiceReviewTxs || []).findIndex(t => t.isEditing);
-  
-  // 1. 單筆編輯模式
-  if (editingIdx !== -1) {
-    return (
-      <EditTransactionModal 
-        tx={voiceReviewTxs[editingIdx]} 
-        loginUser={currentUser?.name || "未知"} 
-        onSave={(updatedTx) => { 
-          const newTxs = [...(voiceReviewTxs || [])]; 
-          delete updatedTx.isEditing; 
-          newTxs[editingIdx] = updatedTx; 
-          setVoiceReviewTxs(newTxs); 
-        }} 
-        onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} 
-        onCancel={() => { 
-          if(triggerVibration) triggerVibration(10); 
-          const newTxs = [...(voiceReviewTxs || [])]; 
-          delete newTxs[editingIdx].isEditing; 
-          setVoiceReviewTxs(newTxs); 
-        }} 
-      />
-    );
-  }
+        const editingIdx = (voiceReviewTxs || []).findIndex(t => t.isEditing);
+        
+        // 1. 單筆編輯模式
+        if (editingIdx !== -1) {
+          return (
+            <EditTransactionModal 
+              tx={voiceReviewTxs[editingIdx]} 
+              loginUser={currentUser?.name || "未知"} 
+              onSave={(updatedTx) => { 
+                const newTxs = [...(voiceReviewTxs || [])]; 
+                delete updatedTx.isEditing; 
+                newTxs[editingIdx] = updatedTx; 
+                setVoiceReviewTxs(newTxs); 
+              }} 
+              onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} 
+              onCancel={() => { 
+                if(triggerVibration) triggerVibration(10); 
+                const newTxs = [...(voiceReviewTxs || [])]; 
+                delete newTxs[editingIdx].isEditing; 
+                setVoiceReviewTxs(newTxs); 
+              }} 
+            />
+          );
+        }
 
-  // 2. 總覽清單模式 (對齊歷史清單樣式)
-  return (
-    <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
-      <div className="bg-gray-50 w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
-        <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
-          <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
-        </h3>
-        <p className="text-[10px] text-gray-400 font-bold mb-4 bg-white p-2 rounded-lg border border-gray-100 uppercase tracking-widest text-center">
-          請檢查明細，點擊右下角編輯圖示即可修正
-        </p>
+        // 2. AI 解析結果總覽清單
+        return (
+          <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in" onClick={() => setVoiceReviewTxs(null)}>
+            <div className="bg-gray-50 w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh] animate-slide-up" onClick={e => e.stopPropagation()}>
+              <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
+                <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
+              </h3>
+              <p className="text-[10px] text-gray-400 font-bold mb-4 bg-white p-2 rounded-lg border border-gray-100 uppercase tracking-widest text-center">
+                請檢查明細，點擊右下角編輯圖示即可修正
+              </p>
 
-        <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4 space-y-3">
-          {(voiceReviewTxs || []).length === 0 ? (
-            <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-3xl border border-gray-100">已清空所有紀錄</div>
-          ) : (
-            (voiceReviewTxs || []).map((tx, idx) => (
-              <div key={idx} className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
-                {/* 🚀 直接調用核心組件，保證與歷史清單視覺統一 */}
-                <TransactionCard 
-                  tx={tx} 
-                  allowEdit={true} 
-                  currentUser={currentUser}
-                  triggerVibration={triggerVibration}
-                  setEditingTx={() => {
-                    if(triggerVibration) triggerVibration(10);
-                    const newTxs = [...voiceReviewTxs];
-                    const target = newTxs[idx];
-                    // 補齊分類斜線邏輯
-                    if (target.category && !target.category.includes('/')) {
-                      if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他";
-                      else if (target.category.includes('衣')) target.category = "衣/其他";
-                      else if (target.category.includes('行')) target.category = "行/其他";
-                      else target.category = "雜項/其他";
-                    }
-                    target.isEditing = true;
-                    if (!target.id) target.id = "temp_" + Date.now();
-                    setVoiceReviewTxs(newTxs);
-                  }}
-                  pendingMap={{}}
-                  auditLogs={[]}
-                />
+              <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4 space-y-3">
+                {(voiceReviewTxs || []).length === 0 ? (
+                  <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-3xl border border-gray-100">已清空所有紀錄</div>
+                ) : (
+                  (voiceReviewTxs || []).map((tx, idx) => (
+                    <div key={idx} className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
+                      <TransactionCard 
+                        tx={tx} 
+                        allowEdit={true} 
+                        currentUser={currentUser}
+                        triggerVibration={triggerVibration}
+                        setEditingTx={() => {
+                          if(triggerVibration) triggerVibration(10);
+                          const newTxs = [...voiceReviewTxs];
+                          const target = newTxs[idx];
+                          if (target.category && !target.category.includes('/')) {
+                            if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他";
+                            else if (target.category.includes('衣')) target.category = "衣/其他";
+                            else if (target.category.includes('行')) target.category = "行/其他";
+                            else target.category = "雜項/其他";
+                          }
+                          target.isEditing = true;
+                          if (!target.id) target.id = "temp_" + Date.now();
+                          setVoiceReviewTxs(newTxs);
+                        }}
+                        pendingMap={{}}
+                        auditLogs={[]}
+                      />
+                    </div>
+                  ))
+                )}
               </div>
-            ))
-          )}
-        </div>
 
-        <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1">
-          <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">
-            取消退出
-          </button>
-          <button 
-            onClick={handleConfirmVoice} 
-            disabled={(voiceReviewTxs || []).length === 0} 
-            className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
-          >
-            確認並寫入 ({(voiceReviewTxs || []).length}筆)
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-})()}
+              <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1">
+                <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">
+                  取消退出
+                </button>
+                <button 
+                  onClick={handleConfirmVoice} 
+                  disabled={(voiceReviewTxs || []).length === 0} 
+                  className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
+                >
+                  確認並寫入 ({(voiceReviewTxs || []).length}筆)
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       
-      {editingTx && ( <EditTransactionModal tx={editingTx} loginUser={currentUser?.name || "未知"} onSave={(tx) => handleUpdateTx(tx)} onDelete={(tx) => handleDeleteTx(tx)} onCancel={() => { if(triggerVibration) triggerVibration(10); setEditingTx(null); }} /> )}
+      {editingTx && !voiceReviewTxs && ( <EditTransactionModal tx={editingTx} loginUser={currentUser?.name || "未知"} onSave={(tx) => handleUpdateTx(tx)} onDelete={(tx) => handleDeleteTx(tx)} onCancel={() => { if(triggerVibration) triggerVibration(10); setEditingTx(null); }} /> )}
       
       {editingGroup && ( 
         <EditGroupParentModal 
@@ -954,8 +948,9 @@ const handleImageRecordStop = async (base64, mimeType) => {
             </div>
           )}
           {activeTab === "history" && ( <HistoryTab setQuickDateFilter={setQuickDateFilter} historyDateFilter={historyDateFilter} setHistoryDateFilter={setHistoryDateFilter} setHistorySearch={setHistorySearch} setHistoryExcludeSearch={setHistoryExcludeSearch} setHistoryTypeFilter={setHistoryTypeFilter} historySearch={historySearch} historyExcludeSearch={historyExcludeSearch} triggerVibration={triggerVibration} setShowTrashModal={setShowTrashModal} setConfirmHardDeleteId={setConfirmHardDeleteId} setShowConfirmEmptyTrash={setShowConfirmEmptyTrash} showSearchFilterModal={showSearchFilterModal} setShowSearchFilterModal={setShowSearchFilterModal} debouncedHistorySearch={debouncedHistorySearch} debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch} historyTypeFilter={historyTypeFilter} isHistoryFiltered={isHistoryFiltered} historyFilteredStats={historyFilteredStats} filteredHistoryGroups={filteredHistoryGroups || []} renderItemOrGroup={renderItemOrGroup} /> )}
+          {/* 🚀 這裡已經徹底修復了 .map 找不到對象的語法錯誤 */}
           {activeTab === "analysis" && ( <AnalysisTab analysisDateFilter={analysisDateFilter} setAnalysisDateFilter={setAnalysisDateFilter} setSelectedAnalysisLevel1={setSelectedAnalysisLevel1} setSelectedAnalysisLevel2={setSelectedAnalysisLevel2} analysisCustomStart={analysisCustomStart} setAnalysisCustomStart={setAnalysisCustomStart} analysisCustomEnd={analysisCustomEnd} setAnalysisCustomEnd={setAnalysisCustomEnd} analysisType={analysisType} setAnalysisType={setAnalysisType} aiEvalData={aiEvalData} currentUser={currentUser} isAIEvaluating={isAIEvaluating} handleForceAIEval={handleForceAIEval} myTransactions={myTransactions || []} billingStartDay={billingStartDay} pendingMap={{}} selectedAnalysisLevel1={selectedAnalysisLevel1} setAnalysisDetailData={setAnalysisDetailData} animTrigger={animTrigger} triggerVibration={triggerVibration} renderItemOrGroup={renderItemOrGroup} snapshotsCache={snapshotsCache} /> )}
-          {activeTab === "add" && ( <AddTransactionForm loginUser={currentUser?.name || "未知"} onSubmit={(tx) => handleAdd(tx)} onClose={() => setActiveTab('dashboard')} onImageRecordStop={handleImageRecordStop} isAIEvaluating={isAIEvaluating || loadingCard.show} /> )}
+          {activeTab === "add" && ( <AddTransactionForm loginUser={currentUser?.name || "未知"} onSubmit={(tx) => handleAdd(tx)} onClose={() => setActiveTab('history')} onImageRecordStop={handleImageRecordStop} isAIEvaluating={isAIEvaluating || loadingCard.show} /> )}
           {activeTab === "settings" && ( <SettingsTab handleForceAIEval={handleForceAIEval} txCache={visibleTransactions} isAIEvaluating={isAIEvaluating} isSyncing={isSyncing} triggerVibration={triggerVibration} billingStartDay={billingStartDay} setBillingStartDay={setBillingStartDay} currentCycleRange={currentCycleRange} customSubtitle={customSubtitle} setCustomSubtitle={setCustomSubtitle} handleSaveGreeting={handleSaveGreeting} currentUser={currentUser} setShowChangePinModal={setShowChangePinModal} bioBound={bioBound} setUnbindPin={setUnbindPin} setShowUnbindModal={setShowUnbindModal} bindDeviceBio={bindDeviceBio} setShowClearCacheModal={setShowClearCacheModal} setCurrentUser={setCurrentUser} setSelectingUser={setSelectingUser} setPinInput={setPinInput} setActiveTab={setActiveTab} syncQueue={syncQueue || []} setShowClearQueueModal={setShowClearQueueModal} isLogOpen={isLogOpen} setIsLogOpen={setIsLogOpen} /> )}
         </ErrorBoundary>
       </main>
