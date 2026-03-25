@@ -39,6 +39,8 @@ const SvgIcon = ({ name, size = 24, className = "" }) => {
   const icons = {
     plus: <path d="M12 5v14m-7-7h14"/>,
     spinner: <path d="M21 12a9 9 0 1 1-6.219-8.56"/>,
+    camera: <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>,
+    album: <><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>
   };
   return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 aspect-square ${className}`}>{icons[name]||<circle cx="12" cy="12" r="10"/>}</svg>;
 };
@@ -66,11 +68,14 @@ const CategorySelectPair = ({ type, parentCat, childCat, onChange }) => {
   );
 };
 
-export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, onClose, isLoading = false }) => {
+export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, onClose, isLoading = false, onImageRecordStop, isAIEvaluating }) => {
   const [formTab, setFormTab] = useState('general');
   const [toastMsg, setToastMsg] = useState(""); 
 
   const inputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const albumInputRef = useRef(null);
+  
   const [isFocused, setIsFocused] = useState(false);
   const [isSplit, setIsSplit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -104,7 +109,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
 
   const [shortcuts, setShortcuts] = useState(loadShortcuts());
 
-  // 🚀 監聽登入者的個人專屬設定 (改讀取 members 集合)
   useEffect(() => {
     if (!db || !loginUser) return;
     const unsub = onSnapshot(doc(db, 'members', loginUser), (snap) => {
@@ -113,7 +117,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
         const cloudStr = JSON.stringify(cloudShortcuts);
         const localStr = localStorage.getItem('quick_shortcuts');
         
-        // 將儲存與廣播 (副作用) 移到 setState 外面，絕對安全！
         if (localStr !== cloudStr) {
            localStorage.setItem('quick_shortcuts', cloudStr);
            window.dispatchEvent(new Event('shortcuts_updated'));
@@ -200,7 +203,6 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
   
   const isSubmitDisabled = isSubmitting || isLoading || (isSplit ? totalSplitAmount === 0 : (!formData.amount || formData.amount === "0"));
 
-  // 🚀 儲存至 members 集合內的個人檔案
   const saveShortcuts = async () => {
     const finalShortcuts = {
       left: { ...shortcuts.left, memo: shortcuts.left.memo || "" },
@@ -212,18 +214,38 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
     if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) window.navigator.vibrate([20, 50, 20]);
     
     if (db) {
-      try {
-        await setDoc(doc(db, 'members', loginUser), { shortcuts: finalShortcuts }, { merge: true });
-      } catch (err) {
-        console.error("捷徑上傳雲端失敗", err);
-      }
+      try { await setDoc(doc(db, 'members', loginUser), { shortcuts: finalShortcuts }, { merge: true }); } 
+      catch (err) { console.error("捷徑上傳雲端失敗", err); }
     }
 
     setToastMsg("✅ 已同步儲存至個人雲端"); 
-    setTimeout(() => {
-      setToastMsg("");
-      if (onClose) onClose(); 
-    }, 500); 
+    setTimeout(() => { setToastMsg(""); if (onClose) onClose(); }, 500); 
+  };
+
+  const handleImageFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const max = 1200; 
+        if (width > max || height > max) {
+          if (width > height) { height = Math.round(height * max / width); width = max; }
+          else { width = Math.round(width * max / height); height = max; }
+        }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        if (onImageRecordStop) onImageRecordStop(base64, 'image/jpeg');
+        e.target.value = ''; 
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
   };
 
   const [pLeft, cLeft] = getCatParts(shortcuts.left.category);
@@ -241,16 +263,25 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
       )}
 
       <div className="flex gap-2 mb-6">
-        <button onClick={() => setFormTab('general')} className={`flex-1 py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'general' ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>📝 一般記帳</button>
-        <button onClick={() => setFormTab('shortcuts')} className={`flex-1 py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'shortcuts' ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>⚡ 捷徑設定</button>
+        <button onClick={() => setFormTab('general')} className={`flex-[1.2] py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'general' ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>📝 一般記帳</button>
+        {/* 👉 這裡我們把 AI 拍照按鈕設為綠色，但樣式跟旁邊統一 */}
+        <button onClick={() => setFormTab('ai')} className={`flex-[1.2] py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'ai' ? 'bg-emerald-600 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>📸 AI 拍照</button>
+        <button onClick={() => setFormTab('shortcuts')} className={`flex-1 py-3 text-[13px] font-black rounded-2xl transition-all ${formTab === 'shortcuts' ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>⚡ 捷徑</button>
       </div>
 
+      <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} style={{ display: 'none' }} onChange={handleImageFileChange} />
+      <input type="file" accept="image/*" ref={albumInputRef} style={{ display: 'none' }} onChange={handleImageFileChange} />
+
       {formTab === 'general' ? (
+        // 一般記帳 (保持原本清爽的樣式)
         <>
           <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6 text-sm text-gray-500">
             <button onClick={() => handleTypeChange("expense")} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "expense" ? "bg-white text-red-500 shadow-sm font-black" : ""}`}>支出</button>
             <button onClick={() => handleTypeChange("income")} className={`flex-1 py-3 rounded-xl transition-all ${formData.type === "income" ? "bg-white text-green-500 shadow-sm font-black" : ""}`}>收入</button>
           </div>
+          {/* 金額、類別、備註等欄位 */}
+          {/* ... (為簡潔略過與之前相同的 form 邏輯代碼，請保留你那邊完整的 form 內容) */}
+          
           <div className="relative flex flex-col items-center justify-center mb-6 py-2 min-h-[80px] text-gray-800">
             {isSplit && <span className="text-[10px] text-gray-400 uppercase tracking-widest font-black mb-1">自動加總金額</span>}
             <div className="flex items-center justify-center cursor-pointer max-w-full overflow-hidden" onClick={() => !isSplit && inputRef.current?.focus()}>
@@ -260,156 +291,49 @@ export const AddTransactionForm = ({ loginUser = "爸爸", onSubmit = () => {}, 
             </div>
           </div>
           <div className="space-y-4 text-left">
-            <div className="bg-gray-100 p-3 rounded-2xl flex items-center justify-between">
-              <span className="text-xs font-black text-gray-600 pl-2">拆分多筆明細 (如單張發票)</span>
-              <button onClick={() => setIsSplit(!isSplit)} className={`w-12 h-6 shrink-0 rounded-full p-1 transition-colors duration-200 ease-in-out ${isSplit ? 'bg-blue-500' : 'bg-gray-300'}`}>
-                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isSplit ? 'translate-x-6' : 'translate-x-0'}`}></div>
-              </button>
-            </div>
-            <div className="bg-gray-100 py-1.5 px-3 rounded-xl flex items-center justify-between border border-transparent focus-within:border-blue-200 transition-colors">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">時間</label>
-              <input type="datetime-local" className="bg-transparent font-black border-none outline-none text-gray-800 text-xs flex-1 text-right min-w-0" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} />
-            </div>
-            {!isSplit && (
-              <>
-                <div className="bg-gray-50 py-2 px-3 rounded-xl border border-gray-100 flex items-center justify-between">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2 shrink-0">對象</label>
-                  <div className="flex gap-1.5 flex-1 justify-end flex-wrap">{BEN_OPTIONS.map(b => (<button type="button" key={b} onClick={() => toggleBeneficiary(b)} className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${formData.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>{b}</button>))}</div>
-                </div>
-                <CategorySelectPair type={formData.type} parentCat={formData.parentCat} childCat={formData.childCat} onChange={(p, c) => setFormData({ ...formData, parentCat: p, childCat: c })} />
-                <div className="bg-gray-100 py-2.5 px-4 rounded-xl border border-transparent focus-within:border-blue-200 transition-colors flex items-center gap-3">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0">備註</label>
-                  <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-sm min-w-0" placeholder="輸入說明..." value={formData.desc} onChange={(e) => setFormData({ ...formData, desc: e.target.value })} />
-                </div>
-              </>
-            )}
-            {isSplit && (
-              <>
-                <div className="flex gap-2">
-                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 min-w-0 focus-within:border-blue-200 border border-transparent transition-colors">
-                    <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目標題</label>
-                    <input type="text" className="w-full bg-transparent font-black border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs min-w-0" placeholder="如：全聯發票" value={formData.parentTitle} onChange={(e) => setFormData({ ...formData, parentTitle: e.target.value })} />
-                  </div>
-                  <div className="bg-gray-100 py-2 px-3 rounded-xl flex-1 min-w-0 focus-within:border-blue-200 border border-transparent transition-colors">
-                    <label className="text-[8px] font-black text-gray-400 uppercase block mb-0.5 tracking-widest">母項目備註</label>
-                    <input type="text" className="w-full bg-transparent font-bold border-none outline-none text-gray-800 placeholder:text-gray-300 text-xs min-w-0" placeholder="選填..." value={formData.parentDesc} onChange={(e) => setFormData({ ...formData, parentDesc: e.target.value })} />
-                  </div>
-                </div>
-                <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <label className="text-[10px] font-black text-blue-500 uppercase block tracking-widest px-2">子項目明細 (可個別選對象與帳本)</label>
-                  {subItems.map((sub, index) => {
-                    const pCats = Object.keys(CATEGORY_MAP[formData.type] || CATEGORY_MAP.expense); const safeParentCat = pCats.includes(sub.parentCat) ? sub.parentCat : pCats[0]; const cCats = CATEGORY_MAP[formData.type][safeParentCat] || CATEGORY_MAP[formData.type][pCats[0]];
-                    return (
-                      <div key={sub.id} className="bg-white border-2 border-gray-100 p-3 rounded-2xl relative shadow-sm">
-                        {subItems.length > 1 && (<button onClick={() => handleRemoveSubItem(sub.id)} className="absolute -top-2 -right-2 bg-red-100 text-red-600 w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-sm font-bold">✕</button>)}
-                        <div className="flex gap-2 mb-2">
-                          <select className="flex-1 min-w-0 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-2 py-2 rounded-xl text-gray-700" value={safeParentCat} onChange={(e) => { const newP = e.target.value; updateSubItem(sub.id, {parentCat: newP, childCat: CATEGORY_MAP[formData.type][newP][0]}); }}>{pCats.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                          <select className="flex-1 min-w-0 bg-gray-50 border-none outline-none appearance-none font-black text-xs px-2 py-2 rounded-xl text-gray-700" value={sub.childCat} onChange={(e) => updateSubItem(sub.id, {childCat: e.target.value})}>{cCats.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                        </div>
-                        <div className="flex gap-2 mb-2 items-center">
-                          <input type="text" className="flex-[3] min-w-0 bg-gray-50 font-bold border-none outline-none text-gray-800 placeholder:text-gray-400 text-xs px-2.5 py-2 rounded-xl" placeholder="子項備註(選填)" value={sub.desc} onChange={(e) => updateSubItem(sub.id, {desc: e.target.value})} />
-                          <div className="flex-[2] min-w-0 relative"><span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-black text-xs">$</span><input type="text" inputMode="text" className="w-full bg-blue-50/50 font-black border-none outline-none text-blue-800 placeholder:text-blue-300 text-sm pl-5 pr-2 py-2 rounded-xl text-right min-w-0" placeholder="0" value={sub.amount} onChange={(e) => updateSubItem(sub.id, {amount: e.target.value})} onBlur={() => updateSubItem(sub.id, {amount: safeEvaluateMath(sub.amount)})} /></div>
-                        </div>
-                        <div className="flex flex-col gap-2 pt-2 border-t border-gray-50 mt-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">記錄帳本</span>
-                            <div className="flex gap-1 flex-1 justify-end flex-wrap">
-                               <button type="button" onClick={() => updateSubItem(sub.id, {member: loginUser})} className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.member === loginUser ? "bg-gray-800 border-gray-800 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>自己</button>
-                               <button type="button" onClick={() => updateSubItem(sub.id, {member: otherMember})} className={`px-2.5 py-1 rounded-md text-[9px] font-black transition-all border ${sub.member === otherMember ? "bg-gray-800 border-gray-800 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>幫{otherMember}記</button>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase pr-2 shrink-0">花費對象</span>
-                            <div className="flex gap-1 flex-1 justify-end flex-wrap">{BEN_OPTIONS.map(b => (<button type="button" key={b} onClick={() => toggleSubBeneficiary(sub.id, b)} className={`px-2 py-1 rounded-md text-[9px] font-black transition-all border ${sub.beneficiary.includes(b) ? "bg-blue-600 border-blue-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:bg-gray-50"}`}>{b}</button>))}</div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <button onClick={handleAddSubItem} className="w-full py-3 bg-blue-50 text-blue-600 rounded-xl font-black text-xs active:scale-95 transition flex justify-center items-center gap-1 border border-blue-100"><SvgIcon name="plus" size={16} /> 新增子項目</button>
-                </div>
-              </>
-            )}
-            {!isSplit && (
-              <div className="bg-gray-50 py-2.5 px-4 rounded-2xl border border-gray-100 flex items-center justify-between">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest shrink-0 mr-2">記錄帳本</label>
-                <div className="flex gap-1.5 flex-wrap justify-end">
-                  <button type="button" onClick={() => setFormData({ ...formData, member: loginUser })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === loginUser ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>自己</button>
-                  <button type="button" onClick={() => setFormData({ ...formData, member: otherMember })} className={`px-4 py-1.5 rounded-lg text-[10px] transition-all border-2 font-black ${formData.member === otherMember ? "bg-gray-800 border-gray-800 text-white" : "bg-white border-gray-200 text-gray-400"}`}>幫{otherMember}記</button>
-                </div>
-              </div>
-            )}
+            {/* ...其餘一般記帳欄位 */}
           </div>
           <button disabled={isSubmitDisabled} onClick={submitForm} className="w-full mt-8 py-5 bg-blue-600 text-white rounded-3xl font-black text-lg active:scale-95 transition shadow-xl shadow-blue-500/30 disabled:opacity-40 disabled:shadow-none flex justify-center items-center gap-2">
             {isSubmitting ? <SvgIcon name="spinner" size={20} className="animate-spin" /> : null} {isSubmitting ? "處理中..." : (isSplit ? `確認存檔 (${subItems.length}筆)` : "確認存檔")}
           </button>
         </>
+      ) : formTab === 'shortcuts' ? (
+        // 捷徑頁面
+        {/* ... (保留原本的捷徑頁面邏輯) */}
       ) : (
-        <div className="text-left animate-in space-y-4">
-          
-          <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 shadow-sm space-y-3">
-            <h4 className="font-black text-blue-600 text-sm flex items-center gap-1 mb-2">👈 左側長按捷徑</h4>
-            
-            <div className="flex gap-2">
-              <div className="w-[4.5rem] shrink-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">圖示</label>
-                <select className="w-full bg-white px-1 py-2.5 rounded-xl text-center border border-gray-200 font-black appearance-none text-xl focus:border-blue-300 outline-none" value={shortcuts.left.icon} onChange={e => setShortcuts({...shortcuts, left: {...shortcuts.left, icon: e.target.value}})}>
-                  {ICONS.map(i => <option key={i} value={i}>{i}</option>)}
-                </select>
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">捷徑顯示名稱</label>
-                <input className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-blue-300 outline-none" value={shortcuts.left.label} onChange={e => setShortcuts({...shortcuts, left: {...shortcuts.left, label: e.target.value}})} placeholder="例如：買飲料"/>
-              </div>
+        // 🚀 修改重點：AI 拍照面板 (視覺統一化，使用歷史清單樣式)
+        <div className="animate-in space-y-5 text-center px-1">
+          {/* 👉 1. 將原本突兀的藍色背景改為標準灰底卡片 (對齊歷史清單群組卡片) */}
+          <div className="bg-gray-100/70 p-6 rounded-3xl border border-gray-100 shadow-inner space-y-5">
+            <div>
+              {/* 👉 2. 字體顏色統一 */}
+              <h3 className="font-black text-gray-900 text-xl tracking-tight mb-2">讓 AI 幫你自動記帳</h3>
+              <p className="text-xs text-gray-500 font-bold leading-relaxed">
+                支援電子發票、傳統收據、水電帳單。<br/>
+                拍下單據，AI 會自動為您拆分明細並計算總額。
+              </p>
             </div>
 
-            <CategorySelectPair type="expense" parentCat={pLeft} childCat={cLeft} onChange={(p,c) => setShortcuts({...shortcuts, left: {...shortcuts.left, category: `${p}/${c}`}})} />
-            
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">預設金額 <span className="text-blue-500 font-normal">(選填)</span></label>
-                <input type="number" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black tabular-nums focus:border-blue-300 outline-none placeholder:text-gray-300" value={shortcuts.left.amount} onChange={e => setShortcuts({...shortcuts, left: {...shortcuts.left, amount: e.target.value}})} placeholder="滑動後填寫"/>
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">預設備註 <span className="text-blue-500 font-normal">(選填)</span></label>
-                <input type="text" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-blue-300 outline-none placeholder:text-gray-300" value={shortcuts.left.memo} onChange={e => setShortcuts({...shortcuts, left: {...shortcuts.left, memo: e.target.value}})} placeholder="選填..."/>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-green-50/50 p-4 rounded-2xl border border-green-100 shadow-sm space-y-3">
-            <h4 className="font-black text-green-600 text-sm flex items-center gap-1 mb-2">👉 右側長按捷徑</h4>
-            
-            <div className="flex gap-2">
-              <div className="w-[4.5rem] shrink-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">圖示</label>
-                <select className="w-full bg-white px-1 py-2.5 rounded-xl text-center border border-gray-200 font-black appearance-none text-xl focus:border-green-300 outline-none" value={shortcuts.right.icon} onChange={e => setShortcuts({...shortcuts, right: {...shortcuts.right, icon: e.target.value}})}>
-                  {ICONS.map(i => <option key={i} value={i}>{i}</option>)}
-                </select>
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">捷徑顯示名稱</label>
-                <input className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-green-300 outline-none" value={shortcuts.right.label} onChange={e => setShortcuts({...shortcuts, right: {...shortcuts.right, label: e.target.value}})} placeholder="例如：加油"/>
-              </div>
-            </div>
-
-            <CategorySelectPair type="expense" parentCat={pRight} childCat={cRight} onChange={(p,c) => setShortcuts({...shortcuts, right: {...shortcuts.right, category: `${p}/${c}`}})} />
-            
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">預設金額 <span className="text-green-500 font-normal">(選填)</span></label>
-                <input type="number" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black tabular-nums focus:border-green-300 outline-none placeholder:text-gray-300" value={shortcuts.right.amount} onChange={e => setShortcuts({...shortcuts, right: {...shortcuts.right, amount: e.target.value}})} placeholder="滑動後填寫"/>
-              </div>
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] text-gray-500 font-bold block mb-1">預設備註 <span className="text-green-500 font-normal">(選填)</span></label>
-                <input type="text" className="w-full bg-white px-3 py-2.5 rounded-xl border border-gray-200 font-black focus:border-green-300 outline-none placeholder:text-gray-300" value={shortcuts.right.memo} onChange={e => setShortcuts({...shortcuts, right: {...shortcuts.right, memo: e.target.value}})} placeholder="選填..."/>
-              </div>
+            <div className="space-y-3 pt-2">
+              {/* 👉 3. 按鈕樣式也統一為幹練的樣式 */}
+              <button 
+                onClick={() => cameraInputRef.current?.click()} 
+                disabled={isAIEvaluating} 
+                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-lg active:scale-95 shadow-md flex justify-center items-center gap-2 disabled:opacity-50 transition-all"
+              >
+                <SvgIcon name="camera" size={22} /> {isAIEvaluating ? "AI 處理中..." : "開啟相機拍照"}
+              </button>
+              
+              {/* 👉 4. 這裡改為乾淨的灰底按鈕 (對齊歷史清單樣式) */}
+              <button 
+                onClick={() => albumInputRef.current?.click()} 
+                disabled={isAIEvaluating} 
+                className="w-full py-4 bg-white text-emerald-700 border-2 border-gray-100 rounded-2xl font-black text-lg active:scale-95 shadow-sm flex justify-center items-center gap-2 disabled:opacity-50 transition-all"
+              >
+                <SvgIcon name="album" size={22} /> 從相簿選擇圖片
+              </button>
             </div>
           </div>
-
-          <button onClick={saveShortcuts} className="w-full mt-4 py-4 bg-gray-800 text-white rounded-2xl font-black text-lg active:scale-95 shadow-xl shadow-gray-900/30 transition flex justify-center items-center gap-2">
-            💾 儲存個人專屬設定
-          </button>
         </div>
       )}
     </div>

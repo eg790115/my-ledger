@@ -183,8 +183,19 @@ function App() {
     handleRestoreTrash = () => {}, handleHardDeleteTrash = () => {}, handleEmptyTrash = () => {} 
   } = useTransactions({ currentUser, txCache, trashCache, triggerVibration, showStatus, setActiveTab, setEditingTx, setEditingGroup, setConfirmHardDeleteId, setShowConfirmEmptyTrash, setShowTrashModal }) || {};
 
-  const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText } = useAI({ currentUser, isOnline, txCache, showStatus }) || {};
-
+  const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText, processImageReceipt } = useAI({ currentUser, isOnline, txCache, showStatus }) || {};
+const handleImageRecordStop = async (base64, mimeType) => {
+    const safeName = currentUser?.name || "未知";
+    setLoadingCard({ show: true, text: "📸 AI 正在用力看圖識字中..." });
+    try {
+      const parsedTxs = await processImageReceipt(base64, mimeType, safeName);
+      if (parsedTxs && parsedTxs.length > 0) setVoiceReviewTxs(parsedTxs); 
+    } catch (e) { 
+      showStatus("error", e.message || "圖片解析失敗"); 
+    } finally { 
+      setLoadingCard({ show: false, text: "" }); 
+    }
+  };
   const fallbackHandleLogin = async (user, pin) => {
     setLoadingCard({ show: true, text: "登入中..." });
     try {
@@ -921,7 +932,7 @@ function App() {
           )}
           {activeTab === "history" && ( <HistoryTab setQuickDateFilter={setQuickDateFilter} historyDateFilter={historyDateFilter} setHistoryDateFilter={setHistoryDateFilter} setHistorySearch={setHistorySearch} setHistoryExcludeSearch={setHistoryExcludeSearch} setHistoryTypeFilter={setHistoryTypeFilter} historySearch={historySearch} historyExcludeSearch={historyExcludeSearch} triggerVibration={triggerVibration} setShowTrashModal={setShowTrashModal} setConfirmHardDeleteId={setConfirmHardDeleteId} setShowConfirmEmptyTrash={setShowConfirmEmptyTrash} showSearchFilterModal={showSearchFilterModal} setShowSearchFilterModal={setShowSearchFilterModal} debouncedHistorySearch={debouncedHistorySearch} debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch} historyTypeFilter={historyTypeFilter} isHistoryFiltered={isHistoryFiltered} historyFilteredStats={historyFilteredStats} filteredHistoryGroups={filteredHistoryGroups || []} renderItemOrGroup={renderItemOrGroup} /> )}
           {activeTab === "analysis" && ( <AnalysisTab analysisDateFilter={analysisDateFilter} setAnalysisDateFilter={setAnalysisDateFilter} setSelectedAnalysisLevel1={setSelectedAnalysisLevel1} setSelectedAnalysisLevel2={setSelectedAnalysisLevel2} analysisCustomStart={analysisCustomStart} setAnalysisCustomStart={setAnalysisCustomStart} analysisCustomEnd={analysisCustomEnd} setAnalysisCustomEnd={setAnalysisCustomEnd} analysisType={analysisType} setAnalysisType={setAnalysisType} aiEvalData={aiEvalData} currentUser={currentUser} isAIEvaluating={isAIEvaluating} handleForceAIEval={handleForceAIEval} myTransactions={myTransactions || []} billingStartDay={billingStartDay} pendingMap={{}} selectedAnalysisLevel1={selectedAnalysisLevel1} setAnalysisDetailData={setAnalysisDetailData} animTrigger={animTrigger} triggerVibration={triggerVibration} renderItemOrGroup={renderItemOrGroup} snapshotsCache={snapshotsCache} /> )}
-          {activeTab === "add" && ( <AddTransactionForm loginUser={currentUser?.name || "未知"} onSubmit={(tx) => handleAdd(tx)} onClose={() => setActiveTab('dashboard')} /> )}
+          {activeTab === "add" && ( <AddTransactionForm loginUser={currentUser?.name || "未知"} onSubmit={(tx) => handleAdd(tx)} onClose={() => setActiveTab('dashboard')} onImageRecordStop={handleImageRecordStop} isAIEvaluating={isAIEvaluating || loadingCard.show} /> )}
           {activeTab === "settings" && ( <SettingsTab handleForceAIEval={handleForceAIEval} txCache={visibleTransactions} isAIEvaluating={isAIEvaluating} isSyncing={isSyncing} triggerVibration={triggerVibration} billingStartDay={billingStartDay} setBillingStartDay={setBillingStartDay} currentCycleRange={currentCycleRange} customSubtitle={customSubtitle} setCustomSubtitle={setCustomSubtitle} handleSaveGreeting={handleSaveGreeting} currentUser={currentUser} setShowChangePinModal={setShowChangePinModal} bioBound={bioBound} setUnbindPin={setUnbindPin} setShowUnbindModal={setShowUnbindModal} bindDeviceBio={bindDeviceBio} setShowClearCacheModal={setShowClearCacheModal} setCurrentUser={setCurrentUser} setSelectingUser={setSelectingUser} setPinInput={setPinInput} setActiveTab={setActiveTab} syncQueue={syncQueue || []} setShowClearQueueModal={setShowClearQueueModal} isLogOpen={isLogOpen} setIsLogOpen={setIsLogOpen} /> )}
         </ErrorBoundary>
       </main>
