@@ -1,7 +1,6 @@
 import React from 'react';
 import { SvgIcon } from './Icons';
 import { getBenArray, getBenBadgeStyle, displayDateClean } from '../utils/helpers';
-// 🚀 關鍵引入：直接使用現成的單筆卡片元件
 import { TransactionCard } from './TransactionCard';
 
 export const TransactionGroupCard = ({
@@ -26,7 +25,6 @@ export const TransactionGroupCard = ({
         </div>
       )}
       <div className="flex-1 min-w-0 w-full bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden transition-all duration-300">
-        {/* 母項目顯示區 */}
         <div onClick={() => toggleGroup(group.groupId)} className="p-4 flex items-start sm:items-center gap-3 cursor-pointer active:bg-gray-50 transition-colors relative">
           <div className="relative shrink-0 mt-1 sm:mt-0">
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-[17px] leading-none ${group.type==="income" ? "bg-green-600 text-white" : "bg-red-600 text-white"}`}>{group.type==="income" ? "收入" : "支出"}</div>
@@ -59,13 +57,11 @@ export const TransactionGroupCard = ({
           )}
         </div>
 
-        {/* 🚀 子明細展開區：直接調用 TransactionCard */}
         {isExp && (
           <div className="bg-gray-50/50 p-2 sm:p-4 border-t border-gray-100 flex flex-col gap-2 shadow-inner">
             <div className="text-[10px] text-gray-400 font-black tracking-widest mb-1 pl-2">包含以下明細</div>
             {(group.children || []).map((child, idx) => (
               <div key={child.id} className="relative group/item">
-                {/* 序號小圓鈕 */}
                 <div className="absolute -left-1 sm:-left-3 top-4 w-5 h-5 bg-gray-200 text-gray-500 rounded-full flex items-center justify-center text-[10px] font-black z-20 border border-white shadow-sm">
                   {idx + 1}
                 </div>

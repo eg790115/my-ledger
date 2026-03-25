@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SvgIcon } from './Icons';
 
 const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, loginUser, onVoiceRecordStop }) => {
@@ -18,6 +18,10 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const analyserRef = useRef(null);
   const animationRef = useRef(null);
   const recognitionRef = useRef(null); 
+
+  // 🚀 新增：自訂靜音計時器與歷史對話暫存
+  const silenceTimerRef = useRef(null);
+  const previousTextRef = useRef("");
 
   const getLatestShortcuts = () => {
     try {
@@ -61,29 +65,37 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const isHolding = useRef(false);
   const wasSwipeOrLongPress = useRef(false);
 
-  // 🚀 核心修復：極簡化傳遞！只傳送方向(left/right)跟金額給 App.jsx
   const executeQuickAdd = (shortcutKey, finalAmount) => {
     if (!onQuickAdd || !loginUser) return;
-    
-    // 直接呼叫 App.jsx 的函式，讓 App 負責去抓最新設定
     onQuickAdd(shortcutKey, finalAmount);
-    
     setPendingAmountKey(null);
     setTempAmount("");
   };
 
   const handleQuickSubmit = (shortcutKey) => {
     if (!loginUser) { alert("⚠️ 此功能需在登入後才能使用喔！"); return; }
-    
     const freshShortcuts = getLatestShortcuts();
     const data = freshShortcuts[shortcutKey];
-
     if (!data.amount || String(data.amount).trim() === "" || Number(data.amount) === 0) {
       setTempAmount("");
       setPendingAmountKey(shortcutKey); 
     } else {
       executeQuickAdd(shortcutKey, data.amount); 
     }
+  };
+
+  // 🚀 清除靜音計時器
+  const clearSilenceTimer = () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+  };
+
+  // 🚀 重置靜音計時器 (你可以在這裡修改秒數)
+  const resetSilenceTimer = () => {
+    clearSilenceTimer();
+    // 👉 3500 代表 3.5 秒沒說話就會自動停止。你可以自己改為 4000 或 5000
+    silenceTimerRef.current = setTimeout(() => {
+      stopListeningEarly();
+    }, 3500); 
   };
 
   const initSpeechRecognition = () => {
@@ -95,19 +107,32 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     }
     const recognition = new SpeechRecognition();
     recognition.lang = 'zh-TW';
-    recognition.continuous = false; 
-    recognition.interimResults = false; 
+    // 🚀 修改：開啟連續聆聽與即時辨識
+    recognition.continuous = true; 
+    recognition.interimResults = true; 
+
+    recognition.onstart = () => {
+      resetSilenceTimer(); // 麥克風一打開，開始倒數
+    };
 
     recognition.onresult = (event) => {
-      const text = event.results[0][0].transcript;
-      setCapturedText(prev => (prev ? prev + "，" + text : text));
-      setVoiceState('review'); 
-      triggerVibration(15);
+      resetSilenceTimer(); // 只要有講話，立刻重置倒數計時器！
+
+      // 將當前對話的所有片段串接起來
+      const currentSessionText = Array.from(event.results)
+        .map(res => res[0].transcript.trim())
+        .filter(Boolean)
+        .join('，');
+
+      // 組合：舊的歷史對話 + 這次錄到的對話
+      setCapturedText(previousTextRef.current + currentSessionText);
+      triggerVibration(10);
     };
 
     recognition.onerror = (event) => {
+      clearSilenceTimer();
       if (event.error === 'no-speech') {
-         setVoiceState('review'); 
+         // 忽略原生的 no-speech 錯誤，因為我們有自己的計時器了
       } else {
          setVoiceError(`收音錯誤: ${event.error}`);
          setVoiceState('error');
@@ -115,6 +140,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
     };
 
     recognition.onend = () => {
+      clearSilenceTimer();
       setVoiceState(prev => prev === 'listening' ? 'review' : prev);
     };
 
@@ -122,7 +148,13 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   };
 
   const startVoiceMode = (append = false) => {
-    if (!append) setCapturedText("");
+    if (!append) {
+      setCapturedText("");
+      previousTextRef.current = ""; // 清空歷史暫存
+    } else {
+      // 如果是按「+ 補充」，把目前的文字存入歷史，並加上逗號
+      previousTextRef.current = capturedText ? capturedText + "，" : "";
+    }
     setVoiceError("");
     setShowVoicePanel(true);
     setVoiceState('listening');
@@ -135,6 +167,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   };
 
   const stopListeningEarly = () => {
+    clearSilenceTimer();
     if (recognitionRef.current) {
       try { recognitionRef.current.stop(); } catch(e) {}
     }
@@ -144,6 +177,7 @@ const BottomNav = ({ activeTab, setActiveTab, triggerVibration, onQuickAdd, logi
   const closeVoicePanel = () => {
     setShowVoicePanel(false);
     setVoiceState('idle');
+    clearSilenceTimer();
     if (recognitionRef.current) try { recognitionRef.current.stop(); } catch(e){}
   };
 

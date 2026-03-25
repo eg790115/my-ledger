@@ -4,6 +4,29 @@ import { CHART_COLORS } from '../utils/constants';
 import { getCycleRange, parseDateForSort, getParentCat, getChildCat } from '../utils/helpers';
 import { getLazyTxOnline } from '../utils/api'; 
 
+// 🚀 新增：打字機特效元件 (專門用於 AI 理財洞察)
+const TypewriterText = ({ text, delay = 40 }) => {
+  const [displayedText, setDisplayedText] = useState("");
+  
+  useEffect(() => {
+    // 每次換新句子時，先清空畫面
+    setDisplayedText("");
+    let i = 0;
+    
+    // 使用 setInterval 實現逐字印出
+    const timer = setInterval(() => {
+      setDisplayedText(text.slice(0, i + 1));
+      i++;
+      if (i >= text.length) clearInterval(timer);
+    }, delay);
+    
+    // 組件卸載或 text 改變時清除計時器
+    return () => clearInterval(timer);
+  }, [text, delay]);
+  
+  return <>{displayedText}</>;
+};
+
 const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [fade, setFade] = useState(true);
@@ -42,7 +65,8 @@ const AiInsightsCarousel = ({ aiReport, isEvaluating }) => {
       <span className="shrink-0 text-lg mt-0.5 opacity-80 animate-bounce">📢</span>
       <div className="flex-1 w-full relative flex items-center h-full min-h-[3rem]">
         <span className={`text-[12px] font-black text-indigo-800 leading-relaxed transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}>
-          {messages[currentIndex]}
+          {/* 🚀 核心修改：將原本的純文字替換為 TypewriterText */}
+          {fade && <TypewriterText text={messages[currentIndex]} delay={40} />}
         </span>
       </div>
     </div>
@@ -111,15 +135,13 @@ const AnalysisTab = ({
   
   const [fetchingCat, setFetchingCat] = useState(null);
 
-  // 🌟 強化版：不管雲端 B6 欄位給字串還是物件，都能完美解析提取
   const getAiReportText = () => {
     if (!aiEvalData) return null;
     
     let data = aiEvalData;
-    // 嘗試解析可能被包裝成字串的 JSON
     if (typeof data === 'string') {
       try { data = JSON.parse(data); } 
-      catch (e) { return data; } // 如果無法解析，就是純文字，直接回傳
+      catch (e) { return data; } 
     }
     
     if (data.prompt || data.text) return data.prompt || data.text;
@@ -130,7 +152,6 @@ const AnalysisTab = ({
     if (data.general_eval) return data.general_eval;
     if (data.report) return data.report;
 
-    // 尋找任何夠長的字串，當作評語顯示
     const values = Object.values(data);
     const longStrings = values.filter(v => typeof v === 'string' && v.length > 10);
     if (longStrings.length > 0) return longStrings.join(" | ");
@@ -452,5 +473,3 @@ const AnalysisTab = ({
 };
 
 export default AnalysisTab;
-
-

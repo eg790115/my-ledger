@@ -32,6 +32,24 @@ import { EditGroupParentModal } from './components/EditGroupParentModal';
 
 import { useAppStore } from './store/useAppStore';
 
+// 🚀 新增：打字機特效元件 (專門用於 AI 理財洞察)
+const TypewriterText = ({ text, delay = 40 }) => {
+  const [displayedText, setDisplayedText] = useState("");
+  
+  useEffect(() => {
+    setDisplayedText("");
+    let i = 0;
+    const timer = setInterval(() => {
+      setDisplayedText(text.slice(0, i + 1));
+      i++;
+      if (i >= text.length) clearInterval(timer);
+    }, delay);
+    return () => clearInterval(timer);
+  }, [text, delay]);
+  
+  return <>{displayedText}</>;
+};
+
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
@@ -183,12 +201,16 @@ function App() {
 
   const { aiEvalData, sysConfig, setSysConfig, isAIEvaluating, handleForceAIEval, processVoiceText, processImageReceipt } = useAI({ currentUser, isOnline, txCache, showStatus }) || {};
   
+  // 🚀 防呆處理：強制為每筆審核紀錄發放暫時 ID，確保後續修改可以精準定位
   const handleImageRecordStop = async (base64, mimeType) => {
     const safeName = currentUser?.name || "未知";
     setLoadingCard({ show: true, text: "📸 AI 正在用力看圖識字中..." });
     try {
       const parsedTxs = await processImageReceipt(base64, mimeType, safeName);
-      if (parsedTxs && parsedTxs.length > 0) setVoiceReviewTxs(parsedTxs); 
+      if (parsedTxs && parsedTxs.length > 0) {
+        const withIds = parsedTxs.map((t, idx) => ({ ...t, id: t.id || `temp_ai_${Date.now()}_${idx}` }));
+        setVoiceReviewTxs(withIds);
+      }
     } catch (e) { 
       showStatus("error", e.message || "圖片解析失敗"); 
     } finally { 
@@ -224,7 +246,10 @@ function App() {
     setLoadingCard({ show: true, text: "🤖 正在呼叫 AI 大腦解析中..." });
     try {
       const parsedTxs = await processVoiceText(text, safeName);
-      if (parsedTxs && parsedTxs.length > 0) setVoiceReviewTxs(parsedTxs);
+      if (parsedTxs && parsedTxs.length > 0) {
+        const withIds = parsedTxs.map((t, idx) => ({ ...t, id: t.id || `temp_ai_${Date.now()}_${idx}` }));
+        setVoiceReviewTxs(withIds);
+      }
     } catch (e) { showStatus("error", e.message); } finally { setLoadingCard({ show: false, text: "" }); }
   };
 
@@ -618,7 +643,6 @@ function App() {
       <ProxyNotification transactions={unackedProxyTxs || []} onAck={() => { if(triggerVibration) triggerVibration(15); const acked = safeParse(localStorage.getItem(LS.ackProxyTxs), []); const newAcked = [...new Set([...acked, ...(unackedProxyTxs || []).map(t => t.id)])]; localStorage.setItem(LS.ackProxyTxs, JSON.stringify(newAcked)); setUnackedProxyTxs([]); }} />
       {isLoading && ( <div className="fixed inset-0 z-[9999] bg-gray-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-4"> <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl flex flex-col items-center gap-5 animate-in slide-in-from-bottom-4"> <SvgIcon name="spinner" size={40} className="animate-spin text-blue-600" /> <p className="font-black text-gray-800 text-sm tracking-widest">{loadingCard.text || "處理中..."}</p> </div> </div> )}
       
-      {/* 🚀 主畫面的深度清理快取視窗 */}
       {showClearCacheModal && (
         <div className="fixed inset-0 z-[800] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-8 animate-in text-white" onClick={(e) => { if(e.target === e.currentTarget && !isLoading) {setShowClearCacheModal(false); setLoginCachePassword("");} }}>
           <div className="bg-white w-full max-w-xs rounded-[2.5rem] p-8 text-gray-900 relative text-center shadow-2xl">
@@ -650,36 +674,15 @@ function App() {
         </div>
       )}
 
+      {/* 🚀 黑科技：無縫整合群組與單筆的 AI 結果確認視窗 */}
       {voiceReviewTxs && (() => {
         const editingIdx = (voiceReviewTxs || []).findIndex(t => t.isEditing);
+        if (editingIdx !== -1) return ( <EditTransactionModal tx={voiceReviewTxs[editingIdx]} loginUser={currentUser?.name || "未知"} onSave={(updatedTx) => { const newTxs = [...(voiceReviewTxs || [])]; delete updatedTx.isEditing; newTxs[editingIdx] = updatedTx; setVoiceReviewTxs(newTxs); }} onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} onCancel={() => { if(triggerVibration) triggerVibration(10); const newTxs = [...(voiceReviewTxs || [])]; delete newTxs[editingIdx].isEditing; setVoiceReviewTxs(newTxs); }} /> );
         
-        // 1. 單筆編輯模式
-        if (editingIdx !== -1) {
-          return (
-            <EditTransactionModal 
-              tx={voiceReviewTxs[editingIdx]} 
-              loginUser={currentUser?.name || "未知"} 
-              onSave={(updatedTx) => { 
-                const newTxs = [...(voiceReviewTxs || [])]; 
-                delete updatedTx.isEditing; 
-                newTxs[editingIdx] = updatedTx; 
-                setVoiceReviewTxs(newTxs); 
-              }} 
-              onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} 
-              onCancel={() => { 
-                if(triggerVibration) triggerVibration(10); 
-                const newTxs = [...(voiceReviewTxs || [])]; 
-                delete newTxs[editingIdx].isEditing; 
-                setVoiceReviewTxs(newTxs); 
-              }} 
-            />
-          );
-        }
-
-        // 2. AI 解析結果總覽清單
         return (
           <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in" onClick={() => setVoiceReviewTxs(null)}>
-            <div className="bg-gray-50 w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh] animate-slide-up" onClick={e => e.stopPropagation()}>
+            {/* 🚀 修復：將 max-w-sm 改為 max-w-md，爭取更多橫向空間 */}
+            <div className="bg-gray-50 w-full max-w-md rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh] animate-slide-up" onClick={e => e.stopPropagation()}>
               <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
                 <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
               </h3>
@@ -687,36 +690,62 @@ function App() {
                 請檢查明細，點擊右下角編輯圖示即可修正
               </p>
 
-              <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4 space-y-3">
+              {/* 🚀 修復：徹底移除包裹圖卡的多餘 div，避免雙層邊框與過度擠壓 */}
+              <div className="flex-1 overflow-y-auto scrollbar-hide mb-4 space-y-0">
                 {(voiceReviewTxs || []).length === 0 ? (
                   <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-3xl border border-gray-100">已清空所有紀錄</div>
                 ) : (
-                  (voiceReviewTxs || []).map((tx, idx) => (
-                    <div key={idx} className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
-                      <TransactionCard 
-                        tx={tx} 
-                        allowEdit={true} 
-                        currentUser={currentUser}
-                        triggerVibration={triggerVibration}
-                        setEditingTx={() => {
-                          if(triggerVibration) triggerVibration(10);
-                          const newTxs = [...voiceReviewTxs];
-                          const target = newTxs[idx];
-                          if (target.category && !target.category.includes('/')) {
-                            if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他";
-                            else if (target.category.includes('衣')) target.category = "衣/其他";
-                            else if (target.category.includes('行')) target.category = "行/其他";
-                            else target.category = "雜項/其他";
-                          }
-                          target.isEditing = true;
-                          if (!target.id) target.id = "temp_" + Date.now();
-                          setVoiceReviewTxs(newTxs);
-                        }}
-                        pendingMap={{}}
-                        auditLogs={[]}
-                      />
-                    </div>
-                  ))
+                  groupTransactions(voiceReviewTxs).map((item) => {
+                    if (item.isGroup) {
+                       return (
+                         <TransactionGroupCard
+                           key={item.groupId}
+                           group={item}
+                           allowEdit={true}
+                           currentUser={currentUser}
+                           triggerVibration={triggerVibration}
+                           expandedGroups={expandedGroups}
+                           toggleGroup={toggleGroup}
+                           pendingMap={{}}
+                           auditLogs={[]}
+                           // 在群組內修改單筆子項目
+                           setEditingTx={(childTx) => {
+                              if(triggerVibration) triggerVibration(10);
+                              const newTxs = [...voiceReviewTxs];
+                              const idx = newTxs.findIndex(t => t.id === childTx.id);
+                              if (idx !== -1) {
+                                newTxs[idx].isEditing = true;
+                                setVoiceReviewTxs(newTxs);
+                              }
+                           }}
+                           // AI 審核階段，限制修改群組母項目以防邏輯錯誤
+                           setEditingGroup={() => alert("提示：請先確認入帳後，再於歷史清單中統一修改群組標題喔！")}
+                         />
+                       )
+                    } else {
+                       return (
+                         <TransactionCard
+                           key={item.id}
+                           tx={item}
+                           allowEdit={true}
+                           currentUser={currentUser}
+                           triggerVibration={triggerVibration}
+                           pendingMap={{}}
+                           auditLogs={[]}
+                           // 修改單筆項目
+                           setEditingTx={(childTx) => {
+                              if(triggerVibration) triggerVibration(10);
+                              const newTxs = [...voiceReviewTxs];
+                              const idx = newTxs.findIndex(t => t.id === item.id);
+                              if (idx !== -1) {
+                                newTxs[idx].isEditing = true;
+                                setVoiceReviewTxs(newTxs);
+                              }
+                           }}
+                         />
+                       )
+                    }
+                  })
                 )}
               </div>
 
@@ -948,8 +977,16 @@ function App() {
             </div>
           )}
           {activeTab === "history" && ( <HistoryTab setQuickDateFilter={setQuickDateFilter} historyDateFilter={historyDateFilter} setHistoryDateFilter={setHistoryDateFilter} setHistorySearch={setHistorySearch} setHistoryExcludeSearch={setHistoryExcludeSearch} setHistoryTypeFilter={setHistoryTypeFilter} historySearch={historySearch} historyExcludeSearch={historyExcludeSearch} triggerVibration={triggerVibration} setShowTrashModal={setShowTrashModal} setConfirmHardDeleteId={setConfirmHardDeleteId} setShowConfirmEmptyTrash={setShowConfirmEmptyTrash} showSearchFilterModal={showSearchFilterModal} setShowSearchFilterModal={setShowSearchFilterModal} debouncedHistorySearch={debouncedHistorySearch} debouncedHistoryExcludeSearch={debouncedHistoryExcludeSearch} historyTypeFilter={historyTypeFilter} isHistoryFiltered={isHistoryFiltered} historyFilteredStats={historyFilteredStats} filteredHistoryGroups={filteredHistoryGroups || []} renderItemOrGroup={renderItemOrGroup} /> )}
-          {/* 🚀 這裡已經徹底修復了 .map 找不到對象的語法錯誤 */}
-          {activeTab === "analysis" && ( <AnalysisTab analysisDateFilter={analysisDateFilter} setAnalysisDateFilter={setAnalysisDateFilter} setSelectedAnalysisLevel1={setSelectedAnalysisLevel1} setSelectedAnalysisLevel2={setSelectedAnalysisLevel2} analysisCustomStart={analysisCustomStart} setAnalysisCustomStart={setAnalysisCustomStart} analysisCustomEnd={analysisCustomEnd} setAnalysisCustomEnd={setAnalysisCustomEnd} analysisType={analysisType} setAnalysisType={setAnalysisType} aiEvalData={aiEvalData} currentUser={currentUser} isAIEvaluating={isAIEvaluating} handleForceAIEval={handleForceAIEval} myTransactions={myTransactions || []} billingStartDay={billingStartDay} pendingMap={{}} selectedAnalysisLevel1={selectedAnalysisLevel1} setAnalysisDetailData={setAnalysisDetailData} animTrigger={animTrigger} triggerVibration={triggerVibration} renderItemOrGroup={renderItemOrGroup} snapshotsCache={snapshotsCache} /> )}
+          
+          {/* 🚀 注入了打字機特效的 AI 洞察清單 */}
+          {activeTab === "analysis" && (
+            <AnalysisTab 
+              analysisDateFilter={analysisDateFilter} setAnalysisDateFilter={setAnalysisDateFilter} setSelectedAnalysisLevel1={setSelectedAnalysisLevel1} setSelectedAnalysisLevel2={setSelectedAnalysisLevel2} analysisCustomStart={analysisCustomStart} setAnalysisCustomStart={setAnalysisCustomStart} analysisCustomEnd={analysisCustomEnd} setAnalysisCustomEnd={setAnalysisCustomEnd} analysisType={analysisType} setAnalysisType={setAnalysisType} 
+              aiEvalData={aiEvalData} 
+              currentUser={currentUser} isAIEvaluating={isAIEvaluating} handleForceAIEval={handleForceAIEval} myTransactions={myTransactions || []} billingStartDay={billingStartDay} pendingMap={{}} selectedAnalysisLevel1={selectedAnalysisLevel1} setAnalysisDetailData={setAnalysisDetailData} animTrigger={animTrigger} triggerVibration={triggerVibration} renderItemOrGroup={renderItemOrGroup} snapshotsCache={snapshotsCache} 
+            /> 
+          )}
+
           {activeTab === "add" && ( <AddTransactionForm loginUser={currentUser?.name || "未知"} onSubmit={(tx) => handleAdd(tx)} onClose={() => setActiveTab('history')} onImageRecordStop={handleImageRecordStop} isAIEvaluating={isAIEvaluating || loadingCard.show} /> )}
           {activeTab === "settings" && ( <SettingsTab handleForceAIEval={handleForceAIEval} txCache={visibleTransactions} isAIEvaluating={isAIEvaluating} isSyncing={isSyncing} triggerVibration={triggerVibration} billingStartDay={billingStartDay} setBillingStartDay={setBillingStartDay} currentCycleRange={currentCycleRange} customSubtitle={customSubtitle} setCustomSubtitle={setCustomSubtitle} handleSaveGreeting={handleSaveGreeting} currentUser={currentUser} setShowChangePinModal={setShowChangePinModal} bioBound={bioBound} setUnbindPin={setUnbindPin} setShowUnbindModal={setShowUnbindModal} bindDeviceBio={bindDeviceBio} setShowClearCacheModal={setShowClearCacheModal} setCurrentUser={setCurrentUser} setSelectingUser={setSelectingUser} setPinInput={setPinInput} setActiveTab={setActiveTab} syncQueue={syncQueue || []} setShowClearQueueModal={setShowClearQueueModal} isLogOpen={isLogOpen} setIsLogOpen={setIsLogOpen} /> )}
         </ErrorBoundary>

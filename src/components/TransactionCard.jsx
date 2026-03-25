@@ -9,7 +9,6 @@ export const TransactionCard = ({
   const benArray = getBenArray(tx.beneficiary, tx.member);
   const pAction = pendingMap[tx.id];
   
-  // 🛡️ 終極防護：只檢查自己身上的 editHistory，切斷多筆群組無辜連動亮燈的 Bug！
   const hasEditRecord = Array.isArray(tx.editHistory) && tx.editHistory.length > 0;
 
   return (
