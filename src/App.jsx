@@ -655,70 +655,93 @@ const handleImageRecordStop = async (base64, mimeType) => {
       )}
 
       {voiceReviewTxs && (() => {
-        const editingIdx = (voiceReviewTxs || []).findIndex(t => t.isEditing);
-        if (editingIdx !== -1) return ( <EditTransactionModal tx={voiceReviewTxs[editingIdx]} loginUser={currentUser?.name || "未知"} onSave={(updatedTx) => { const newTxs = [...(voiceReviewTxs || [])]; delete updatedTx.isEditing; newTxs[editingIdx] = updatedTx; setVoiceReviewTxs(newTxs); }} onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} onCancel={() => { if(triggerVibration) triggerVibration(10); const newTxs = [...(voiceReviewTxs || [])]; delete newTxs[editingIdx].isEditing; setVoiceReviewTxs(newTxs); }} /> );
-        return (
-          <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
-            <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
-              <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2"><SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認</h3>
-              <p className="text-[10px] text-gray-500 font-bold mb-4 bg-gray-50 p-2 rounded-lg">請確認自動生成的帳單，點擊右下角編輯圖示即可進入修改明細。</p>
-              <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4">
-                {(voiceReviewTxs || []).length === 0 ? ( <div className="text-center text-gray-400 py-10 text-sm font-bold bg-gray-50 rounded-3xl border border-gray-100">已清空所有紀錄</div> ) : ( (voiceReviewTxs || []).map((tx, idx) => {
-                  const showBeneficiary = tx.beneficiary && tx.beneficiary !== (currentUser?.name || "未知");
-                  const benArray = tx.beneficiary ? tx.beneficiary.split(',').filter(Boolean) : [];
-                  
-                  const formattedDate = tx.date ? displayDateClean(tx.date) : '未定';
-                  const showRecorderTag = tx.member && tx.member !== (currentUser?.name || "未知");
+  const editingIdx = (voiceReviewTxs || []).findIndex(t => t.isEditing);
+  
+  // 1. 單筆編輯模式
+  if (editingIdx !== -1) {
+    return (
+      <EditTransactionModal 
+        tx={voiceReviewTxs[editingIdx]} 
+        loginUser={currentUser?.name || "未知"} 
+        onSave={(updatedTx) => { 
+          const newTxs = [...(voiceReviewTxs || [])]; 
+          delete updatedTx.isEditing; 
+          newTxs[editingIdx] = updatedTx; 
+          setVoiceReviewTxs(newTxs); 
+        }} 
+        onDelete={() => { setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== editingIdx)); }} 
+        onCancel={() => { 
+          if(triggerVibration) triggerVibration(10); 
+          const newTxs = [...(voiceReviewTxs || [])]; 
+          delete newTxs[editingIdx].isEditing; 
+          setVoiceReviewTxs(newTxs); 
+        }} 
+      />
+    );
+  }
 
-                  return (
-                    <div key={idx} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden transition-colors mb-3 flex flex-col gap-1.5">
-                      <div className="flex items-center gap-3">
-                        <div className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md border font-black bg-blue-50 text-blue-600 border-blue-200">
-                          {formattedDate}
-                        </div>
-                        
-                        <div className="flex-1 min-w-0 font-bold text-[14px] leading-tight text-gray-800 flex items-center gap-1.5 flex-wrap">
-                          <span className="truncate flex-shrink">{getParentCat(tx.category)} - {getChildCat(tx.category)}</span>
-                          <div className="flex gap-1 flex-wrap shrink-0">
-                            {benArray.map(b => (
-                              <span key={b} className={`text-[9px] px-1.5 py-0.5 rounded-md border font-black ${getBenBadgeStyle(b)}`}>{b}</span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
+  // 2. 總覽清單模式 (對齊歷史清單樣式)
+  return (
+    <div className="fixed inset-0 z-[1100] bg-gray-900/80 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 animate-in">
+      <div className="bg-gray-50 w-full max-w-sm rounded-[2.5rem] p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[90vh]">
+        <h3 className="font-black text-xl mb-2 text-gray-800 flex items-center gap-2">
+          <SvgIcon name="sparkles" size={24} className="text-blue-500" /> AI 解析結果確認
+        </h3>
+        <p className="text-[10px] text-gray-400 font-bold mb-4 bg-white p-2 rounded-lg border border-gray-100 uppercase tracking-widest text-center">
+          請檢查明細，點擊右下角編輯圖示即可修正
+        </p>
 
-                      {tx.desc && (
-                        <div className="text-[11px] text-gray-500 font-bold bg-gray-50 px-2.5 py-1.5 rounded-lg break-words w-full border border-gray-100 shadow-sm leading-relaxed">
-                          {tx.desc}
-                        </div>
-                      )}
-
-                      <div className="flex items-end justify-between gap-3 mt-1">
-                        <div className="flex-1">
-                          {showRecorderTag && (
-                             <div className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border shadow-sm ${tx.member === "爸爸" ? "bg-blue-50 text-blue-600 border-blue-200" : tx.member === "媽媽" ? "bg-pink-50 text-pink-600 border-pink-200" : "bg-gray-50 text-gray-500 border-gray-200"} whitespace-nowrap shrink-0`}>✍️ {tx.member}出錢</div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col items-end gap-1.5 shrink-0 pl-1 z-10 mt-1">
-                          <div className={`font-black tabular-nums text-[17px] leading-none ${tx.type==="income" ? "text-green-600" : "text-red-600"}`}>
-                            ${Number(tx.amount||0).toLocaleString()}
-                          </div>
-                          <div className="flex gap-1">
-                            <button onClick={() => { if(triggerVibration) triggerVibration(10); const newTxs = [...(voiceReviewTxs || [])]; const target = newTxs[idx]; if (target.category && !target.category.includes('/')) { if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他"; else if (target.category.includes('衣')) target.category = "衣/其他"; else if (target.category.includes('行')) target.category = "行/其他"; else target.category = "雜項/其他"; } target.isEditing = true; if (!target.id) target.id = "temp_" + Date.now(); if (!target.date) { const now = new Date(); const tzOffset = now.getTimezoneOffset() * 60000; target.date = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16); } setVoiceReviewTxs(newTxs); }} className="p-1.5 text-gray-300 hover:text-blue-500 active:scale-90 transition-all"><SvgIcon name="edit" size={15} /></button>
-                            <button onClick={() => setVoiceReviewTxs(prev => (prev || []).filter((_, i) => i !== idx))} className="p-1.5 text-gray-300 hover:text-red-500 active:scale-90 transition-all"><SvgIcon name="trash" size={15} /></button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }) )}
+        <div className="flex-1 overflow-y-auto pr-1 scrollbar-hide mb-4 space-y-3">
+          {(voiceReviewTxs || []).length === 0 ? (
+            <div className="text-center text-gray-400 py-10 text-sm font-bold bg-white rounded-3xl border border-gray-100">已清空所有紀錄</div>
+          ) : (
+            (voiceReviewTxs || []).map((tx, idx) => (
+              <div key={idx} className="bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100">
+                {/* 🚀 直接調用核心組件，保證與歷史清單視覺統一 */}
+                <TransactionCard 
+                  tx={tx} 
+                  allowEdit={true} 
+                  currentUser={currentUser}
+                  triggerVibration={triggerVibration}
+                  setEditingTx={() => {
+                    if(triggerVibration) triggerVibration(10);
+                    const newTxs = [...voiceReviewTxs];
+                    const target = newTxs[idx];
+                    // 補齊分類斜線邏輯
+                    if (target.category && !target.category.includes('/')) {
+                      if (target.category.includes('餐') || target.category.includes('食')) target.category = "食/其他";
+                      else if (target.category.includes('衣')) target.category = "衣/其他";
+                      else if (target.category.includes('行')) target.category = "行/其他";
+                      else target.category = "雜項/其他";
+                    }
+                    target.isEditing = true;
+                    if (!target.id) target.id = "temp_" + Date.now();
+                    setVoiceReviewTxs(newTxs);
+                  }}
+                  pendingMap={{}}
+                  auditLogs={[]}
+                />
               </div>
-              <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1"><button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">取消退出</button><button onClick={handleConfirmVoice} disabled={(voiceReviewTxs || []).length === 0} className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50">確認並寫入 ({(voiceReviewTxs || []).length}筆)</button></div>
-            </div>
-          </div>
-        );
-      })()}
+            ))
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-1 border-t border-gray-100 mt-1">
+          <button onClick={() => setVoiceReviewTxs(null)} className="flex-1 py-3.5 bg-gray-100 text-gray-600 rounded-2xl font-black text-[13px] active:scale-95 transition-all">
+            取消退出
+          </button>
+          <button 
+            onClick={handleConfirmVoice} 
+            disabled={(voiceReviewTxs || []).length === 0} 
+            className="flex-[2] py-3.5 bg-blue-600 text-white rounded-2xl font-black text-[15px] active:scale-95 transition-all shadow-xl shadow-blue-500/30 disabled:opacity-50"
+          >
+            確認並寫入 ({(voiceReviewTxs || []).length}筆)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+})()}
       
       {editingTx && ( <EditTransactionModal tx={editingTx} loginUser={currentUser?.name || "未知"} onSave={(tx) => handleUpdateTx(tx)} onDelete={(tx) => handleDeleteTx(tx)} onCancel={() => { if(triggerVibration) triggerVibration(10); setEditingTx(null); }} /> )}
       

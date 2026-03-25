@@ -105,7 +105,6 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
     const lastEvalCount = parseInt(aiEvalData.meta_last_eval_tx_count || "0", 10);
 
     if (todayStr !== lastEvalDate && txCache.length > lastEvalCount) {
-      console.log("🤖 偵測到雲端今日尚未分析，且有新帳單，背景自動觸發 AI 教練...");
       executeFrontendAI(false); 
     }
   }, [currentUser, txCache, isAIEvaluating, sysConfig.apiKey, aiEvalData]);
@@ -117,17 +116,6 @@ export const useAI = ({ currentUser, isOnline, txCache, showStatus }) => {
     const tzOffset = now.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16); 
 
-    const systemInstruction = `
-你是一位精準的家庭記帳助手。請解析使用者的語音輸入，並輸出結構化 JSON。
-使用者當前登入身分：「${currentMember}」。
-現在基準時間為：「${localISOTime}」。請以此基準推算日期。
-
-【核心解析規則】... (為簡潔保留與你原本相同邏輯，輸出格式需含 parentTitle 與 isGroup)
-    `;
-
-    // 這裡為了不破壞你原本的提示詞結構，直接沿用你提供的長度，確保 JSON 輸出
-    // (已省略重複提示詞，實體執行時會完整抓取)
-    // 為了安全起見，我把你原本寫的 systemInstruction 完整保留在下面
     const fullSystemInstruction = `
 你是一位精準的家庭記帳助手。請解析使用者的語音輸入，並輸出結構化 JSON。
 使用者當前登入身分：「${currentMember}」。
@@ -209,7 +197,6 @@ ${JSON.stringify(ALL_CATEGORIES)}
     if (!match) throw new Error("AI 解析格式錯誤");
     const parsed = JSON.parse(match[0]);
     
-    // 🚀 為群組產生隨機 ID，綁定多筆明細！
     const sharedGroupId = `G_${Date.now()}_${currentMember}_${Math.random().toString(36).substring(2, 7)}`;
     
     return parsed.transactions.map(tx => {
@@ -220,7 +207,6 @@ ${JSON.stringify(ALL_CATEGORIES)}
         category: tx.category && tx.category.includes('/') ? tx.category : "其他/雜項",
         member: tx.member || currentMember,
         beneficiary: tx.beneficiary || currentMember,
-        // 🔑 綁定靈魂：如果有被標記為群組，強制發給它一把 groupId 和組合好的 parentDesc
         groupId: isMultiGroup ? sharedGroupId : undefined,
         parentDesc: isMultiGroup ? `${tx.parentTitle || '多筆紀錄'}|||` : tx.parentDesc || ""
       };
@@ -234,10 +220,39 @@ ${JSON.stringify(ALL_CATEGORIES)}
     const tzOffset = now.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16);
 
+    // 🚀 核心黑科技：本地原生 QR Code 掃描器 (免收費、速度快)
+    let qrText = "";
+    try {
+      if ('BarcodeDetector' in window) {
+        const img = new Image();
+        img.src = `data:${mimeType};base64,${base64Image}`;
+        await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+        
+        // 呼叫手機/瀏覽器底層的條碼掃描引擎
+        const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const barcodes = await detector.detect(img);
+        
+        if (barcodes.length > 0) {
+          // 台灣發票通常有兩個 QR Code，把它們的隱藏字串接起來
+          qrText = barcodes.map(b => b.rawValue).join('\\n');
+          console.log("✅ 成功從圖片提取 QR Code 隱藏資訊！", qrText);
+        }
+      }
+    } catch (e) {
+      console.log("⚠️ 本地 QR 掃描略過 (環境可能不支援): ", e);
+    }
+
     const systemInstruction = `
 你是一個專業的會計助手，具備超強的視覺辨識能力。請分析這張單據照片（可能是電子發票、傳統收據、薪資單、帳單等）。
 使用者當前登入身分：「${currentMember}」。
 現在基準時間為：「${localISOTime}」。請以此基準推算日期。
+
+${qrText ? `【🚨 極度重要：系統已成功提取發票的 QR Code 隱藏資訊！】
+以下是 QR Code 解碼後的原始字串（台灣電子發票格式通常包含 發票號碼、日期、總金額 以及 品名:數量:單價 等明細）：
+---
+${qrText}
+---
+請你「絕對優先」依據上述 QR Code 字串內容來還原商品明細與金額，圖片僅作為輔助（例如辨識店名）。` : `【提示：若圖片中有 QR Code 且文字模糊，請盡全力解析圖像中的商品明細。】`}
 
 【極度重要：你必須嚴格依照以下規則，輸出 JSON 陣列格式】
 
@@ -308,19 +323,17 @@ ${JSON.stringify(ALL_CATEGORIES)}
     if (!match) throw new Error("AI 解析格式錯誤");
     const parsed = JSON.parse(match[0]);
     
-    // 🚀 為群組產生隨機 ID，綁定多筆明細！
     const sharedGroupId = `G_${Date.now()}_${currentMember}_${Math.random().toString(36).substring(2, 7)}`;
     
     return parsed.transactions.map(tx => {
       const isMultiGroup = parsed.transactions.length > 1 && tx.isGroup;
       return {
         ...tx,
-        date: (tx.date || localISOTime).replace(/\//g, '-').replace(' ', 'T').substring(0, 16),
+        date: (tx.date || localISOTime).replace(/\//g, '-').replace('T', ' ').substring(0, 16),
         category: tx.category && tx.category.includes('/') ? tx.category : "其他/雜項",
         amount: Number(tx.amount) || 0,
         member: tx.member || currentMember,
         beneficiary: tx.beneficiary || currentMember,
-        // 🔑 綁定靈魂：如果有被標記為群組，強制發給它一把 groupId 和組合好的 parentDesc
         groupId: isMultiGroup ? sharedGroupId : undefined,
         parentDesc: isMultiGroup ? `${tx.parentTitle || '多筆紀錄'}|||` : tx.parentDesc || ""
       };
